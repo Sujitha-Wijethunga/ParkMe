@@ -11,21 +11,26 @@ import {
   Alert,
 } from 'react-native';
 import { Colors } from '../../constants/colors';
+import { StaffProfile } from '../../constants/profile';
 
 interface StaffDashboardProps {
   staffId?: string;
+  profile?: StaffProfile;
   onLogout?: () => void;
   onNavigateToSpaces?: () => void;
   onNavigateToReservations?: () => void;
   onNavigateToVerifyEntry?: () => void;
+  onNavigateToProfile?: () => void;
 }
 
 export default function StaffDashboardScreen({
   staffId = 'STF-4091',
+  profile,
   onLogout,
   onNavigateToSpaces,
   onNavigateToReservations,
   onNavigateToVerifyEntry,
+  onNavigateToProfile,
 }: StaffDashboardProps) {
   const [activeTab, setActiveTab] = useState<'Dashboard' | 'Spaces' | 'Reservations' | 'Profile'>('Dashboard');
 
@@ -85,18 +90,23 @@ export default function StaffDashboardScreen({
 
       {/* Attendant Status Bar */}
       <View style={styles.attendantBar}>
-        <View style={styles.staffIdBadge}>
-          <Text style={styles.staffIdText}>{staffId}</Text>
-        </View>
+        <TouchableOpacity
+          style={styles.staffIdBadge}
+          onPress={onNavigateToProfile}
+          activeOpacity={0.8}
+        >
+          <Text style={styles.staffIdText}>
+            {profile ? `${profile.avatar} ${profile.name}` : staffId}
+          </Text>
+        </TouchableOpacity>
 
         <TouchableOpacity
           style={styles.attendantModeBadge}
-          onPress={onLogout}
+          onPress={onNavigateToProfile}
           activeOpacity={0.8}
         >
           <Text style={styles.shieldIcon}>🛡️</Text>
-          <Text style={styles.attendantModeText}>Attendant Mode</Text>
-          {onLogout && <Text style={styles.logoutHint}> (Logout)</Text>}
+          <Text style={styles.attendantModeText}>{profile ? profile.role : 'Attendant Mode'}</Text>
         </TouchableOpacity>
       </View>
 
@@ -306,7 +316,12 @@ export default function StaffDashboardScreen({
 
         <TouchableOpacity
           style={styles.navItem}
-          onPress={() => setActiveTab('Profile')}
+          onPress={() => {
+            setActiveTab('Profile');
+            if (onNavigateToProfile) {
+              onNavigateToProfile();
+            }
+          }}
         >
           <Text style={[styles.navIcon, activeTab === 'Profile' && styles.navIconActive]}>👤</Text>
           <Text style={[styles.navLabel, activeTab === 'Profile' && styles.navLabelActive]}>Profile</Text>

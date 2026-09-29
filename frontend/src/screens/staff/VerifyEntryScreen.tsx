@@ -11,6 +11,7 @@ import {
   TextInput,
   Alert,
 } from 'react-native';
+import { CameraView, useCameraPermissions } from 'expo-camera';
 import { Colors } from '../../constants/colors';
 
 interface VerifyEntryProps {
@@ -29,18 +30,24 @@ export default function VerifyEntryScreen({
   const [referenceInput, setReferenceInput] = useState(initialReference);
   const [isVerified, setIsVerified] = useState(true);
   const [isConfirming, setIsConfirming] = useState(false);
+  const [isScanning, setIsScanning] = useState(false);
+  const [permission, requestPermission] = useCameraPermissions();
 
-  const handleVerifyRef = () => {
-    if (!referenceInput.trim()) {
+  const handleVerifyRef = (refString?: string) => {
+    const refToVerify = typeof refString === 'string' ? refString : referenceInput;
+    if (!refToVerify.trim()) {
       Alert.alert('Required', 'Please enter a booking reference.');
       return;
     }
+    setReferenceInput(refToVerify);
     setIsVerified(true);
-    Alert.alert('Verified', `Booking reference ${referenceInput.trim()} is valid and active.`);
+    Alert.alert('Verified', `Booking reference ${refToVerify.trim()} is valid and active.`);
   };
 
   const handleResetScanner = () => {
-    Alert.alert('Scanner Reset', 'QR camera scanner has been re-initialized.');
+    setIsScanning(true);
+    setIsVerified(false);
+    setReferenceInput('');
   };
 
   const handleConfirmEntry = () => {
@@ -94,19 +101,47 @@ export default function VerifyEntryScreen({
         <View style={styles.scannerCard}>
           <Text style={styles.scannerTopHint}>Scan vehicle plate or enter manually</Text>
 
-          {/* QR Viewfinder Icon Box */}
-          <View style={styles.viewfinderBox}>
-            <View style={styles.viewfinderInner}>
-              <View style={styles.viewfinderRow}>
-                <View style={styles.vfSquare} />
-                <View style={styles.vfSquare} />
-              </View>
-              <View style={styles.viewfinderRow}>
-                <View style={styles.vfSquare} />
-                <View style={[styles.vfSquare, styles.vfSquareAccent]} />
-              </View>
+          {/* QR Viewfinder Icon Box / Camera View */}
+          {isScanning ? (
+            <View style={{ width: '100%', height: 250, borderRadius: 20, overflow: 'hidden', marginBottom: 20 }}>
+              {permission?.granted ? (
+                <CameraView
+                  style={{ width: '100%', height: '100%' }}
+                  facing="back"
+                  barcodeScannerSettings={{
+                    barcodeTypes: ['qr'],
+                  }}
+                  onBarcodeScanned={({ data }) => {
+                    setReferenceInput(data);
+                    setIsScanning(false);
+                    handleVerifyRef(data);
+                  }}
+                />
+              ) : (
+                <View style={{ flex: 1, justifyContent: 'center', alignItems: 'center', backgroundColor: '#374151' }}>
+                  <Text style={{ color: 'white', marginBottom: 10 }}>Camera permission needed to scan QR.</Text>
+                  <TouchableOpacity onPress={requestPermission} style={styles.verifyRefBtn}>
+                    <Text style={styles.verifyRefBtnText}>Grant Permission</Text>
+                  </TouchableOpacity>
+                </View>
+              )}
             </View>
-          </View>
+          ) : (
+            <TouchableOpacity activeOpacity={0.8} onPress={() => { setIsScanning(true); setIsVerified(false); }}>
+              <View style={styles.viewfinderBox}>
+                <View style={styles.viewfinderInner}>
+                  <View style={styles.viewfinderRow}>
+                    <View style={styles.vfSquare} />
+                    <View style={styles.vfSquare} />
+                  </View>
+                  <View style={styles.viewfinderRow}>
+                    <View style={styles.vfSquare} />
+                    <View style={[styles.vfSquare, styles.vfSquareAccent]} />
+                  </View>
+                </View>
+              </View>
+            </TouchableOpacity>
+          )}
 
           <Text style={styles.scannerTitle}>Scan booking QR code</Text>
           <Text style={styles.scannerSubtitle}>Hold scanner over driver's mobile pass</Text>
@@ -134,7 +169,7 @@ export default function VerifyEntryScreen({
             />
             <TouchableOpacity
               style={styles.verifyRefBtn}
-              onPress={handleVerifyRef}
+              onPress={() => handleVerifyRef()}
               activeOpacity={0.8}
             >
               <Text style={styles.verifyRefBtnText}>Verify Ref</Text>
