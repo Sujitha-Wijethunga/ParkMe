@@ -26,6 +26,9 @@ app.use('/api/parking-lots', require('./routes/parkingLotRoutes'));
 app.use('/api/parking-lots/:lotId/spaces', require('./routes/parkingSpaceRoutes'));
 app.use('/api/reservations', require('./routes/reservationRoutes'));
 app.use('/api/payments', require('./routes/paymentRoutes'));
+app.use('/api/attendance', require('./routes/attendanceRoutes'));
+app.use('/api/leave-requests', require('./routes/leaveRequestRoutes'));
+app.use('/api/notifications', require('./routes/notificationRoutes'));
 
 // Health check
 app.get('/api/health', (req, res) => {
