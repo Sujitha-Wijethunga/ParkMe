@@ -16,12 +16,14 @@ import {
 import { Colors } from '../../constants/colors';
 
 interface StaffLoginScreenProps {
-  onLoginSuccess?: (staffId: string) => void;
+  onLoginSuccess?: (user: any, token: string) => void;
 }
 
+const API_URL = 'http://192.168.1.33:5000';
+
 export default function StaffLoginScreen({ onLoginSuccess }: StaffLoginScreenProps) {
-  const [staffId, setStaffId] = useState('STF-4091');
-  const [password, setPassword] = useState('password123');
+  const [staffId, setStaffId] = useState('');
+  const [password, setPassword] = useState('');
   const [showPassword, setShowPassword] = useState(false);
   const [staffIdFocused, setStaffIdFocused] = useState(false);
   const [passwordFocused, setPasswordFocused] = useState(false);
@@ -58,20 +60,28 @@ export default function StaffLoginScreen({ onLoginSuccess }: StaffLoginScreenPro
     }
 
     setIsLoading(true);
-    // Simulate auth verification
-    setTimeout(() => {
+    
+    try {
+      const response = await fetch(`${API_URL}/api/auth/login`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ staffId: staffId.trim().toUpperCase(), password }),
+      });
+
+      const data = await response.json();
+
+      if (!response.ok) {
+        throw new Error(data.message || 'Login failed');
+      }
+
       setIsLoading(false);
-      Alert.alert('Login Successful', `Welcome back, Attendant ${staffId}!`, [
-        {
-          text: 'Open Dashboard',
-          onPress: () => {
-            if (onLoginSuccess) {
-              onLoginSuccess(staffId.trim());
-            }
-          },
-        },
-      ]);
-    }, 600);
+      if (onLoginSuccess) {
+        onLoginSuccess(data, data.token);
+      }
+    } catch (error: any) {
+      setIsLoading(false);
+      Alert.alert('Login Failed', error.message || 'Could not connect to server');
+    }
   };
 
   return (
@@ -137,7 +147,7 @@ export default function StaffLoginScreen({ onLoginSuccess }: StaffLoginScreenPro
                 <TextInput
                   ref={staffIdInputRef}
                   style={styles.input}
-                  placeholder="STF-4091"
+                  placeholder="e.g. STF-4091"
                   placeholderTextColor={Colors.placeholder}
                   value={staffId}
                   onChangeText={setStaffId}

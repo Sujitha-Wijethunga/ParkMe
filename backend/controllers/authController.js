@@ -12,20 +12,28 @@ const generateToken = (id) => {
 // @access  Public
 const register = async (req, res, next) => {
   try {
-    const { name, email, password, phone } = req.body;
+    const { name, email, password, phone, staffId } = req.body;
 
     const existingUser = await User.findOne({ email });
     if (existingUser) {
       return res.status(409).json({ message: 'Email already registered' });
     }
 
-    const user = await User.create({ name, email, password, phone });
+    if (staffId) {
+      const existingStaffId = await User.findOne({ staffId: staffId.toUpperCase() });
+      if (existingStaffId) {
+        return res.status(409).json({ message: 'Staff ID already in use' });
+      }
+    }
+
+    const user = await User.create({ name, email, password, phone, staffId, role: 'staff' });
 
     res.status(201).json({
       _id: user._id,
       name: user.name,
       email: user.email,
       role: user.role,
+      staffId: user.staffId,
       token: generateToken(user._id),
     });
   } catch (error) {
@@ -38,11 +46,16 @@ const register = async (req, res, next) => {
 // @access  Public
 const login = async (req, res, next) => {
   try {
-    const { email, password } = req.body;
+    const { staffId, password } = req.body;
 
-    const user = await User.findOne({ email }).select('+password');
+    if (!staffId || !password) {
+      return res.status(400).json({ message: 'Staff ID and password are required' });
+    }
+
+    // Find user by staffId
+    const user = await User.findOne({ staffId: staffId.toUpperCase() }).select('+password');
     if (!user || !(await user.matchPassword(password))) {
-      return res.status(401).json({ message: 'Invalid email or password' });
+      return res.status(401).json({ message: 'Invalid Staff ID or password' });
     }
 
     if (!user.isActive) {
@@ -54,6 +67,7 @@ const login = async (req, res, next) => {
       name: user.name,
       email: user.email,
       role: user.role,
+      staffId: user.staffId,
       token: generateToken(user._id),
     });
   } catch (error) {
@@ -110,11 +124,11 @@ const changePassword = async (req, res, next) => {
 const registerValidation = [
   body('name').trim().notEmpty().withMessage('Name is required'),
   body('email').isEmail().withMessage('Valid email is required'),
-  body('password').isLength({ min: 8 }).withMessage('Password must be at least 8 characters'),
+  body('password').isLength({ min: 6 }).withMessage('Password must be at least 6 characters'),
 ];
 
 const loginValidation = [
-  body('email').isEmail().withMessage('Valid email is required'),
+  body('staffId').trim().notEmpty().withMessage('Staff ID is required'),
   body('password').notEmpty().withMessage('Password is required'),
 ];
 

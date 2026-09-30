@@ -19,12 +19,19 @@ export default function App() {
     ref: 'PE-84213',
     slot: 'A3',
   });
+  const [authToken, setAuthToken] = useState<string | null>(null);
   const [spaces, setSpaces] = useState<SpaceItem[]>(initialSpaces);
 
-  const handleLoginSuccess = (staffId: string) => {
-    const id = staffId || 'STF-4091';
-    setLoggedStaffId(id);
-    setStaffProfile((prev) => ({ ...prev, staffId: id }));
+  const handleLoginSuccess = (user: any, token: string) => {
+    setLoggedStaffId(user.staffId || user._id);
+    setAuthToken(token);
+    setStaffProfile((prev) => ({ 
+      ...prev, 
+      staffId: user.staffId || user._id,
+      name: user.name,
+      email: user.email,
+      role: user.role === 'staff' ? 'Parking Staff' : user.role
+    }));
     setCurrentScreen('dashboard');
   };
 
