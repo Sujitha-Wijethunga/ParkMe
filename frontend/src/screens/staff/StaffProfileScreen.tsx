@@ -25,6 +25,8 @@ interface StaffProfileScreenProps {
   onBack: () => void;
   onLogout: () => void;
   onNavigateTab: (tab: 'dashboard' | 'spaces' | 'reservations' | 'profile') => void;
+  onChangePassword: () => void;
+  onAttendance: () => void;
 }
 
 const AVATAR_OPTIONS = ['👤', '👨‍💼', '👩‍💼', '👮‍♂️', '👮‍♀️', '🧑‍💻', '🚗', '🛡️'];
@@ -37,6 +39,8 @@ export default function StaffProfileScreen({
   onBack,
   onLogout,
   onNavigateTab,
+  onChangePassword,
+  onAttendance,
 }: StaffProfileScreenProps) {
   const [shiftAlerts, setShiftAlerts] = useState(true);
 
@@ -232,7 +236,7 @@ export default function StaffProfileScreen({
             {/* Attendance & Leave History */}
             <TouchableOpacity
               style={styles.menuItem}
-              onPress={() => handleMenuItemPress('Attendance & Leave History')}
+              onPress={onAttendance}
               activeOpacity={0.7}
             >
               <View style={styles.menuLeft}>
@@ -265,7 +269,7 @@ export default function StaffProfileScreen({
             {/* Change Password */}
             <TouchableOpacity
               style={styles.menuItem}
-              onPress={() => handleMenuItemPress('Change Password')}
+              onPress={onChangePassword}
               activeOpacity={0.7}
             >
               <View style={styles.menuLeft}>

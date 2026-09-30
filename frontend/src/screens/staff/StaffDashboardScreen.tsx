@@ -9,9 +9,12 @@ import {
   Platform,
   StatusBar,
   Alert,
+  Modal,
+  Pressable,
 } from 'react-native';
 import { Colors } from '../../constants/colors';
 import { StaffProfile } from '../../constants/profile';
+import { SpaceItem } from './ManageSpaceScreen';
 
 interface StaffDashboardProps {
   staffId?: string;
@@ -21,6 +24,7 @@ interface StaffDashboardProps {
   onNavigateToReservations?: () => void;
   onNavigateToVerifyEntry?: () => void;
   onNavigateToProfile?: () => void;
+  spaces?: SpaceItem[];
 }
 
 export default function StaffDashboardScreen({
@@ -31,12 +35,50 @@ export default function StaffDashboardScreen({
   onNavigateToReservations,
   onNavigateToVerifyEntry,
   onNavigateToProfile,
+  spaces,
 }: StaffDashboardProps) {
   const [activeTab, setActiveTab] = useState<'Dashboard' | 'Spaces' | 'Reservations' | 'Profile'>('Dashboard');
+  const [showNotifications, setShowNotifications] = useState(false);
+
+  const notifications = [
+    {
+      id: '1',
+      title: 'New Reservation',
+      message: 'Kasun Dias just booked slot A3 for 02:00 PM.',
+      time: '2m ago',
+      isUnread: true,
+      icon: '📅',
+      color: '#DBEAFE',
+    },
+    {
+      id: '2',
+      title: 'Vehicle Arrived',
+      message: 'Vehicle WP CAB-4921 has entered the premises.',
+      time: '15m ago',
+      isUnread: true,
+      icon: '🚗',
+      color: '#DCFCE7',
+    },
+    {
+      id: '3',
+      title: 'Shift Reminder',
+      message: 'Your shift ends in 30 minutes.',
+      time: '1h ago',
+      isUnread: false,
+      icon: '⏳',
+      color: '#FEF08A',
+    },
+  ];
 
   const handleActionPress = (actionName: string, screenNumber: string) => {
     Alert.alert(actionName, `Navigating to ${actionName} (${screenNumber})`);
   };
+
+  const availableCount = spaces ? spaces.filter(s => s.status === 'Available').length : 18;
+  const reservedCount = spaces ? spaces.filter(s => s.status === 'Reserved').length : 6;
+  const occupiedCount = spaces ? spaces.filter(s => s.status === 'Occupied').length : 16;
+  const totalCount = spaces ? spaces.length : 40;
+  const occupancyPercent = totalCount > 0 ? Math.round((occupiedCount / totalCount) * 100) : 55;
 
   const arrivals = [
     {
@@ -80,7 +122,7 @@ export default function StaffDashboardScreen({
         </View>
         <TouchableOpacity
           style={styles.bellButton}
-          onPress={() => Alert.alert('Notifications', 'No new alerts')}
+          onPress={() => setShowNotifications(true)}
           activeOpacity={0.7}
         >
           <Text style={styles.bellIcon}>🔔</Text>
@@ -119,8 +161,8 @@ export default function StaffDashboardScreen({
         {/* Space Capacity Card Section */}
         <View style={styles.capacitySection}>
           <View style={styles.capacityHeaderRow}>
-            <Text style={styles.capacityHeaderTitle}>SPACE CAPACITY (40 TOTAL)</Text>
-            <Text style={styles.liveOccupancyText}>Live Occupancy: <Text style={styles.occupancyValue}>55%</Text></Text>
+            <Text style={styles.capacityHeaderTitle}>SPACE CAPACITY ({totalCount} TOTAL)</Text>
+            <Text style={styles.liveOccupancyText}>Live Occupancy: <Text style={styles.occupancyValue}>{occupancyPercent}%</Text></Text>
           </View>
 
           {/* 3 Metric Cards */}
@@ -131,7 +173,7 @@ export default function StaffDashboardScreen({
                 <Text style={[styles.statCardTitle, styles.availableText]}>Available</Text>
                 <Text style={styles.statusCheck}>✓</Text>
               </View>
-              <Text style={[styles.statNumber, styles.availableText]}>18</Text>
+              <Text style={[styles.statNumber, styles.availableText]}>{availableCount}</Text>
               <Text style={styles.statSub}>Ready to park</Text>
             </View>
 
@@ -141,7 +183,7 @@ export default function StaffDashboardScreen({
                 <Text style={[styles.statCardTitle, styles.reservedText]}>Reserved</Text>
                 <Text style={styles.statusIcon}>⏱</Text>
               </View>
-              <Text style={[styles.statNumber, styles.reservedText]}>6</Text>
+              <Text style={[styles.statNumber, styles.reservedText]}>{reservedCount}</Text>
               <Text style={styles.statSub}>Booked online</Text>
             </View>
 
@@ -151,7 +193,7 @@ export default function StaffDashboardScreen({
                 <Text style={[styles.statCardTitle, styles.occupiedText]}>Occupied</Text>
                 <Text style={styles.statusIcon}>🚗</Text>
               </View>
-              <Text style={[styles.statNumber, styles.occupiedText]}>16</Text>
+              <Text style={[styles.statNumber, styles.occupiedText]}>{occupiedCount}</Text>
               <Text style={styles.statSub}>Vehicles inside</Text>
             </View>
           </View>
@@ -277,6 +319,50 @@ export default function StaffDashboardScreen({
           </View>
         </View>
       </ScrollView>
+
+      {/* Notifications Modal */}
+      <Modal
+        visible={showNotifications}
+        transparent
+        animationType="fade"
+        onRequestClose={() => setShowNotifications(false)}
+      >
+        <Pressable
+          style={styles.notificationOverlay}
+          onPress={() => setShowNotifications(false)}
+        >
+          <Pressable style={styles.notificationPanel} onPress={(e) => e.stopPropagation()}>
+            <View style={styles.notificationHeader}>
+              <Text style={styles.notificationTitle}>Notifications</Text>
+              <TouchableOpacity onPress={() => setShowNotifications(false)} style={styles.closeNotifBtn}>
+                <Text style={styles.closeNotifIcon}>✕</Text>
+              </TouchableOpacity>
+            </View>
+            <ScrollView style={styles.notificationList} showsVerticalScrollIndicator={false}>
+              {notifications.map((notif) => (
+                <TouchableOpacity
+                  key={notif.id}
+                  style={[styles.notificationItem, notif.isUnread && styles.notificationItemUnread]}
+                  activeOpacity={0.7}
+                >
+                  <View style={[styles.notificationIconBg, { backgroundColor: notif.color }]}>
+                    <Text style={styles.notificationIconEmoji}>{notif.icon}</Text>
+                  </View>
+                  <View style={styles.notificationContent}>
+                    <Text style={styles.notificationItemTitle}>{notif.title}</Text>
+                    <Text style={styles.notificationMessage} numberOfLines={2}>{notif.message}</Text>
+                    <Text style={styles.notificationTime}>{notif.time}</Text>
+                  </View>
+                  {notif.isUnread && <View style={styles.unreadDot} />}
+                </TouchableOpacity>
+              ))}
+              <TouchableOpacity style={styles.viewAllNotifications}>
+                <Text style={styles.viewAllNotificationsText}>Mark all as read</Text>
+              </TouchableOpacity>
+            </ScrollView>
+          </Pressable>
+        </Pressable>
+      </Modal>
 
       {/* Bottom Navigation Bar */}
       <View style={styles.bottomNav}>
@@ -726,5 +812,113 @@ const styles = StyleSheet.create({
   navLabelActive: {
     color: '#0F766E',
     fontWeight: '700',
+  },
+  notificationOverlay: {
+    flex: 1,
+    backgroundColor: 'rgba(0,0,0,0.3)',
+  },
+  notificationPanel: {
+    backgroundColor: '#FFFFFF',
+    position: 'absolute',
+    top: Platform.OS === 'ios' ? 100 : 70,
+    right: 16,
+    left: 16,
+    borderRadius: 16,
+    maxHeight: '70%',
+    shadowColor: '#000',
+    shadowOpacity: 0.1,
+    shadowRadius: 15,
+    shadowOffset: { width: 0, height: 5 },
+    elevation: 8,
+    overflow: 'hidden',
+  },
+  notificationHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    paddingHorizontal: 20,
+    paddingVertical: 16,
+    borderBottomWidth: 1,
+    borderBottomColor: '#F1F5F9',
+    backgroundColor: '#FFFFFF',
+  },
+  notificationTitle: {
+    fontSize: 18,
+    fontWeight: '800',
+    color: '#0F172A',
+  },
+  closeNotifBtn: {
+    padding: 4,
+  },
+  closeNotifIcon: {
+    fontSize: 16,
+    color: '#64748B',
+    fontWeight: '700',
+  },
+  notificationList: {
+    paddingHorizontal: 12,
+    paddingVertical: 8,
+  },
+  notificationItem: {
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+    padding: 12,
+    borderRadius: 12,
+    marginBottom: 4,
+  },
+  notificationItemUnread: {
+    backgroundColor: '#F8FAFC',
+  },
+  notificationIconBg: {
+    width: 44,
+    height: 44,
+    borderRadius: 22,
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginRight: 12,
+  },
+  notificationIconEmoji: {
+    fontSize: 20,
+  },
+  notificationContent: {
+    flex: 1,
+    justifyContent: 'center',
+  },
+  notificationItemTitle: {
+    fontSize: 15,
+    fontWeight: '700',
+    color: '#1E293B',
+    marginBottom: 2,
+  },
+  notificationMessage: {
+    fontSize: 13,
+    color: '#475569',
+    lineHeight: 18,
+    marginBottom: 4,
+  },
+  notificationTime: {
+    fontSize: 11,
+    color: '#94A3B8',
+    fontWeight: '600',
+  },
+  unreadDot: {
+    width: 10,
+    height: 10,
+    borderRadius: 5,
+    backgroundColor: '#3B82F6',
+    marginTop: 16,
+    marginLeft: 8,
+  },
+  viewAllNotifications: {
+    alignItems: 'center',
+    paddingVertical: 14,
+    marginTop: 4,
+    borderTopWidth: 1,
+    borderTopColor: '#F1F5F9',
+  },
+  viewAllNotificationsText: {
+    fontSize: 14,
+    fontWeight: '700',
+    color: '#0F766E',
   },
 });

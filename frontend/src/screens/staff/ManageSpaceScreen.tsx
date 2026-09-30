@@ -22,7 +22,7 @@ export interface SpaceItem {
   status: SpaceStatus;
 }
 
-const initialSpaces: SpaceItem[] = [
+export const initialSpaces: SpaceItem[] = [
   { id: '1', slot: 'A1', status: 'Occupied' },
   { id: '2', slot: 'A2', status: 'Available' },
   { id: '3', slot: 'A3', status: 'Reserved' },
@@ -59,10 +59,11 @@ const initialSpaces: SpaceItem[] = [
 
 interface ManageSpaceProps {
   onBack: () => void;
+  spaces: SpaceItem[];
+  setSpaces: React.Dispatch<React.SetStateAction<SpaceItem[]>>;
 }
 
-export default function ManageSpaceScreen({ onBack }: ManageSpaceProps) {
-  const [spaces, setSpaces] = useState<SpaceItem[]>(initialSpaces);
+export default function ManageSpaceScreen({ onBack, spaces, setSpaces }: ManageSpaceProps) {
   const [searchQuery, setSearchQuery] = useState('');
   const [activeFilter, setActiveFilter] = useState<'All' | 'Available' | 'Reserved' | 'Occupied'>('All');
 
