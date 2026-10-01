@@ -1,5 +1,14 @@
 import React, { useState } from 'react';
+import {
+  View,
+  TouchableOpacity,
+  Text,
+  StyleSheet,
+  Platform,
+  StatusBar as RNStatusBar,
+} from 'react-native';
 import { StatusBar } from 'expo-status-bar';
+import HomeScreen from './src/screens/driver/HomeScreen';
 import StaffLoginScreen from './src/screens/staff/StaffLoginScreen';
 import StaffDashboardScreen from './src/screens/staff/StaffDashboardScreen';
 import ManageSpaceScreen, { SpaceItem, initialSpaces } from './src/screens/staff/ManageSpaceScreen';
@@ -11,8 +20,20 @@ import AttendanceScreen from './src/screens/staff/AttendanceScreen';
 import LeaveRequestScreen from './src/screens/staff/LeaveRequestScreen';
 import { StaffProfile, defaultStaffProfile } from './src/constants/profile';
 
+type ScreenType =
+  | 'driver-home'
+  | 'login'
+  | 'dashboard'
+  | 'spaces'
+  | 'reservations'
+  | 'verify'
+  | 'profile'
+  | 'change-password'
+  | 'attendance'
+  | 'leave-request';
+
 export default function App() {
-  const [currentScreen, setCurrentScreen] = useState<'login' | 'dashboard' | 'spaces' | 'reservations' | 'verify' | 'profile' | 'change-password' | 'attendance' | 'leave-request'>('login');
+  const [currentScreen, setCurrentScreen] = useState<ScreenType>('driver-home');
   const [loggedStaffId, setLoggedStaffId] = useState<string>('STF-4091');
   const [staffProfile, setStaffProfile] = useState<StaffProfile>(defaultStaffProfile);
   const [activeReservation, setActiveReservation] = useState<{ ref: string; slot: string }>({
@@ -47,6 +68,23 @@ export default function App() {
   return (
     <>
       <StatusBar style={currentScreen === 'login' ? 'light' : 'dark'} />
+      {currentScreen === 'driver-home' && (
+        <HomeScreen
+          userName="Kasun"
+          onNavigateToMap={() => {}}
+          onNavigateToLotDetails={(lotId) => {}}
+          onNavigateToBookings={() => {}}
+          onNavigateToProfile={() => {}}
+          onNavigateToNotifications={() => {}}
+          onOpenFilter={() => {}}
+          onSeeAllPress={() => {}}
+          onBottomTabPress={(tab) => {
+            if (tab === 'profile') {
+              // Available for testing profile or switching flows
+            }
+          }}
+        />
+      )}
       {currentScreen === 'login' && (
         <StaffLoginScreen onLoginSuccess={handleLoginSuccess} />
       )}
@@ -111,6 +149,61 @@ export default function App() {
       {currentScreen === 'leave-request' && (
         <LeaveRequestScreen onBack={() => setCurrentScreen('attendance')} />
       )}
+
+      {/* Dev Mode Role Switcher: Positioned in top header area so it never overlaps driver bottom nav or parking content */}
+      <View
+        style={[
+          styles.devSwitchContainer,
+          {
+            top: Platform.OS === 'android' ? (RNStatusBar.currentHeight || 24) + 16 : 56,
+            right: currentScreen === 'driver-home' ? 68 : 16,
+          },
+        ]}
+        pointerEvents="box-none"
+      >
+        <TouchableOpacity
+          style={styles.devSwitchBtn}
+          activeOpacity={0.8}
+          onPress={() =>
+            setCurrentScreen((prev) =>
+              prev === 'driver-home' ? 'login' : 'driver-home'
+            )
+          }
+        >
+          <Text style={styles.devSwitchText}>
+            {currentScreen === 'driver-home'
+              ? '👔 Staff Flow'
+              : '🚗 Driver Flow'}
+          </Text>
+        </TouchableOpacity>
+      </View>
     </>
   );
 }
+
+const styles = StyleSheet.create({
+  devSwitchContainer: {
+    position: 'absolute',
+    zIndex: 9999,
+  },
+  devSwitchBtn: {
+    backgroundColor: 'rgba(15, 23, 42, 0.92)',
+    paddingHorizontal: 9,
+    paddingVertical: 5,
+    borderRadius: 14,
+    borderWidth: 1,
+    borderColor: 'rgba(255, 255, 255, 0.25)',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.25,
+    shadowRadius: 3,
+    elevation: 8,
+  },
+  devSwitchText: {
+    color: '#FFFFFF',
+    fontSize: 10.5,
+    fontWeight: '700',
+    letterSpacing: 0.2,
+  },
+});
+

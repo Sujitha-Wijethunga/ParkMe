@@ -46,3 +46,45 @@ export const Colors = {
   // Link
   link: '#1A6B9A',
 };
+
+// Driver Flow Brand & UI Palette (Matched to ParkMe-04-Home design)
+export const DriverColors = {
+  // Brand driver colors
+  navyDark: '#0A1128',
+  navyHeading: '#0F172A',
+  orangePrimary: '#F26419',
+  orangeLight: '#FFF4EE',
+  orangeDark: '#D4500F',
+
+  // Surfaces & Backgrounds
+  background: '#F8FAFC',
+  surface: '#FFFFFF',
+  cardBorder: '#E2E8F0',
+  borderLight: '#F1F5F9',
+
+  // Typography
+  textHeading: '#0F172A',
+  textBody: '#1E293B',
+  textSecondary: '#64748B',
+  textMuted: '#94A3B8',
+  textWhite: '#FFFFFF',
+
+  // Functional & Badges
+  searchIconBg: '#EEF2FF',
+  searchIconColor: '#1E293B',
+  greenBadgeBg: '#ECFDF5',
+  greenBadgeBorder: '#A7F3D0',
+  greenBadgeText: '#059669',
+  coveredBadgeBg: '#F1F5F9',
+  coveredBadgeText: '#64748B',
+
+  // Map Graphic Preview Colors
+  mapBg: '#E9F0F8',
+  mapRoad: '#D7E5F2',
+  mapRoadMain: '#FFFFFF',
+  mapPulseBlue: '#2563EB',
+  mapPulseAura: 'rgba(37, 99, 235, 0.22)',
+  mapMarkerBg: '#0A1128',
+  mapMarkerDot: '#10B981',
+};
+
