@@ -9,6 +9,7 @@ import {
 } from 'react-native';
 import { StatusBar } from 'expo-status-bar';
 import HomeScreen from './src/screens/driver/HomeScreen';
+import SearchResultsScreen, { SearchResultsViewMode } from './src/screens/driver/SearchResultsScreen';
 import StaffLoginScreen from './src/screens/staff/StaffLoginScreen';
 import StaffDashboardScreen from './src/screens/staff/StaffDashboardScreen';
 import ManageSpaceScreen, { SpaceItem, initialSpaces } from './src/screens/staff/ManageSpaceScreen';
@@ -19,9 +20,11 @@ import ChangePasswordScreen from './src/screens/staff/ChangePasswordScreen';
 import AttendanceScreen from './src/screens/staff/AttendanceScreen';
 import LeaveRequestScreen from './src/screens/staff/LeaveRequestScreen';
 import { StaffProfile, defaultStaffProfile } from './src/constants/profile';
+import { DriverFilterChip } from './src/constants/driverSampleData';
 
 type ScreenType =
   | 'driver-home'
+  | 'driver-search'
   | 'login'
   | 'dashboard'
   | 'spaces'
@@ -34,6 +37,15 @@ type ScreenType =
 
 export default function App() {
   const [currentScreen, setCurrentScreen] = useState<ScreenType>('driver-home');
+  const [searchParams, setSearchParams] = useState<{
+    query: string;
+    viewMode: SearchResultsViewMode;
+    filterChip: DriverFilterChip;
+  }>({
+    query: '',
+    viewMode: 'map',
+    filterChip: 'Nearest',
+  });
   const [loggedStaffId, setLoggedStaffId] = useState<string>('STF-4091');
   const [staffProfile, setStaffProfile] = useState<StaffProfile>(defaultStaffProfile);
   const [activeReservation, setActiveReservation] = useState<{ ref: string; slot: string }>({
@@ -42,6 +54,15 @@ export default function App() {
   });
   const [authToken, setAuthToken] = useState<string | null>(null);
   const [spaces, setSpaces] = useState<SpaceItem[]>(initialSpaces);
+
+  const handleOpenSearch = (
+    query: string = '',
+    viewMode: SearchResultsViewMode = 'map',
+    filterChip: DriverFilterChip = 'Nearest'
+  ) => {
+    setSearchParams({ query, viewMode, filterChip });
+    setCurrentScreen('driver-search');
+  };
 
   const handleLoginSuccess = (user: any, token: string) => {
     setLoggedStaffId(user.staffId || user._id);
@@ -71,18 +92,35 @@ export default function App() {
       {currentScreen === 'driver-home' && (
         <HomeScreen
           userName="Kasun"
-          onNavigateToMap={() => {}}
-          onNavigateToLotDetails={(lotId) => {}}
+          onNavigateToMap={() => handleOpenSearch('', 'map', 'Nearest')}
+          onNavigateToLotDetails={(lotId) => {
+            // Placeholder for Lot Details milestone
+          }}
           onNavigateToBookings={() => {}}
           onNavigateToProfile={() => {}}
           onNavigateToNotifications={() => {}}
-          onOpenFilter={() => {}}
-          onSeeAllPress={() => {}}
+          onOpenFilter={() => handleOpenSearch('', 'list', 'Nearest')}
+          onSeeAllPress={(query, chip) => handleOpenSearch(query || '', 'list', chip || 'Nearest')}
+          onSearchSubmit={(query, chip) => handleOpenSearch(query, 'list', chip || 'Nearest')}
           onBottomTabPress={(tab) => {
-            if (tab === 'profile') {
-              // Available for testing profile or switching flows
+            if (tab === 'map') {
+              handleOpenSearch('', 'map', 'Nearest');
             }
           }}
+        />
+      )}
+      {currentScreen === 'driver-search' && (
+        <SearchResultsScreen
+          initialQuery={searchParams.query}
+          initialViewMode={searchParams.viewMode}
+          initialFilter={searchParams.filterChip}
+          onBack={() => setCurrentScreen('driver-home')}
+          onNavigateHome={() => setCurrentScreen('driver-home')}
+          onSelectLot={(lotId) => {
+            // Placeholder for Lot Details milestone
+          }}
+          onNavigateBookings={() => {}}
+          onNavigateProfile={() => {}}
         />
       )}
       {currentScreen === 'login' && (
@@ -155,8 +193,8 @@ export default function App() {
         style={[
           styles.devSwitchContainer,
           {
-            top: Platform.OS === 'android' ? (RNStatusBar.currentHeight || 24) + 16 : 56,
-            right: currentScreen === 'driver-home' ? 68 : 16,
+            top: Platform.OS === 'android' ? (RNStatusBar.currentHeight || 24) + 14 : 54,
+            right: currentScreen === 'driver-home' ? 68 : 12,
           },
         ]}
         pointerEvents="box-none"
@@ -166,12 +204,12 @@ export default function App() {
           activeOpacity={0.8}
           onPress={() =>
             setCurrentScreen((prev) =>
-              prev === 'driver-home' ? 'login' : 'driver-home'
+              prev === 'driver-home' || prev === 'driver-search' ? 'login' : 'driver-home'
             )
           }
         >
           <Text style={styles.devSwitchText}>
-            {currentScreen === 'driver-home'
+            {currentScreen === 'driver-home' || currentScreen === 'driver-search'
               ? '👔 Staff Flow'
               : '🚗 Driver Flow'}
           </Text>

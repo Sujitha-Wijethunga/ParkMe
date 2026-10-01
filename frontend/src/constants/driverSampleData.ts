@@ -19,6 +19,10 @@ export interface ParkingLotCardItem {
   hasEVCharging: boolean;
   pricePerHour: number;
   imageUrl: string;
+  mapPosition?: {
+    topPercent: number; // percentage from top on illustrative map
+    leftPercent: number; // percentage from left on illustrative map
+  };
 }
 
 export interface MapPreviewMarker {
@@ -57,6 +61,7 @@ export const SAMPLE_NEARBY_PARKING_LOTS: ParkingLotCardItem[] = [
     pricePerHour: 150,
     // High-angle outdoor/mall parking lot image
     imageUrl: 'https://images.unsplash.com/photo-1506521781263-d8422e82f27a?auto=format&fit=crop&w=600&q=80',
+    mapPosition: { topPercent: 30, leftPercent: 50 },
   },
   {
     id: 'lot-2',
@@ -71,6 +76,7 @@ export const SAMPLE_NEARBY_PARKING_LOTS: ParkingLotCardItem[] = [
     pricePerHour: 120,
     // Indoor multi-story garage image
     imageUrl: 'https://images.unsplash.com/photo-1590674899484-d5640e854abe?auto=format&fit=crop&w=600&q=80',
+    mapPosition: { topPercent: 20, leftPercent: 18 },
   },
   {
     id: 'lot-3',
@@ -85,6 +91,7 @@ export const SAMPLE_NEARBY_PARKING_LOTS: ParkingLotCardItem[] = [
     pricePerHour: 160,
     // Underground modern parking image
     imageUrl: 'https://images.unsplash.com/photo-1621929747188-0b4dc28498d2?auto=format&fit=crop&w=600&q=80',
+    mapPosition: { topPercent: 55, leftPercent: 65 },
   },
   {
     id: 'lot-4',
@@ -98,5 +105,6 @@ export const SAMPLE_NEARBY_PARKING_LOTS: ParkingLotCardItem[] = [
     hasEVCharging: false,
     pricePerHour: 100,
     imageUrl: 'https://images.unsplash.com/photo-1573348722427-f1d6819fdf98?auto=format&fit=crop&w=600&q=80',
+    mapPosition: { topPercent: 44, leftPercent: 78 },
   },
 ];

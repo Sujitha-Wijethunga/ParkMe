@@ -21,6 +21,7 @@ import {
   DriverFilterChip,
 } from '../../constants/driverSampleData';
 import DriverBottomNav, { DriverTabType } from '../../components/DriverBottomNav';
+import ParkingLotCard from '../../components/ParkingLotCard';
 
 interface HomeScreenProps {
   userName?: string;
@@ -30,7 +31,8 @@ interface HomeScreenProps {
   onNavigateToProfile?: () => void;
   onNavigateToNotifications?: () => void;
   onOpenFilter?: () => void;
-  onSeeAllPress?: () => void;
+  onSeeAllPress?: (query?: string, chip?: DriverFilterChip) => void;
+  onSearchSubmit?: (query: string, chip?: DriverFilterChip) => void;
   onBottomTabPress?: (tab: DriverTabType) => void;
 }
 
@@ -52,6 +54,7 @@ export default function HomeScreen({
   onNavigateToNotifications,
   onOpenFilter,
   onSeeAllPress,
+  onSearchSubmit,
   onBottomTabPress,
 }: HomeScreenProps) {
   const [searchQuery, setSearchQuery] = useState('');
@@ -121,6 +124,13 @@ export default function HomeScreen({
               onChangeText={setSearchQuery}
               returnKeyType="search"
               autoCorrect={false}
+              onSubmitEditing={() => {
+                if (onSearchSubmit) {
+                  onSearchSubmit(searchQuery, selectedChip);
+                } else if (onNavigateToMap) {
+                  onNavigateToMap();
+                }
+              }}
             />
           </View>
 
@@ -128,7 +138,13 @@ export default function HomeScreen({
           <TouchableOpacity
             style={styles.filterBtn}
             activeOpacity={0.7}
-            onPress={onOpenFilter}
+            onPress={() => {
+              if (onSearchSubmit) {
+                onSearchSubmit(searchQuery, selectedChip);
+              } else if (onOpenFilter) {
+                onOpenFilter();
+              }
+            }}
             accessibilityLabel="Filter search results"
           >
             <FilterSlidersIcon />
@@ -222,7 +238,13 @@ export default function HomeScreen({
           </View>
           <TouchableOpacity
             activeOpacity={0.7}
-            onPress={onSeeAllPress || onNavigateToMap}
+            onPress={() => {
+              if (onSeeAllPress) {
+                onSeeAllPress(searchQuery, selectedChip);
+              } else if (onNavigateToMap) {
+                onNavigateToMap();
+              }
+            }}
           >
             <Text style={styles.seeAllText}>See All (14)</Text>
           </TouchableOpacity>
@@ -231,72 +253,11 @@ export default function HomeScreen({
         {/* 6. Parking Cards List */}
         <View style={styles.cardsListContainer}>
           {parkingLots.map((lot) => (
-            <TouchableOpacity
+            <ParkingLotCard
               key={lot.id}
-              style={styles.parkingCard}
-              activeOpacity={0.9}
-              onPress={() => onNavigateToLotDetails && onNavigateToLotDetails(lot.id)}
-            >
-              <View style={styles.cardContentRow}>
-                {/* Left Thumbnail Image with EV Badge */}
-                <View style={styles.cardImageContainer}>
-                  <Image
-                    source={{ uri: lot.imageUrl }}
-                    style={styles.cardImage}
-                    resizeMode="cover"
-                  />
-                  {lot.hasEVCharging && (
-                    <View style={styles.evBadge}>
-                      <Text style={styles.evBadgeIcon}>⚡</Text>
-                    </View>
-                  )}
-                </View>
-
-                {/* Right Details Column */}
-                <View style={styles.cardInfoColumn}>
-                  {/* Status & Distance Row */}
-                  <View style={styles.cardStatusRow}>
-                    <View style={styles.availableBadge}>
-                      <Text style={styles.checkIcon}>✓</Text>
-                      <Text style={styles.availableBadgeText}>Available</Text>
-                    </View>
-                    <View style={styles.distanceContainer}>
-                      <Text style={styles.distanceIcon}>📍</Text>
-                      <Text style={styles.distanceText}>{lot.distance}</Text>
-                    </View>
-                  </View>
-
-                  {/* Lot Name & Address */}
-                  <Text style={styles.lotNameText} numberOfLines={1}>
-                    {lot.name}
-                  </Text>
-                  <Text style={styles.lotAddressText} numberOfLines={1}>
-                    {lot.address}
-                  </Text>
-
-                  {/* Bottom Stats: Capacity & Pricing */}
-                  <View style={styles.cardBottomRow}>
-                    <View style={styles.capacityRow}>
-                      <Text style={styles.remainingSpacesText}>
-                        <Text style={styles.remainingSpacesBold}>{lot.availableSpaces}</Text>
-                        /{lot.totalSpaces} left
-                      </Text>
-                      {lot.isCovered && (
-                        <View style={styles.coveredBadge}>
-                          <Text style={styles.coveredBadgeText}>Covered</Text>
-                        </View>
-                      )}
-                    </View>
-
-                    {/* Hourly Rate */}
-                    <Text style={styles.priceContainer}>
-                      <Text style={styles.priceBold}>Rs. {lot.pricePerHour}</Text>
-                      <Text style={styles.priceUnit}>/hr</Text>
-                    </Text>
-                  </View>
-                </View>
-              </View>
-            </TouchableOpacity>
+              lot={lot}
+              onPress={(lotId) => onNavigateToLotDetails && onNavigateToLotDetails(lotId)}
+            />
           ))}
         </View>
       </ScrollView>
@@ -724,145 +685,5 @@ const styles = StyleSheet.create({
   cardsListContainer: {
     gap: 12,
   },
-  parkingCard: {
-    backgroundColor: DriverColors.surface,
-    borderRadius: 18,
-    padding: 12,
-    borderWidth: 1,
-    borderColor: DriverColors.cardBorder,
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 1 },
-    shadowOpacity: 0.04,
-    shadowRadius: 5,
-    elevation: 2,
-    marginBottom: 4,
-  },
-  cardContentRow: {
-    flexDirection: 'row',
-  },
-  cardImageContainer: {
-    width: 96,
-    height: 96,
-    borderRadius: 14,
-    overflow: 'hidden',
-    backgroundColor: '#E2E8F0',
-    position: 'relative',
-  },
-  cardImage: {
-    width: '100%',
-    height: '100%',
-  },
-  evBadge: {
-    position: 'absolute',
-    top: 6,
-    left: 6,
-    width: 22,
-    height: 22,
-    borderRadius: 11,
-    backgroundColor: DriverColors.navyDark,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  evBadgeIcon: {
-    fontSize: 11,
-    color: '#FFFFFF',
-  },
-  cardInfoColumn: {
-    flex: 1,
-    marginLeft: 12,
-    justifyContent: 'space-between',
-  },
-  cardStatusRow: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-  },
-  availableBadge: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    backgroundColor: DriverColors.greenBadgeBg,
-    borderColor: DriverColors.greenBadgeBorder,
-    borderWidth: 1,
-    paddingHorizontal: 7,
-    paddingVertical: 2.5,
-    borderRadius: 12,
-  },
-  checkIcon: {
-    fontSize: 10,
-    color: DriverColors.greenBadgeText,
-    fontWeight: '800',
-    marginRight: 3,
-  },
-  availableBadgeText: {
-    fontSize: 11,
-    fontWeight: '700',
-    color: DriverColors.greenBadgeText,
-  },
-  distanceContainer: {
-    flexDirection: 'row',
-    alignItems: 'center',
-  },
-  distanceIcon: {
-    fontSize: 11,
-    marginRight: 2,
-  },
-  distanceText: {
-    fontSize: 12,
-    fontWeight: '600',
-    color: DriverColors.textSecondary,
-  },
-  lotNameText: {
-    fontSize: 15,
-    fontWeight: '800',
-    color: DriverColors.navyHeading,
-    marginTop: 3,
-  },
-  lotAddressText: {
-    fontSize: 12,
-    color: DriverColors.textSecondary,
-    marginTop: 1,
-  },
-  cardBottomRow: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    marginTop: 6,
-  },
-  capacityRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-  },
-  remainingSpacesText: {
-    fontSize: 12,
-    color: DriverColors.textSecondary,
-  },
-  remainingSpacesBold: {
-    fontSize: 13,
-    fontWeight: '800',
-    color: DriverColors.navyHeading,
-  },
-  coveredBadge: {
-    backgroundColor: DriverColors.coveredBadgeBg,
-    paddingHorizontal: 6,
-    paddingVertical: 2,
-    borderRadius: 5,
-    marginLeft: 6,
-  },
-  coveredBadgeText: {
-    fontSize: 10.5,
-    color: DriverColors.coveredBadgeText,
-    fontWeight: '600',
-  },
-  priceContainer: {
-    fontSize: 12,
-  },
-  priceBold: {
-    fontSize: 15,
-    fontWeight: '800',
-    color: DriverColors.navyHeading,
-  },
-  priceUnit: {
-    fontSize: 11.5,
-    color: DriverColors.textSecondary,
-  },
 });
+
