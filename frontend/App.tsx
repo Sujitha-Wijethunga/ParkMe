@@ -45,7 +45,6 @@ export default function App() {
   };
 
   return (
-<<<<<<< Updated upstream
     <>
       <StatusBar style={currentScreen === 'login' ? 'light' : 'dark'} />
       {currentScreen === 'login' && (
@@ -115,31 +114,3 @@ export default function App() {
     </>
   );
 }
-=======
-    <View style={styles.container}>
-      <Text style={styles.title}>Welcome to ParkMe!</Text>
-      <Text style={styles.subtitle}>Your frontend is working perfectly. 🎉</Text>
-      <StatusBar style="auto" />
-    </View>
-  );
-}
-
-const styles = StyleSheet.create({
-  container: {
-    flex: 1,
-    backgroundColor: '#f0f4f8',
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  title: {
-    fontSize: 28,
-    fontWeight: 'bold',
-    color: '#1a365d',
-    marginBottom: 10,
-  },
-  subtitle: {
-    fontSize: 16,
-    color: '#4a5568',
-  }
-});
->>>>>>> Stashed changes
