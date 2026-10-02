@@ -29,8 +29,23 @@ interface SearchResultsScreenProps {
   initialQuery?: string;
   initialViewMode?: SearchResultsViewMode;
   initialFilter?: DriverFilterChip;
+  /** Restore the previously selected lot ID when returning from Lot Details. */
+  initialSelectedLotId?: string | null;
   onBack?: () => void;
-  onSelectLot?: (lotId: string) => void;
+  /**
+   * Called when the user taps a parking card or map marker to view full details.
+   * The second argument is a snapshot of the current search state so the originating
+   * screen can be restored faithfully when the user presses Back from Lot Details.
+   */
+  onSelectLot?: (
+    lotId: string,
+    searchSnapshot: {
+      query: string;
+      viewMode: SearchResultsViewMode;
+      filterChip: DriverFilterChip;
+      selectedLotId: string | null;
+    }
+  ) => void;
   onNavigateHome?: () => void;
   onNavigateBookings?: () => void;
   onNavigateProfile?: () => void;
@@ -58,6 +73,7 @@ export default function SearchResultsScreen({
   initialQuery = '',
   initialViewMode = 'map',
   initialFilter = 'Nearest',
+  initialSelectedLotId = null,
   onBack,
   onSelectLot,
   onNavigateHome,
@@ -67,7 +83,7 @@ export default function SearchResultsScreen({
   const [searchQuery, setSearchQuery] = useState(initialQuery);
   const [selectedFilter, setSelectedFilter] = useState<DriverFilterChip>(initialFilter);
   const [viewMode, setViewMode] = useState<SearchResultsViewMode>(initialViewMode);
-  const [selectedLotId, setSelectedLotId] = useState<string | null>(null);
+  const [selectedLotId, setSelectedLotId] = useState<string | null>(initialSelectedLotId ?? null);
 
   // Filter and sort lots based on query and active filter chip
   const filteredLots = useMemo(() => {
@@ -302,7 +318,15 @@ export default function SearchResultsScreen({
                 <ParkingLotCard
                   lot={activeSelectedLot}
                   isSelected={true}
-                  onPress={(lotId) => onSelectLot && onSelectLot(lotId)}
+                  onPress={(lotId) =>
+                    onSelectLot &&
+                    onSelectLot(lotId, {
+                      query: searchQuery,
+                      viewMode,
+                      filterChip: selectedFilter,
+                      selectedLotId: lotId,
+                    })
+                  }
                 />
               </View>
             )}
@@ -344,7 +368,15 @@ export default function SearchResultsScreen({
                 key={lot.id}
                 lot={lot}
                 isSelected={activeSelectedLot?.id === lot.id}
-                onPress={(lotId) => onSelectLot && onSelectLot(lotId)}
+                onPress={(lotId) =>
+                  onSelectLot &&
+                  onSelectLot(lotId, {
+                    query: searchQuery,
+                    viewMode,
+                    filterChip: selectedFilter,
+                    selectedLotId: lotId,
+                  })
+                }
               />
             ))}
           </ScrollView>
