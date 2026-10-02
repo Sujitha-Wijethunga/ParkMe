@@ -9,7 +9,6 @@ import {
   StatusBar,
   Platform,
   Image,
-  Alert,
 } from 'react-native';
 import { DriverColors } from '../../constants/colors';
 import {
@@ -22,6 +21,11 @@ interface LotDetailsScreenProps {
   lotId: string;
   /** Navigate back to the originating screen (Home or Search Results). */
   onBack: () => void;
+  /**
+   * Navigate forward to space selection for this lot.
+   * Replaces the milestone placeholder; wired in ParkMe-07-SelectSpace.
+   */
+  onSelectSpace: (lotId: string) => void;
 }
 
 const AMENITY_ICONS: Record<string, string> = {
@@ -48,7 +52,7 @@ const AMENITY_ICONS: Record<string, string> = {
  * The "Reserve a Space" CTA is a placeholder that will be wired to the
  * Select Space milestone in the next sprint.
  */
-export default function LotDetailsScreen({ lotId, onBack }: LotDetailsScreenProps) {
+export default function LotDetailsScreen({ lotId, onBack, onSelectSpace }: LotDetailsScreenProps) {
   // Resolve the lot from the shared sample data by stable ID
   const lot: ParkingLotCardItem | undefined = SAMPLE_NEARBY_PARKING_LOTS.find(
     (l) => l.id === lotId
@@ -80,12 +84,7 @@ export default function LotDetailsScreen({ lotId, onBack }: LotDetailsScreenProp
   const dailyRateEstimate = lot.pricePerHour * 6; // display-only estimate (6 hr cap convention)
 
   const handleReserve = () => {
-    // Space selection is the next milestone — surface a clear placeholder message.
-    Alert.alert(
-      'Coming Next',
-      'Space selection and reservation will be available in the next milestone. This button is a placeholder for that flow.',
-      [{ text: 'Got it', style: 'default' }]
-    );
+    onSelectSpace(lot.id);
   };
 
   return (
