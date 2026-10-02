@@ -16,6 +16,8 @@ SplashScreen.preventAutoHideAsync().catch((err) => {
   console.warn('[SplashScreen.preventAutoHideAsync]', err);
 });
 import WelcomeScreen from './src/screens/driver/WelcomeScreen';
+import DriverLoginScreen from './src/screens/driver/DriverLoginScreen';
+import DriverSignUpScreen from './src/screens/driver/DriverSignUpScreen';
 import HomeScreen from './src/screens/driver/HomeScreen';
 import SearchResultsScreen, { SearchResultsViewMode } from './src/screens/driver/SearchResultsScreen';
 import LotDetailsScreen from './src/screens/driver/LotDetailsScreen';
@@ -38,9 +40,17 @@ import AttendanceScreen from './src/screens/staff/AttendanceScreen';
 import LeaveRequestScreen from './src/screens/staff/LeaveRequestScreen';
 import { StaffProfile, defaultStaffProfile } from './src/constants/profile';
 import { DriverFilterChip } from './src/constants/driverSampleData';
+import {
+  getDriverToken,
+  clearDriverSession,
+  DriverUser,
+} from './src/services/storage';
+import { getCurrentUser } from './src/services/authApi';
 
 type ScreenType =
   | 'driver-welcome'
+  | 'driver-login'
+  | 'driver-signup'
   | 'driver-home'
   | 'driver-search'
   | 'driver-lot-details'
@@ -59,14 +69,34 @@ type ScreenType =
 export default function App() {
   const [appIsReady, setAppIsReady] = useState(false);
   const [currentScreen, setCurrentScreen] = useState<ScreenType>('driver-welcome');
+  const [driverUser, setDriverUser] = useState<DriverUser | null>(null);
+  const [driverToken, setDriverToken] = useState<string | null>(null);
 
   useEffect(() => {
     async function prepare() {
       try {
-        // Essential startup resources (session restoration or asset preloading)
-        // Default startup flow lands on driver-welcome until user chooses an action
+        // Attempt to restore authenticated driver session from secure storage
+        const token = await getDriverToken();
+        if (token) {
+          try {
+            const user = await getCurrentUser(token);
+            setDriverUser(user);
+            setDriverToken(token);
+            setCurrentScreen('driver-home');
+          } catch (sessionErr: any) {
+            console.warn('[App.prepare] Driver session restoration failed:', sessionErr?.message);
+            // Expired or invalid token: clear persistent credentials and present welcome screen
+            if (sessionErr?.status === 401 || sessionErr?.status === 403) {
+              await clearDriverSession();
+            }
+            setCurrentScreen('driver-welcome');
+          }
+        } else {
+          setCurrentScreen('driver-welcome');
+        }
       } catch (e) {
         console.warn('[App.prepare] Error during startup initialization:', e);
+        setCurrentScreen('driver-welcome');
       } finally {
         setAppIsReady(true);
       }
@@ -177,26 +207,53 @@ export default function App() {
   };
 
   /**
-   * Called when user taps 'Get Started' on the Welcome Screen.
-   * Driver sign up / onboarding is the next milestone.
+   * Navigates to Driver Sign Up when user taps 'Get Started' on Welcome screen.
    */
   const handleWelcomeGetStarted = () => {
-    Alert.alert(
-      'Coming Next: Driver Sign Up',
-      'Driver account registration and onboarding are coming in the next milestone.',
-      [{ text: 'OK', style: 'default' }]
-    );
+    setCurrentScreen('driver-signup');
   };
 
   /**
-   * Called when user taps 'I already have an account' on the Welcome Screen.
-   * Driver login / authentication is the next milestone.
+   * Navigates to Driver Login when user taps 'I already have an account' on Welcome screen.
    */
   const handleWelcomeLogin = () => {
+    setCurrentScreen('driver-login');
+  };
+
+  /**
+   * Called upon successful driver login or signup.
+   * Sets the active driver state and transitions to Driver Home.
+   */
+  const handleDriverAuthSuccess = (user: DriverUser, token: string) => {
+    setDriverUser(user);
+    setDriverToken(token);
+    setCurrentScreen('driver-home');
+  };
+
+  /**
+   * Clears driver session from secure storage and returns to unauthenticated Welcome screen.
+   */
+  const handleDriverLogout = async () => {
+    try {
+      await clearDriverSession();
+    } catch (e) {
+      console.warn('[handleDriverLogout] Error clearing session:', e);
+    }
+    setDriverUser(null);
+    setDriverToken(null);
+    setCurrentScreen('driver-welcome');
+  };
+
+  const handleDriverProfilePress = () => {
+    const displayName = driverUser?.name || 'Driver';
+    const displayEmail = driverUser?.email || '';
     Alert.alert(
-      'Coming Next: Driver Login',
-      'Driver sign-in and account authentication are coming in the next milestone.',
-      [{ text: 'OK', style: 'default' }]
+      displayName,
+      `Email: ${displayEmail}\nRole: Driver`,
+      [
+        { text: 'Cancel', style: 'cancel' },
+        { text: 'Log Out', style: 'destructive', onPress: handleDriverLogout },
+      ]
     );
   };
 
@@ -228,6 +285,8 @@ export default function App() {
 
   const isDriverScreen =
     currentScreen === 'driver-welcome' ||
+    currentScreen === 'driver-login' ||
+    currentScreen === 'driver-signup' ||
     currentScreen === 'driver-home' ||
     currentScreen === 'driver-search' ||
     currentScreen === 'driver-lot-details' ||
@@ -245,15 +304,31 @@ export default function App() {
           onAlreadyHaveAccount={handleWelcomeLogin}
         />
       )}
+      {currentScreen === 'driver-login' && (
+        <DriverLoginScreen
+          onBack={() => setCurrentScreen('driver-welcome')}
+          onNavigateToSignUp={() => setCurrentScreen('driver-signup')}
+          onNavigateToStaffLogin={() => setCurrentScreen('login')}
+          onLoginSuccess={handleDriverAuthSuccess}
+        />
+      )}
+      {currentScreen === 'driver-signup' && (
+        <DriverSignUpScreen
+          onBack={() => setCurrentScreen('driver-welcome')}
+          onNavigateToLogin={() => setCurrentScreen('driver-login')}
+          onNavigateToStaffLogin={() => setCurrentScreen('login')}
+          onSignUpSuccess={handleDriverAuthSuccess}
+        />
+      )}
       {currentScreen === 'driver-home' && (
         <HomeScreen
-          userName="Kasun"
+          userName={driverUser?.name ? driverUser.name.split(' ')[0] : 'Kasun'}
           onNavigateToMap={() => handleOpenSearch('', 'map', 'Nearest')}
           onNavigateToLotDetails={(lotId) =>
             handleOpenLotDetails(lotId, 'driver-home')
           }
           onNavigateToBookings={() => {}}
-          onNavigateToProfile={() => {}}
+          onNavigateToProfile={handleDriverProfilePress}
           onNavigateToNotifications={() => {}}
           onOpenFilter={() => handleOpenSearch('', 'list', 'Nearest')}
           onSeeAllPress={(query, chip) => handleOpenSearch(query || '', 'list', chip || 'Nearest')}
@@ -261,6 +336,8 @@ export default function App() {
           onBottomTabPress={(tab) => {
             if (tab === 'map') {
               handleOpenSearch('', 'map', 'Nearest');
+            } else if (tab === 'profile') {
+              handleDriverProfilePress();
             }
           }}
         />
@@ -370,26 +447,38 @@ export default function App() {
         <LeaveRequestScreen onBack={() => setCurrentScreen('attendance')} />
       )}
 
-      {/* Dev Mode Role Switcher: Shown only in development and positioned in top header area clear of welcome and driver content */}
+      {/* Dev Mode Role Switcher: Shown only in development and positioned clear of screen content */}
       {__DEV__ && (
         <View
           style={[
             styles.devSwitchContainer,
             {
-              top: Platform.OS === 'android' ? (RNStatusBar.currentHeight || 24) + 14 : 54,
-              right: currentScreen === 'driver-welcome' ? 16 : isDriverScreen ? 68 : 12,
+              top:
+                currentScreen === 'driver-login' || currentScreen === 'driver-signup'
+                  ? (Platform.OS === 'android' ? (RNStatusBar.currentHeight || 24) + 52 : 92)
+                  : (Platform.OS === 'android' ? (RNStatusBar.currentHeight || 24) + 14 : 54),
+              right:
+                currentScreen === 'driver-welcome' ||
+                currentScreen === 'driver-login' ||
+                currentScreen === 'driver-signup'
+                  ? 16
+                  : isDriverScreen
+                  ? 68
+                  : 12,
             },
           ]}
           pointerEvents="box-none"
         >
           <View style={styles.devSwitchGroup}>
-            {currentScreen === 'driver-welcome' && (
+            {(currentScreen === 'driver-welcome' ||
+              currentScreen === 'driver-login' ||
+              currentScreen === 'driver-signup') && (
               <TouchableOpacity
                 style={styles.devSwitchBtn}
                 activeOpacity={0.8}
                 onPress={() => setCurrentScreen('driver-home')}
               >
-                <Text style={styles.devSwitchText}>🚗 Driver Home</Text>
+                <Text style={styles.devSwitchText}>🚗 Driver Home (Dev)</Text>
               </TouchableOpacity>
             )}
             <TouchableOpacity
@@ -399,6 +488,8 @@ export default function App() {
                 setCurrentScreen((prev) => {
                   if (
                     prev === 'driver-welcome' ||
+                    prev === 'driver-login' ||
+                    prev === 'driver-signup' ||
                     prev === 'driver-home' ||
                     prev === 'driver-search' ||
                     prev === 'driver-lot-details' ||
@@ -407,7 +498,7 @@ export default function App() {
                   ) {
                     return 'login';
                   }
-                  return 'driver-welcome';
+                  return driverUser ? 'driver-home' : 'driver-welcome';
                 })
               }
             >
