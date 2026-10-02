@@ -15,6 +15,7 @@ import * as SplashScreen from 'expo-splash-screen';
 SplashScreen.preventAutoHideAsync().catch((err) => {
   console.warn('[SplashScreen.preventAutoHideAsync]', err);
 });
+import WelcomeScreen from './src/screens/driver/WelcomeScreen';
 import HomeScreen from './src/screens/driver/HomeScreen';
 import SearchResultsScreen, { SearchResultsViewMode } from './src/screens/driver/SearchResultsScreen';
 import LotDetailsScreen from './src/screens/driver/LotDetailsScreen';
@@ -39,6 +40,7 @@ import { StaffProfile, defaultStaffProfile } from './src/constants/profile';
 import { DriverFilterChip } from './src/constants/driverSampleData';
 
 type ScreenType =
+  | 'driver-welcome'
   | 'driver-home'
   | 'driver-search'
   | 'driver-lot-details'
@@ -56,13 +58,13 @@ type ScreenType =
 
 export default function App() {
   const [appIsReady, setAppIsReady] = useState(false);
-  const [currentScreen, setCurrentScreen] = useState<ScreenType>('driver-home');
+  const [currentScreen, setCurrentScreen] = useState<ScreenType>('driver-welcome');
 
   useEffect(() => {
     async function prepare() {
       try {
         // Essential startup resources (session restoration or asset preloading)
-        // If driver authentication is not implemented, default flow continues to driver-home
+        // Default startup flow lands on driver-welcome until user chooses an action
       } catch (e) {
         console.warn('[App.prepare] Error during startup initialization:', e);
       } finally {
@@ -174,6 +176,30 @@ export default function App() {
     );
   };
 
+  /**
+   * Called when user taps 'Get Started' on the Welcome Screen.
+   * Driver sign up / onboarding is the next milestone.
+   */
+  const handleWelcomeGetStarted = () => {
+    Alert.alert(
+      'Coming Next: Driver Sign Up',
+      'Driver account registration and onboarding are coming in the next milestone.',
+      [{ text: 'OK', style: 'default' }]
+    );
+  };
+
+  /**
+   * Called when user taps 'I already have an account' on the Welcome Screen.
+   * Driver login / authentication is the next milestone.
+   */
+  const handleWelcomeLogin = () => {
+    Alert.alert(
+      'Coming Next: Driver Login',
+      'Driver sign-in and account authentication are coming in the next milestone.',
+      [{ text: 'OK', style: 'default' }]
+    );
+  };
+
   const handleLoginSuccess = (user: any, token: string) => {
     setLoggedStaffId(user.staffId || user._id);
     setAuthToken(token);
@@ -201,6 +227,7 @@ export default function App() {
   }
 
   const isDriverScreen =
+    currentScreen === 'driver-welcome' ||
     currentScreen === 'driver-home' ||
     currentScreen === 'driver-search' ||
     currentScreen === 'driver-lot-details' ||
@@ -209,7 +236,15 @@ export default function App() {
 
   return (
     <View style={styles.rootContainer} onLayout={onLayoutRootView}>
-      <StatusBar style={currentScreen === 'login' ? 'light' : 'dark'} />
+      <StatusBar
+        style={currentScreen === 'login' || currentScreen === 'driver-welcome' ? 'light' : 'dark'}
+      />
+      {currentScreen === 'driver-welcome' && (
+        <WelcomeScreen
+          onGetStarted={handleWelcomeGetStarted}
+          onAlreadyHaveAccount={handleWelcomeLogin}
+        />
+      )}
       {currentScreen === 'driver-home' && (
         <HomeScreen
           userName="Kasun"
@@ -335,37 +370,54 @@ export default function App() {
         <LeaveRequestScreen onBack={() => setCurrentScreen('attendance')} />
       )}
 
-      {/* Dev Mode Role Switcher: Positioned in top header area so it never overlaps driver bottom nav or parking content */}
-      <View
-        style={[
-          styles.devSwitchContainer,
-          {
-            top: Platform.OS === 'android' ? (RNStatusBar.currentHeight || 24) + 14 : 54,
-            right: isDriverScreen ? 68 : 12,
-          },
-        ]}
-        pointerEvents="box-none"
-      >
-        <TouchableOpacity
-          style={styles.devSwitchBtn}
-          activeOpacity={0.8}
-          onPress={() =>
-            setCurrentScreen((prev) =>
-              prev === 'driver-home' ||
-              prev === 'driver-search' ||
-              prev === 'driver-lot-details' ||
-              prev === 'driver-space-selection' ||
-              prev === 'driver-booking-summary'
-                ? 'login'
-                : 'driver-home'
-            )
-          }
+      {/* Dev Mode Role Switcher: Shown only in development and positioned in top header area clear of welcome and driver content */}
+      {__DEV__ && (
+        <View
+          style={[
+            styles.devSwitchContainer,
+            {
+              top: Platform.OS === 'android' ? (RNStatusBar.currentHeight || 24) + 14 : 54,
+              right: currentScreen === 'driver-welcome' ? 16 : isDriverScreen ? 68 : 12,
+            },
+          ]}
+          pointerEvents="box-none"
         >
-          <Text style={styles.devSwitchText}>
-            {isDriverScreen ? '👔 Staff Flow' : '🚗 Driver Flow'}
-          </Text>
-        </TouchableOpacity>
-      </View>
+          <View style={styles.devSwitchGroup}>
+            {currentScreen === 'driver-welcome' && (
+              <TouchableOpacity
+                style={styles.devSwitchBtn}
+                activeOpacity={0.8}
+                onPress={() => setCurrentScreen('driver-home')}
+              >
+                <Text style={styles.devSwitchText}>🚗 Driver Home</Text>
+              </TouchableOpacity>
+            )}
+            <TouchableOpacity
+              style={styles.devSwitchBtn}
+              activeOpacity={0.8}
+              onPress={() =>
+                setCurrentScreen((prev) => {
+                  if (
+                    prev === 'driver-welcome' ||
+                    prev === 'driver-home' ||
+                    prev === 'driver-search' ||
+                    prev === 'driver-lot-details' ||
+                    prev === 'driver-space-selection' ||
+                    prev === 'driver-booking-summary'
+                  ) {
+                    return 'login';
+                  }
+                  return 'driver-welcome';
+                })
+              }
+            >
+              <Text style={styles.devSwitchText}>
+                {isDriverScreen ? '👔 Staff Flow' : '🚗 Driver Flow'}
+              </Text>
+            </TouchableOpacity>
+          </View>
+        </View>
+      )}
     </View>
   );
 }
@@ -377,6 +429,10 @@ const styles = StyleSheet.create({
   devSwitchContainer: {
     position: 'absolute',
     zIndex: 9999,
+  },
+  devSwitchGroup: {
+    flexDirection: 'row',
+    gap: 6,
   },
   devSwitchBtn: {
     backgroundColor: 'rgba(15, 23, 42, 0.92)',
