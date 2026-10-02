@@ -1,8 +1,8 @@
 /**
- * TEMPORARY SAMPLE DATA FOR DRIVER FLOW (UI Milestone)
- * 
+ * TEMPORARY SAMPLE DATA FOR DRIVER FLOW (UI Milestones)
+ *
  * Note: These values are isolated sample data used to build and validate
- * the UI layout matching Milestone 02 design specifications (ParkMe-04-Home).
+ * the UI layout matching Milestone design specifications.
  * This mock data will be substituted with live backend API responses
  * (/api/parking-lots) in subsequent milestones.
  */
@@ -23,6 +23,12 @@ export interface ParkingLotCardItem {
     topPercent: number; // percentage from top on illustrative map
     leftPercent: number; // percentage from left on illustrative map
   };
+  // --- Fields added for Lot Details screen (Milestone 03 / ParkMe-06-LotDetails) ---
+  amenities?: string[];    // e.g. ['CCTV Surveillance', 'EV Charging']
+  openingHours?: string;   // e.g. 'Open 24 hours' or '06:00 – 22:00'
+  parkingType?: string;    // e.g. 'Multi-story', 'Basement', 'Open-air'
+  maxHeight?: string;      // Vehicle height clearance e.g. '2.1 m'
+  operatorPhone?: string;  // Contact number for the parking operator
 }
 
 export interface MapPreviewMarker {
@@ -59,9 +65,13 @@ export const SAMPLE_NEARBY_PARKING_LOTS: ParkingLotCardItem[] = [
     isCovered: true,
     hasEVCharging: true,
     pricePerHour: 150,
-    // High-angle outdoor/mall parking lot image
     imageUrl: 'https://images.unsplash.com/photo-1506521781263-d8422e82f27a?auto=format&fit=crop&w=600&q=80',
     mapPosition: { topPercent: 30, leftPercent: 50 },
+    amenities: ['CCTV Surveillance', 'EV Charging', 'Wheelchair Access', 'Security Guard', 'Covered Parking'],
+    openingHours: 'Open 24 hours',
+    parkingType: 'Multi-story',
+    maxHeight: '2.2 m',
+    operatorPhone: '+94 11 234 5678',
   },
   {
     id: 'lot-2',
@@ -74,9 +84,13 @@ export const SAMPLE_NEARBY_PARKING_LOTS: ParkingLotCardItem[] = [
     isCovered: true,
     hasEVCharging: false,
     pricePerHour: 120,
-    // Indoor multi-story garage image
     imageUrl: 'https://images.unsplash.com/photo-1590674899484-d5640e854abe?auto=format&fit=crop&w=600&q=80',
     mapPosition: { topPercent: 20, leftPercent: 18 },
+    amenities: ['CCTV Surveillance', 'Covered Parking', 'Security Guard'],
+    openingHours: '07:00 \u2013 22:00',
+    parkingType: 'Multi-story',
+    maxHeight: '2.0 m',
+    operatorPhone: '+94 11 345 6789',
   },
   {
     id: 'lot-3',
@@ -89,9 +103,13 @@ export const SAMPLE_NEARBY_PARKING_LOTS: ParkingLotCardItem[] = [
     isCovered: true,
     hasEVCharging: true,
     pricePerHour: 160,
-    // Underground modern parking image
     imageUrl: 'https://images.unsplash.com/photo-1621929747188-0b4dc28498d2?auto=format&fit=crop&w=600&q=80',
     mapPosition: { topPercent: 55, leftPercent: 65 },
+    amenities: ['CCTV Surveillance', 'EV Charging', 'Valet Parking', 'Covered Parking', 'Wheelchair Access'],
+    openingHours: '06:00 \u2013 23:00',
+    parkingType: 'Basement',
+    maxHeight: '2.1 m',
+    operatorPhone: '+94 11 456 7890',
   },
   {
     id: 'lot-4',
@@ -106,5 +124,10 @@ export const SAMPLE_NEARBY_PARKING_LOTS: ParkingLotCardItem[] = [
     pricePerHour: 100,
     imageUrl: 'https://images.unsplash.com/photo-1573348722427-f1d6819fdf98?auto=format&fit=crop&w=600&q=80',
     mapPosition: { topPercent: 44, leftPercent: 78 },
+    amenities: ['CCTV Surveillance', 'Covered Parking', 'Motorcycle Bay'],
+    openingHours: '08:00 \u2013 21:00',
+    parkingType: 'Basement',
+    maxHeight: '1.9 m',
+    operatorPhone: '+94 11 567 8901',
   },
 ];
