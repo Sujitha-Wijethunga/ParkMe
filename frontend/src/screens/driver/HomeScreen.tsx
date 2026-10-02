@@ -9,7 +9,6 @@ import {
   SafeAreaView,
   StatusBar,
   Platform,
-  Image,
   Dimensions,
 } from 'react-native';
 import { DriverColors } from '../../constants/colors';
@@ -34,6 +33,7 @@ interface HomeScreenProps {
   onSeeAllPress?: (query?: string, chip?: DriverFilterChip) => void;
   onSearchSubmit?: (query: string, chip?: DriverFilterChip) => void;
   onBottomTabPress?: (tab: DriverTabType) => void;
+  onOpenNearbyFiveMin?: () => void;
 }
 
 const { width: SCREEN_WIDTH } = Dimensions.get('window');
@@ -56,6 +56,7 @@ export default function HomeScreen({
   onSeeAllPress,
   onSearchSubmit,
   onBottomTabPress,
+  onOpenNearbyFiveMin,
 }: HomeScreenProps) {
   const [searchQuery, setSearchQuery] = useState('');
   const [selectedChip, setSelectedChip] = useState<DriverFilterChip>('Nearest');
@@ -182,6 +183,39 @@ export default function HomeScreen({
             );
           })}
         </ScrollView>
+
+        {/* 3b. Prominent "Find Parking • 5 min away" Feature Button */}
+        <TouchableOpacity
+          style={styles.nearbyFiveMinBtn}
+          activeOpacity={0.88}
+          onPress={() => {
+            if (onOpenNearbyFiveMin) {
+              onOpenNearbyFiveMin();
+            } else if (onNavigateToMap) {
+              onNavigateToMap();
+            }
+          }}
+          accessibilityRole="button"
+          accessibilityLabel="Find Parking within 5 minutes driving time"
+        >
+          <View style={styles.nearbyFiveMinGlowIcon}>
+            <Text style={styles.nearbyFiveMinIconText}>⚡</Text>
+          </View>
+          <View style={styles.nearbyFiveMinBody}>
+            <View style={styles.nearbyFiveMinTitleRow}>
+              <Text style={styles.nearbyFiveMinTitle}>Find Parking • 5 min away</Text>
+              <View style={styles.nearbyFiveMinLiveBadge}>
+                <Text style={styles.nearbyFiveMinLiveBadgeText}>LIVE GPS</Text>
+              </View>
+            </View>
+            <Text style={styles.nearbyFiveMinSubtitle}>
+              Available spots within 300s road driving reach
+            </Text>
+          </View>
+          <View style={styles.nearbyFiveMinChevron}>
+            <Text style={styles.nearbyFiveMinChevronText}>›</Text>
+          </View>
+        </TouchableOpacity>
 
         {/* 4. Static Map Graphic Preview (Documented Non-Functional Milestone Preview) */}
         <View style={styles.mapPreviewCard}>
@@ -684,6 +718,85 @@ const styles = StyleSheet.create({
   // Cards List
   cardsListContainer: {
     gap: 12,
+  },
+
+  // 3b. Nearby 5-Min Feature Button
+  nearbyFiveMinBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: '#0F172A',
+    borderRadius: 16,
+    paddingHorizontal: 16,
+    paddingVertical: 14,
+    marginVertical: 14,
+    borderWidth: 1.5,
+    borderColor: '#3B82F6',
+    shadowColor: '#2563EB',
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.28,
+    shadowRadius: 8,
+    elevation: 6,
+  },
+  nearbyFiveMinGlowIcon: {
+    width: 42,
+    height: 42,
+    borderRadius: 21,
+    backgroundColor: '#1E293B',
+    borderWidth: 1,
+    borderColor: '#38BDF8',
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginRight: 12,
+  },
+  nearbyFiveMinIconText: {
+    fontSize: 20,
+  },
+  nearbyFiveMinBody: {
+    flex: 1,
+  },
+  nearbyFiveMinTitleRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    marginBottom: 3,
+  },
+  nearbyFiveMinTitle: {
+    fontSize: 15,
+    fontWeight: '800',
+    color: '#FFFFFF',
+    letterSpacing: -0.2,
+  },
+  nearbyFiveMinLiveBadge: {
+    backgroundColor: '#10B981',
+    paddingHorizontal: 6,
+    paddingVertical: 2,
+    borderRadius: 6,
+  },
+  nearbyFiveMinLiveBadgeText: {
+    color: '#FFFFFF',
+    fontSize: 9,
+    fontWeight: '800',
+    letterSpacing: 0.5,
+  },
+  nearbyFiveMinSubtitle: {
+    fontSize: 12,
+    color: '#94A3B8',
+    fontWeight: '500',
+  },
+  nearbyFiveMinChevron: {
+    width: 28,
+    height: 28,
+    borderRadius: 14,
+    backgroundColor: '#1E293B',
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginLeft: 8,
+  },
+  nearbyFiveMinChevronText: {
+    color: '#38BDF8',
+    fontSize: 18,
+    fontWeight: '700',
+    lineHeight: 20,
   },
 });
 

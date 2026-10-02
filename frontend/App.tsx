@@ -89,11 +89,13 @@ export default function App() {
     viewMode: SearchResultsViewMode;
     filterChip: DriverFilterChip;
     selectedLotId: string | null;
+    nearbyFiveMinMode?: boolean;
   }>({
     query: '',
     viewMode: 'map',
     filterChip: 'Nearest',
     selectedLotId: null,
+    nearbyFiveMinMode: false,
   });
   /** ID of the lot currently being viewed in LotDetailsScreen. */
   const [selectedLotId, setSelectedLotId] = useState<string>('');
@@ -117,7 +119,18 @@ export default function App() {
     viewMode: SearchResultsViewMode = 'map',
     filterChip: DriverFilterChip = 'Nearest'
   ) => {
-    setSearchParams({ query, viewMode, filterChip, selectedLotId: null });
+    setSearchParams({ query, viewMode, filterChip, selectedLotId: null, nearbyFiveMinMode: false });
+    setCurrentScreen('driver-search');
+  };
+
+  const handleOpenNearbyFiveMin = () => {
+    setSearchParams({
+      query: '',
+      viewMode: 'map',
+      filterChip: 'Nearest',
+      selectedLotId: null,
+      nearbyFiveMinMode: true,
+    });
     setCurrentScreen('driver-search');
   };
 
@@ -258,6 +271,7 @@ export default function App() {
           onOpenFilter={() => handleOpenSearch('', 'list', 'Nearest')}
           onSeeAllPress={(query, chip) => handleOpenSearch(query || '', 'list', chip || 'Nearest')}
           onSearchSubmit={(query, chip) => handleOpenSearch(query, 'list', chip || 'Nearest')}
+          onOpenNearbyFiveMin={handleOpenNearbyFiveMin}
           onBottomTabPress={(tab) => {
             if (tab === 'map') {
               handleOpenSearch('', 'map', 'Nearest');
@@ -271,6 +285,7 @@ export default function App() {
           initialViewMode={searchParams.viewMode}
           initialFilter={searchParams.filterChip}
           initialSelectedLotId={searchParams.selectedLotId}
+          initialNearbyFiveMinMode={searchParams.nearbyFiveMinMode}
           onBack={() => setCurrentScreen('driver-home')}
           onNavigateHome={() => setCurrentScreen('driver-home')}
           onSelectLot={(lotId, snapshot) =>
