@@ -13,6 +13,13 @@ import HomeScreen from './src/screens/driver/HomeScreen';
 import SearchResultsScreen, { SearchResultsViewMode } from './src/screens/driver/SearchResultsScreen';
 import LotDetailsScreen from './src/screens/driver/LotDetailsScreen';
 import SelectSpaceScreen, { SpaceSelectionResult } from './src/screens/driver/SelectSpaceScreen';
+import BookingSummaryScreen from './src/screens/driver/BookingSummaryScreen';
+import {
+  BookingDraft,
+  ConfirmedBookingPayload,
+  formatArrivalDate,
+  formatTime12,
+} from './src/constants/bookingDraft';
 import StaffLoginScreen from './src/screens/staff/StaffLoginScreen';
 import StaffDashboardScreen from './src/screens/staff/StaffDashboardScreen';
 import ManageSpaceScreen, { SpaceItem, initialSpaces } from './src/screens/staff/ManageSpaceScreen';
@@ -30,6 +37,7 @@ type ScreenType =
   | 'driver-search'
   | 'driver-lot-details'
   | 'driver-space-selection'
+  | 'driver-booking-summary'
   | 'login'
   | 'dashboard'
   | 'spaces'
@@ -67,6 +75,8 @@ export default function App() {
   });
   const [authToken, setAuthToken] = useState<string | null>(null);
   const [spaces, setSpaces] = useState<SpaceItem[]>(initialSpaces);
+  const [bookingSelection, setBookingSelection] = useState<SpaceSelectionResult | null>(null);
+  const [bookingDraft, setBookingDraft] = useState<BookingDraft | null>(null);
 
   const handleOpenSearch = (
     query: string = '',
@@ -95,20 +105,39 @@ export default function App() {
   };
 
   const handleOpenSpaceSelection = (lotId: string) => {
+    // If switching to a different lot, clear incompatible space selection and draft
+    if (spaceSelectionLotId !== lotId) {
+      setBookingSelection(null);
+      setBookingDraft(null);
+    }
     setSpaceSelectionLotId(lotId);
     setCurrentScreen('driver-space-selection');
   };
 
   /**
-   * Called when the user presses Continue on the Select Space screen.
-   * Booking Summary is the next milestone — show a clear placeholder alert.
-   * The typed SpaceSelectionResult is ready for the Booking Summary screen to consume.
+   * Called when the user confirms space selection.
+   * Navigates to the Booking Summary screen with the selected space.
    */
   const handleSpaceSelectionContinue = (selection: SpaceSelectionResult) => {
-    const { spaceId, floor, vehicleType, tariffPerHour } = selection;
+    setBookingSelection(selection);
+    setCurrentScreen('driver-booking-summary');
+  };
+
+  /**
+   * Called when the user confirms the booking summary.
+   * Reservation creation and payment gateway integration are in the next milestone.
+   */
+  const handleBookingProceed = (payload: ConfirmedBookingPayload) => {
+    const { draft, price } = payload;
     Alert.alert(
-      'Coming Next: Booking Summary',
-      `You selected Space ${spaceId} on floor ${floor} (${vehicleType} · Rs. ${tariffPerHour}/hr).\n\nBooking Summary and payment will be implemented in the next milestone.`,
+      'Coming Next: Payment & Reservation',
+      `Booking draft ready for confirmation:\n\n` +
+        `• Space: ${draft.spaceId} (Floor ${draft.floor})\n` +
+        `• Arrival: ${formatArrivalDate(draft.arrivalTime)} at ${formatTime12(draft.arrivalTime)}\n` +
+        `• Duration: ${draft.durationHours} hrs (until ${formatTime12(price.endTime)})\n` +
+        `• Estimated Total: Rs. ${price.totalRs}\n` +
+        `• Vehicle: ${draft.vehiclePlate} (${draft.vehicleModel})\n\n` +
+        `Payment gateway integration and server reservation creation via POST /api/reservations are coming in the next milestone.`,
       [{ text: 'Got it', style: 'default' }]
     );
   };
@@ -183,8 +212,19 @@ export default function App() {
       {currentScreen === 'driver-space-selection' && (
         <SelectSpaceScreen
           lotId={spaceSelectionLotId}
+          initialSelection={bookingSelection}
           onBack={() => setCurrentScreen('driver-lot-details')}
           onContinue={handleSpaceSelectionContinue}
+        />
+      )}
+      {currentScreen === 'driver-booking-summary' && bookingSelection && (
+        <BookingSummaryScreen
+          key={`${bookingSelection.lotId}-${bookingSelection.spaceId}`}
+          selection={bookingSelection}
+          initialDraft={bookingDraft}
+          onDraftChange={setBookingDraft}
+          onBack={() => setCurrentScreen('driver-space-selection')}
+          onProceed={handleBookingProceed}
         />
       )}
       {currentScreen === 'login' && (
