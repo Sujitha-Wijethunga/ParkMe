@@ -21,6 +21,11 @@ import SearchResultsScreen, { SearchResultsViewMode } from './src/screens/driver
 import LotDetailsScreen from './src/screens/driver/LotDetailsScreen';
 import SelectSpaceScreen, { SpaceSelectionResult } from './src/screens/driver/SelectSpaceScreen';
 import BookingSummaryScreen from './src/screens/driver/BookingSummaryScreen';
+import PaymentScreen from './src/screens/driver/PaymentScreen';
+import BookingConfirmedScreen from './src/screens/driver/BookingConfirmedScreen';
+import NavigationScreen from './src/screens/driver/NavigationScreen';
+import { BookingDetails } from './src/constants/bookingTypes';
+
 import {
   BookingDraft,
   ConfirmedBookingPayload,
@@ -39,12 +44,17 @@ import LeaveRequestScreen from './src/screens/staff/LeaveRequestScreen';
 import { StaffProfile, defaultStaffProfile } from './src/constants/profile';
 import { DriverFilterChip } from './src/constants/driverSampleData';
 
+
 type ScreenType =
   | 'driver-welcome'
   | 'driver-home'
   | 'driver-search'
   | 'driver-lot-details'
   | 'driver-space-selection'
+  | 'driver-booking-summary'
+  | 'driver-payment'
+  | 'driver-booking-confirmed'
+  | 'driver-navigation'
   | 'driver-booking-summary'
   | 'login'
   | 'dashboard'
@@ -55,6 +65,7 @@ type ScreenType =
   | 'change-password'
   | 'attendance'
   | 'leave-request';
+  
 
 export default function App() {
   const [appIsReady, setAppIsReady] = useState(false);
@@ -111,6 +122,8 @@ export default function App() {
   const [spaces, setSpaces] = useState<SpaceItem[]>(initialSpaces);
   const [bookingSelection, setBookingSelection] = useState<SpaceSelectionResult | null>(null);
   const [bookingDraft, setBookingDraft] = useState<BookingDraft | null>(null);
+  /** NEW: booking used by Payment, Booking Confirmed and Navigation screens. */
+  const [confirmedBooking, setConfirmedBooking] = useState<BookingDetails | null>(null);
 
   const handleOpenSearch = (
     query: string = '',
@@ -176,6 +189,36 @@ export default function App() {
     );
   };
 
+  /** NEW: Booking Summary -> Payment */
+  const handleBookingProceedToPayment = (payload: ConfirmedBookingPayload) => {
+    if (!bookingSelection) return;
+    const { draft, price } = payload;
+    setConfirmedBooking({
+      lotId: bookingSelection.lotId,
+      spaceId: bookingSelection.spaceId,
+      floor: bookingSelection.floor,
+      vehicleType: bookingSelection.vehicleType,
+      tariffPerHour: bookingSelection.tariffPerHour,
+      hours: draft.durationHours,
+      total: price.totalRs,
+    });
+    setCurrentScreen('driver-payment');
+  };
+
+  /** NEW: Payment -> Booking Confirmed (receives the final total after promo) */
+  const handlePaid = (paid: BookingDetails) => {
+    setConfirmedBooking(paid);
+    setCurrentScreen('driver-booking-confirmed');
+  };
+
+  /** NEW: Cancel / finish: clear the booking and go Home */
+  const resetBookingFlow = () => {
+    setConfirmedBooking(null);
+    setBookingSelection(null);
+    setBookingDraft(null);
+    setCurrentScreen('driver-home');
+  };
+
   /**
    * Called when user taps 'Get Started' on the Welcome Screen.
    * Driver sign up / onboarding is the next milestone.
@@ -232,7 +275,10 @@ export default function App() {
     currentScreen === 'driver-search' ||
     currentScreen === 'driver-lot-details' ||
     currentScreen === 'driver-space-selection' ||
-    currentScreen === 'driver-booking-summary';
+    currentScreen === 'driver-booking-summary' ||
+    currentScreen === 'driver-payment' ||
+    currentScreen === 'driver-booking-confirmed' ||
+    currentScreen === 'driver-navigation';
 
   return (
     <View style={styles.rootContainer} onLayout={onLayoutRootView}>
@@ -302,7 +348,29 @@ export default function App() {
           initialDraft={bookingDraft}
           onDraftChange={setBookingDraft}
           onBack={() => setCurrentScreen('driver-space-selection')}
-          onProceed={handleBookingProceed}
+          onProceed={handleBookingProceedToPayment}
+        />
+      )}
+      {/* NEW: Payment, Booking Confirmed, Navigation */}
+      {currentScreen === 'driver-payment' && confirmedBooking && (
+        <PaymentScreen
+          booking={confirmedBooking}
+          onBack={() => setCurrentScreen('driver-booking-summary')}
+          onPay={handlePaid}
+        />
+      )}
+      {currentScreen === 'driver-booking-confirmed' && confirmedBooking && (
+        <BookingConfirmedScreen
+          booking={confirmedBooking}
+          onGetDirections={() => setCurrentScreen('driver-navigation')}
+          onCancel={resetBookingFlow}
+        />
+      )}
+      {currentScreen === 'driver-navigation' && confirmedBooking && (
+        <NavigationScreen
+          booking={confirmedBooking}
+          onCancel={() => setCurrentScreen('driver-booking-confirmed')}
+          onArrived={resetBookingFlow}
         />
       )}
       {currentScreen === 'login' && (
@@ -403,7 +471,10 @@ export default function App() {
                     prev === 'driver-search' ||
                     prev === 'driver-lot-details' ||
                     prev === 'driver-space-selection' ||
-                    prev === 'driver-booking-summary'
+                    prev === 'driver-booking-summary' ||
+                    prev === 'driver-payment' ||
+                    prev === 'driver-booking-confirmed' ||
+                    prev === 'driver-navigation'
                   ) {
                     return 'login';
                   }
@@ -454,4 +525,3 @@ const styles = StyleSheet.create({
     letterSpacing: 0.2,
   },
 });
-
