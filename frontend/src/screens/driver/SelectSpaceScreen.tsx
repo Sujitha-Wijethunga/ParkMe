@@ -1,4 +1,4 @@
-import React, { useState, useMemo, useCallback } from 'react';
+import React, { useState, useMemo, useCallback, useEffect } from 'react';
 import {
   View,
   Text,
@@ -8,6 +8,7 @@ import {
   SafeAreaView,
   StatusBar,
   Platform,
+  BackHandler,
 } from 'react-native';
 import { DriverColors } from '../../constants/colors';
 import { SAMPLE_NEARBY_PARKING_LOTS } from '../../constants/driverSampleData';
@@ -32,12 +33,12 @@ export interface SpaceSelectionResult {
 interface SelectSpaceScreenProps {
   /** Stable lot ID — carried from LotDetailsScreen. */
   lotId: string;
+  /** Previously selected space result to preserve when returning from Booking Summary. */
+  initialSelection?: SpaceSelectionResult | null;
   /** Returns to LotDetailsScreen for this lot. */
   onBack: () => void;
   /**
    * Called when the user confirms a space selection.
-   * The continuation to Booking Summary is the next milestone;
-   * callers should show a placeholder until that screen exists.
    */
   onContinue: (selection: SpaceSelectionResult) => void;
 }
@@ -98,7 +99,12 @@ function isSelectable(status: SpaceUIStatus): boolean {
  *   - Continue is disabled until a valid space is selected.
  *   - No state is written to the backend; selection is local to this screen.
  * ────────────────────────────────────────────────────────────────────────── */
-export default function SelectSpaceScreen({ lotId, onBack, onContinue }: SelectSpaceScreenProps) {
+export default function SelectSpaceScreen({
+  lotId,
+  initialSelection,
+  onBack,
+  onContinue,
+}: SelectSpaceScreenProps) {
   /* Lot metadata */
   const lot = SAMPLE_NEARBY_PARKING_LOTS.find((l) => l.id === lotId);
   const layout = getSpaceLayoutForLot(lotId);
@@ -109,9 +115,29 @@ export default function SelectSpaceScreen({ lotId, onBack, onContinue }: SelectS
     return layout.floors.find((f) => f.label === 'G') ?? layout.floors[0];
   }, [layout]);
 
-  const [activeFloor, setActiveFloor] = useState<LotFloor | null>(defaultFloor);
-  const [selectedSpaceId, setSelectedSpaceId] = useState<string | null>(null);
-  const [vehicleType, setVehicleType] = useState<VehicleType>('Car');
+  const matchingFloor = useMemo(() => {
+    if (!layout || !initialSelection || initialSelection.lotId !== lotId) return null;
+    return layout.floors.find((f) => f.label === initialSelection.floor) ?? null;
+  }, [layout, initialSelection, lotId]);
+
+  const [activeFloor, setActiveFloor] = useState<LotFloor | null>(
+    matchingFloor ?? defaultFloor
+  );
+  const [selectedSpaceId, setSelectedSpaceId] = useState<string | null>(
+    initialSelection && initialSelection.lotId === lotId ? initialSelection.spaceId : null
+  );
+  const [vehicleType, setVehicleType] = useState<VehicleType>(
+    initialSelection && initialSelection.lotId === lotId ? initialSelection.vehicleType : 'Car'
+  );
+
+  // Android hardware back handler
+  useEffect(() => {
+    const sub = BackHandler.addEventListener('hardwareBackPress', () => {
+      onBack();
+      return true;
+    });
+    return () => sub.remove();
+  }, [onBack]);
 
   /* Derived */
   const tariffs = layout?.tariffs ?? { Car: lot?.pricePerHour ?? 0, Bike: 0, SUV: 0, EV: 0 };
