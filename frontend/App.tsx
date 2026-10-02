@@ -6,11 +6,13 @@ import {
   StyleSheet,
   Platform,
   StatusBar as RNStatusBar,
+  Alert,
 } from 'react-native';
 import { StatusBar } from 'expo-status-bar';
 import HomeScreen from './src/screens/driver/HomeScreen';
 import SearchResultsScreen, { SearchResultsViewMode } from './src/screens/driver/SearchResultsScreen';
 import LotDetailsScreen from './src/screens/driver/LotDetailsScreen';
+import SelectSpaceScreen, { SpaceSelectionResult } from './src/screens/driver/SelectSpaceScreen';
 import StaffLoginScreen from './src/screens/staff/StaffLoginScreen';
 import StaffDashboardScreen from './src/screens/staff/StaffDashboardScreen';
 import ManageSpaceScreen, { SpaceItem, initialSpaces } from './src/screens/staff/ManageSpaceScreen';
@@ -27,6 +29,7 @@ type ScreenType =
   | 'driver-home'
   | 'driver-search'
   | 'driver-lot-details'
+  | 'driver-space-selection'
   | 'login'
   | 'dashboard'
   | 'spaces'
@@ -52,6 +55,8 @@ export default function App() {
   });
   /** ID of the lot currently being viewed in LotDetailsScreen. */
   const [selectedLotId, setSelectedLotId] = useState<string>('');
+  /** ID of the lot being shown in SelectSpaceScreen. */
+  const [spaceSelectionLotId, setSpaceSelectionLotId] = useState<string>('');
   /** Which driver screen opened lot details, so Back returns to the right place. */
   const [lotDetailsOrigin, setLotDetailsOrigin] = useState<'driver-home' | 'driver-search'>('driver-home');
   const [loggedStaffId, setLoggedStaffId] = useState<string>('STF-4091');
@@ -87,6 +92,25 @@ export default function App() {
 
   const handleBackFromLotDetails = () => {
     setCurrentScreen(lotDetailsOrigin);
+  };
+
+  const handleOpenSpaceSelection = (lotId: string) => {
+    setSpaceSelectionLotId(lotId);
+    setCurrentScreen('driver-space-selection');
+  };
+
+  /**
+   * Called when the user presses Continue on the Select Space screen.
+   * Booking Summary is the next milestone — show a clear placeholder alert.
+   * The typed SpaceSelectionResult is ready for the Booking Summary screen to consume.
+   */
+  const handleSpaceSelectionContinue = (selection: SpaceSelectionResult) => {
+    const { spaceId, floor, vehicleType, tariffPerHour } = selection;
+    Alert.alert(
+      'Coming Next: Booking Summary',
+      `You selected Space ${spaceId} on floor ${floor} (${vehicleType} · Rs. ${tariffPerHour}/hr).\n\nBooking Summary and payment will be implemented in the next milestone.`,
+      [{ text: 'Got it', style: 'default' }]
+    );
   };
 
   const handleLoginSuccess = (user: any, token: string) => {
@@ -153,6 +177,14 @@ export default function App() {
         <LotDetailsScreen
           lotId={selectedLotId}
           onBack={handleBackFromLotDetails}
+          onSelectSpace={handleOpenSpaceSelection}
+        />
+      )}
+      {currentScreen === 'driver-space-selection' && (
+        <SelectSpaceScreen
+          lotId={spaceSelectionLotId}
+          onBack={() => setCurrentScreen('driver-lot-details')}
+          onContinue={handleSpaceSelectionContinue}
         />
       )}
       {currentScreen === 'login' && (
@@ -226,7 +258,7 @@ export default function App() {
           styles.devSwitchContainer,
           {
             top: Platform.OS === 'android' ? (RNStatusBar.currentHeight || 24) + 14 : 54,
-            right: currentScreen === 'driver-home' ? 68 : currentScreen === 'driver-lot-details' ? 68 : 12,
+            right: currentScreen === 'driver-home' ? 68 : currentScreen === 'driver-lot-details' || currentScreen === 'driver-space-selection' ? 68 : 12,
           },
         ]}
         pointerEvents="box-none"
@@ -236,14 +268,14 @@ export default function App() {
           activeOpacity={0.8}
           onPress={() =>
             setCurrentScreen((prev) =>
-              prev === 'driver-home' || prev === 'driver-search' || prev === 'driver-lot-details'
+              prev === 'driver-home' || prev === 'driver-search' || prev === 'driver-lot-details' || prev === 'driver-space-selection'
                 ? 'login'
                 : 'driver-home'
             )
           }
         >
           <Text style={styles.devSwitchText}>
-            {currentScreen === 'driver-home' || currentScreen === 'driver-search' || currentScreen === 'driver-lot-details'
+            {currentScreen === 'driver-home' || currentScreen === 'driver-search' || currentScreen === 'driver-lot-details' || currentScreen === 'driver-space-selection'
               ? '👔 Staff Flow'
               : '🚗 Driver Flow'}
           </Text>
