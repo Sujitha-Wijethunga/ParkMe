@@ -10,6 +10,7 @@ import {
 import { StatusBar } from 'expo-status-bar';
 import HomeScreen from './src/screens/driver/HomeScreen';
 import SearchResultsScreen, { SearchResultsViewMode } from './src/screens/driver/SearchResultsScreen';
+import LotDetailsScreen from './src/screens/driver/LotDetailsScreen';
 import StaffLoginScreen from './src/screens/staff/StaffLoginScreen';
 import StaffDashboardScreen from './src/screens/staff/StaffDashboardScreen';
 import ManageSpaceScreen, { SpaceItem, initialSpaces } from './src/screens/staff/ManageSpaceScreen';
@@ -25,6 +26,7 @@ import { DriverFilterChip } from './src/constants/driverSampleData';
 type ScreenType =
   | 'driver-home'
   | 'driver-search'
+  | 'driver-lot-details'
   | 'login'
   | 'dashboard'
   | 'spaces'
@@ -41,11 +43,17 @@ export default function App() {
     query: string;
     viewMode: SearchResultsViewMode;
     filterChip: DriverFilterChip;
+    selectedLotId: string | null;
   }>({
     query: '',
     viewMode: 'map',
     filterChip: 'Nearest',
+    selectedLotId: null,
   });
+  /** ID of the lot currently being viewed in LotDetailsScreen. */
+  const [selectedLotId, setSelectedLotId] = useState<string>('');
+  /** Which driver screen opened lot details, so Back returns to the right place. */
+  const [lotDetailsOrigin, setLotDetailsOrigin] = useState<'driver-home' | 'driver-search'>('driver-home');
   const [loggedStaffId, setLoggedStaffId] = useState<string>('STF-4091');
   const [staffProfile, setStaffProfile] = useState<StaffProfile>(defaultStaffProfile);
   const [activeReservation, setActiveReservation] = useState<{ ref: string; slot: string }>({
@@ -60,8 +68,25 @@ export default function App() {
     viewMode: SearchResultsViewMode = 'map',
     filterChip: DriverFilterChip = 'Nearest'
   ) => {
-    setSearchParams({ query, viewMode, filterChip });
+    setSearchParams({ query, viewMode, filterChip, selectedLotId: null });
     setCurrentScreen('driver-search');
+  };
+
+  const handleOpenLotDetails = (
+    lotId: string,
+    origin: 'driver-home' | 'driver-search',
+    searchSnapshot?: { query: string; viewMode: SearchResultsViewMode; filterChip: DriverFilterChip; selectedLotId: string | null }
+  ) => {
+    setSelectedLotId(lotId);
+    setLotDetailsOrigin(origin);
+    if (searchSnapshot) {
+      setSearchParams(searchSnapshot);
+    }
+    setCurrentScreen('driver-lot-details');
+  };
+
+  const handleBackFromLotDetails = () => {
+    setCurrentScreen(lotDetailsOrigin);
   };
 
   const handleLoginSuccess = (user: any, token: string) => {
@@ -93,9 +118,9 @@ export default function App() {
         <HomeScreen
           userName="Kasun"
           onNavigateToMap={() => handleOpenSearch('', 'map', 'Nearest')}
-          onNavigateToLotDetails={(lotId) => {
-            // Placeholder for Lot Details milestone
-          }}
+          onNavigateToLotDetails={(lotId) =>
+            handleOpenLotDetails(lotId, 'driver-home')
+          }
           onNavigateToBookings={() => {}}
           onNavigateToProfile={() => {}}
           onNavigateToNotifications={() => {}}
@@ -114,13 +139,20 @@ export default function App() {
           initialQuery={searchParams.query}
           initialViewMode={searchParams.viewMode}
           initialFilter={searchParams.filterChip}
+          initialSelectedLotId={searchParams.selectedLotId}
           onBack={() => setCurrentScreen('driver-home')}
           onNavigateHome={() => setCurrentScreen('driver-home')}
-          onSelectLot={(lotId) => {
-            // Placeholder for Lot Details milestone
-          }}
+          onSelectLot={(lotId, snapshot) =>
+            handleOpenLotDetails(lotId, 'driver-search', snapshot)
+          }
           onNavigateBookings={() => {}}
           onNavigateProfile={() => {}}
+        />
+      )}
+      {currentScreen === 'driver-lot-details' && (
+        <LotDetailsScreen
+          lotId={selectedLotId}
+          onBack={handleBackFromLotDetails}
         />
       )}
       {currentScreen === 'login' && (
@@ -194,7 +226,7 @@ export default function App() {
           styles.devSwitchContainer,
           {
             top: Platform.OS === 'android' ? (RNStatusBar.currentHeight || 24) + 14 : 54,
-            right: currentScreen === 'driver-home' ? 68 : 12,
+            right: currentScreen === 'driver-home' ? 68 : currentScreen === 'driver-lot-details' ? 68 : 12,
           },
         ]}
         pointerEvents="box-none"
@@ -204,12 +236,14 @@ export default function App() {
           activeOpacity={0.8}
           onPress={() =>
             setCurrentScreen((prev) =>
-              prev === 'driver-home' || prev === 'driver-search' ? 'login' : 'driver-home'
+              prev === 'driver-home' || prev === 'driver-search' || prev === 'driver-lot-details'
+                ? 'login'
+                : 'driver-home'
             )
           }
         >
           <Text style={styles.devSwitchText}>
-            {currentScreen === 'driver-home' || currentScreen === 'driver-search'
+            {currentScreen === 'driver-home' || currentScreen === 'driver-search' || currentScreen === 'driver-lot-details'
               ? '👔 Staff Flow'
               : '🚗 Driver Flow'}
           </Text>

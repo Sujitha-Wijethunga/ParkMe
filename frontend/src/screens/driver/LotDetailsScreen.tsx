@@ -1,0 +1,912 @@
+import React from 'react';
+import {
+  View,
+  Text,
+  StyleSheet,
+  ScrollView,
+  TouchableOpacity,
+  SafeAreaView,
+  StatusBar,
+  Platform,
+  Image,
+  Alert,
+} from 'react-native';
+import { DriverColors } from '../../constants/colors';
+import {
+  ParkingLotCardItem,
+  SAMPLE_NEARBY_PARKING_LOTS,
+} from '../../constants/driverSampleData';
+
+interface LotDetailsScreenProps {
+  /** Stable lot ID passed from the card that was tapped. */
+  lotId: string;
+  /** Navigate back to the originating screen (Home or Search Results). */
+  onBack: () => void;
+}
+
+const AMENITY_ICONS: Record<string, string> = {
+  'CCTV Surveillance': '📷',
+  'EV Charging': '⚡',
+  'Wheelchair Access': '♿',
+  'Security Guard': '👮',
+  'Covered Parking': '🏛️',
+  'Valet Parking': '🤵',
+  'Motorcycle Bay': '🏍️',
+  'Well-lit': '💡',
+  Accessible: '♿',
+  CCTV: '📷',
+};
+
+/**
+ * Driver Parking Lot Details Screen  (ParkMe-06-LotDetails)
+ *
+ * Shows details for the selected parking lot based on lotId.
+ * Data is sourced from SAMPLE_NEARBY_PARKING_LOTS; no backend call is made.
+ * Ratings and live occupancy counts are intentionally excluded – they are
+ * not present in the current sample data and must not be fabricated.
+ *
+ * The "Reserve a Space" CTA is a placeholder that will be wired to the
+ * Select Space milestone in the next sprint.
+ */
+export default function LotDetailsScreen({ lotId, onBack }: LotDetailsScreenProps) {
+  // Resolve the lot from the shared sample data by stable ID
+  const lot: ParkingLotCardItem | undefined = SAMPLE_NEARBY_PARKING_LOTS.find(
+    (l) => l.id === lotId
+  );
+
+  // ── Guard: unknown or missing lot ──────────────────────────────────────────
+  if (!lot) {
+    return (
+      <SafeAreaView style={styles.errorContainer}>
+        <StatusBar barStyle="dark-content" backgroundColor="#FFFFFF" />
+        <View style={styles.errorInner}>
+          <Text style={styles.errorEmoji}>🚧</Text>
+          <Text style={styles.errorTitle}>Parking lot not found</Text>
+          <Text style={styles.errorSubtitle}>
+            The lot you selected could not be loaded.{'\n'}Please go back and try again.
+          </Text>
+          <TouchableOpacity style={styles.errorBackBtn} activeOpacity={0.8} onPress={onBack}>
+            <Text style={styles.errorBackText}>← Back</Text>
+          </TouchableOpacity>
+        </View>
+      </SafeAreaView>
+    );
+  }
+
+  // Derived values from sample data (no invented data)
+  const availabilityPct = lot.totalSpaces > 0
+    ? Math.round((lot.availableSpaces / lot.totalSpaces) * 100)
+    : 0;
+  const dailyRateEstimate = lot.pricePerHour * 6; // display-only estimate (6 hr cap convention)
+
+  const handleReserve = () => {
+    // Space selection is the next milestone — surface a clear placeholder message.
+    Alert.alert(
+      'Coming Next',
+      'Space selection and reservation will be available in the next milestone. This button is a placeholder for that flow.',
+      [{ text: 'Got it', style: 'default' }]
+    );
+  };
+
+  return (
+    <SafeAreaView style={styles.safeArea}>
+      <StatusBar barStyle="light-content" backgroundColor="transparent" translucent />
+
+      {/* ── Scrollable body ─────────────────────────────────────────────────── */}
+      <ScrollView
+        style={styles.scrollView}
+        contentContainerStyle={styles.scrollContent}
+        showsVerticalScrollIndicator={false}
+      >
+        {/* 1. Hero Image + Gradient Overlay ──────────────────────────────── */}
+        <View style={styles.heroContainer}>
+          <Image
+            source={{ uri: lot.imageUrl }}
+            style={styles.heroImage}
+            resizeMode="cover"
+          />
+          {/* Dark gradient overlay */}
+          <View style={styles.heroOverlay} />
+
+          {/* Top action buttons */}
+          <View
+            style={[
+              styles.heroTopBar,
+              { paddingTop: Platform.OS === 'android' ? (StatusBar.currentHeight ?? 24) + 8 : 54 },
+            ]}
+          >
+            <TouchableOpacity
+              style={styles.heroBtn}
+              activeOpacity={0.8}
+              onPress={onBack}
+              accessibilityLabel="Go back"
+              accessibilityRole="button"
+            >
+              <Text style={styles.heroBtnText}>←</Text>
+            </TouchableOpacity>
+
+            <View style={styles.heroRightBtns}>
+              <TouchableOpacity
+                style={styles.heroBtn}
+                activeOpacity={0.8}
+                accessibilityLabel="Share this lot"
+              >
+                <Text style={styles.heroBtnText}>↗</Text>
+              </TouchableOpacity>
+              <TouchableOpacity
+                style={styles.heroBtn}
+                activeOpacity={0.8}
+                accessibilityLabel="Save to favourites"
+              >
+                <Text style={styles.heroBtnText}>♡</Text>
+              </TouchableOpacity>
+            </View>
+          </View>
+
+          {/* Hero title block */}
+          <View style={styles.heroTitleBlock}>
+            <Text style={styles.heroLotName}>{lot.name}</Text>
+            <View style={styles.heroAddressRow}>
+              <Text style={styles.heroAddressIcon}>📍</Text>
+              <Text style={styles.heroAddress}>{lot.address}, Sri Lanka</Text>
+            </View>
+          </View>
+        </View>
+
+        {/* 2. Quick Stats Row ─────────────────────────────────────────────── */}
+        <View style={styles.statsRow}>
+          {/* Distance */}
+          <View style={styles.statCell}>
+            <Text style={styles.statIcon}>📐</Text>
+            <Text style={styles.statPrimary}>{lot.distance}</Text>
+            <Text style={styles.statSecondary}>from you</Text>
+          </View>
+
+          <View style={styles.statDivider} />
+
+          {/* Opening Hours */}
+          <View style={styles.statCell}>
+            <Text style={styles.statIcon}>🕐</Text>
+            <Text style={[styles.statPrimary, styles.statGreen]}>
+              {lot.openingHours ?? 'Hours N/A'}
+            </Text>
+            <Text style={styles.statSecondary}>
+              {lot.parkingType ?? 'Parking'}
+            </Text>
+          </View>
+
+          <View style={styles.statDivider} />
+
+          {/* Max height */}
+          <View style={styles.statCell}>
+            <Text style={styles.statIcon}>🚗</Text>
+            <Text style={styles.statPrimary}>{lot.maxHeight ?? '—'}</Text>
+            <Text style={styles.statSecondary}>max height</Text>
+          </View>
+        </View>
+
+        {/* 3. Current Availability ────────────────────────────────────────── */}
+        <View style={styles.section}>
+          <Text style={styles.sectionLabel}>CURRENT AVAILABILITY</Text>
+
+          <View style={styles.availabilityRow}>
+            <View style={styles.availBadgeRow}>
+              <View style={[
+                styles.statusBadge,
+                lot.status === 'Available' && styles.statusBadgeGreen,
+                lot.status === 'Full' && styles.statusBadgeRed,
+                lot.status === 'Limited' && styles.statusBadgeOrange,
+              ]}>
+                <Text style={[
+                  styles.statusBadgeText,
+                  lot.status === 'Available' && styles.statusBadgeTextGreen,
+                  lot.status === 'Full' && styles.statusBadgeTextRed,
+                  lot.status === 'Limited' && styles.statusBadgeTextOrange,
+                ]}>
+                  {lot.status === 'Available' ? '✓ ' : lot.status === 'Full' ? '✕ ' : '⚠ '}
+                  {lot.status}
+                </Text>
+              </View>
+              <Text style={styles.availSpacesText}>
+                <Text style={styles.availSpacesBold}>{lot.availableSpaces}</Text>
+                {' '}of{' '}
+                <Text style={styles.availSpacesBold}>{lot.totalSpaces}</Text>
+                {' '}spots free
+              </Text>
+            </View>
+
+            <View style={styles.availPctColumn}>
+              <Text style={styles.availPctText}>{availabilityPct}% free</Text>
+              <View style={styles.progressTrack}>
+                <View
+                  style={[
+                    styles.progressFill,
+                    { width: `${availabilityPct}%` },
+                    lot.status === 'Full' && styles.progressFillRed,
+                    lot.status === 'Limited' && styles.progressFillOrange,
+                  ]}
+                />
+              </View>
+            </View>
+          </View>
+        </View>
+
+        {/* 4. Pricing ─────────────────────────────────────────────────────── */}
+        <View style={styles.section}>
+          <Text style={styles.sectionLabel}>PRICING</Text>
+
+          <View style={styles.pricingCard}>
+            {/* Hourly rate row */}
+            <View style={styles.pricingRow}>
+              <View style={styles.pricingLeft}>
+                <Text style={styles.pricingIcon}>🕐</Text>
+                <View>
+                  <Text style={styles.pricingTitle}>Hourly Rate</Text>
+                  <Text style={styles.pricingSubtitle}>Billed per hour started</Text>
+                </View>
+              </View>
+              <Text style={styles.pricingAmount}>
+                <Text style={styles.pricingAmountBold}>Rs. {lot.pricePerHour}</Text>
+                <Text style={styles.pricingUnit}> / hr</Text>
+              </Text>
+            </View>
+
+            <View style={styles.pricingDivider} />
+
+            {/* Daily rate row (computed estimate) */}
+            <View style={styles.pricingRow}>
+              <View style={styles.pricingLeft}>
+                <Text style={styles.pricingIcon}>📅</Text>
+                <View>
+                  <Text style={styles.pricingTitle}>Daily Rate</Text>
+                  <Text style={styles.pricingSubtitle}>Max charge per calendar day</Text>
+                </View>
+              </View>
+              <Text style={styles.pricingAmount}>
+                <Text style={[styles.pricingAmountBold, styles.pricingAmountOrange]}>
+                  Rs. {dailyRateEstimate}
+                </Text>
+                <Text style={styles.pricingUnit}> / day</Text>
+              </Text>
+            </View>
+          </View>
+
+          <Text style={styles.feesNote}>
+            ✓ No hidden fees. Reservation fee of Rs. 25 applies.
+          </Text>
+        </View>
+
+        {/* 5. Amenities & Security ────────────────────────────────────────── */}
+        {lot.amenities && lot.amenities.length > 0 && (
+          <View style={styles.section}>
+            <Text style={styles.sectionLabel}>AMENITIES &amp; SECURITY</Text>
+            <View style={styles.amenitiesWrap}>
+              {lot.amenities.map((amenity) => {
+                const icon = AMENITY_ICONS[amenity] ?? '✓';
+                return (
+                  <View key={amenity} style={styles.amenityChip}>
+                    <Text style={styles.amenityIcon}>{icon}</Text>
+                    <Text style={styles.amenityLabel}>{amenity}</Text>
+                  </View>
+                );
+              })}
+            </View>
+          </View>
+        )}
+
+        {/* 6. Location (Illustrative static map) ─────────────────────────── */}
+        <View style={styles.section}>
+          <View style={styles.locationHeaderRow}>
+            <Text style={styles.sectionLabel}>LOCATION</Text>
+            <TouchableOpacity activeOpacity={0.7}>
+              <Text style={styles.openMapsLink}>Open in Maps &gt;</Text>
+            </TouchableOpacity>
+          </View>
+
+          {/* Static illustrative map matching app design language */}
+          <View style={styles.mapContainer}>
+            {/* Road grid */}
+            <View style={styles.mapBg}>
+              <View style={styles.mapRoadH} />
+              <View style={styles.mapRoadV} />
+              <View style={styles.mapRoadH2} />
+            </View>
+
+            {/* Parking block */}
+            <View style={styles.mapParkingBlock}>
+              <Text style={styles.mapParkingLabel}>PARKING</Text>
+            </View>
+
+            {/* Pin */}
+            <View style={styles.mapPinWrapper}>
+              <View style={styles.mapPinCircle}>
+                <Text style={styles.mapPinLetter}>P</Text>
+              </View>
+              <View style={styles.mapPinTail} />
+            </View>
+
+            {/* Street label */}
+            <View style={styles.mapStreetLabelWrapper}>
+              <Text style={styles.mapStreetLabel}>Marine Dr.</Text>
+            </View>
+          </View>
+        </View>
+
+        {/* 7. Contact (if operator phone available) ───────────────────────── */}
+        {lot.operatorPhone && (
+          <View style={styles.section}>
+            <Text style={styles.sectionLabel}>CONTACT</Text>
+            <View style={styles.contactRow}>
+              <Text style={styles.contactIcon}>📞</Text>
+              <Text style={styles.contactText}>{lot.operatorPhone}</Text>
+            </View>
+          </View>
+        )}
+
+        {/* Spacer so bottom bar doesn't cover last section */}
+        <View style={styles.bottomSpacer} />
+      </ScrollView>
+
+      {/* ── Sticky Bottom Bar ─────────────────────────────────────────────── */}
+      <View style={styles.bottomBar}>
+        <View style={styles.bottomPriceBlock}>
+          <Text style={styles.bottomStartingLabel}>Starting from</Text>
+          <Text style={styles.bottomPriceMain}>
+            Rs. {lot.pricePerHour}
+            <Text style={styles.bottomPriceUnit}> / hr</Text>
+          </Text>
+          <Text style={styles.bottomPriceDay}>Rs. {dailyRateEstimate} / day max</Text>
+        </View>
+
+        <TouchableOpacity
+          style={styles.reserveBtn}
+          activeOpacity={0.88}
+          onPress={handleReserve}
+          accessibilityRole="button"
+          accessibilityLabel={`Reserve a space at ${lot.name}`}
+        >
+          <Text style={styles.reserveBtnIcon}>✓</Text>
+          <Text style={styles.reserveBtnText}>Reserve a Space</Text>
+        </TouchableOpacity>
+      </View>
+    </SafeAreaView>
+  );
+}
+
+/* ─── Styles ──────────────────────────────────────────────────────────────── */
+const styles = StyleSheet.create({
+  // ── Error / not-found state ──
+  errorContainer: {
+    flex: 1,
+    backgroundColor: '#FFFFFF',
+    paddingTop: Platform.OS === 'android' ? StatusBar.currentHeight : 0,
+  },
+  errorInner: {
+    flex: 1,
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingHorizontal: 32,
+  },
+  errorEmoji: { fontSize: 48, marginBottom: 16 },
+  errorTitle: {
+    fontSize: 20,
+    fontWeight: '800',
+    color: DriverColors.navyHeading,
+    marginBottom: 8,
+    textAlign: 'center',
+  },
+  errorSubtitle: {
+    fontSize: 14,
+    color: DriverColors.textSecondary,
+    textAlign: 'center',
+    lineHeight: 22,
+    marginBottom: 24,
+  },
+  errorBackBtn: {
+    backgroundColor: DriverColors.navyDark,
+    paddingHorizontal: 24,
+    paddingVertical: 12,
+    borderRadius: 24,
+  },
+  errorBackText: {
+    color: '#FFFFFF',
+    fontSize: 14,
+    fontWeight: '700',
+  },
+
+  // ── Main layout ──
+  safeArea: {
+    flex: 1,
+    backgroundColor: DriverColors.background,
+  },
+  scrollView: { flex: 1 },
+  scrollContent: { paddingBottom: 0 },
+
+  // ── 1. Hero ──
+  heroContainer: {
+    height: 260,
+    position: 'relative',
+    backgroundColor: DriverColors.navyDark,
+    overflow: 'hidden',
+  },
+  heroImage: {
+    ...StyleSheet.absoluteFill,
+    width: '100%',
+    height: '100%',
+  },
+  heroOverlay: {
+    ...StyleSheet.absoluteFill,
+    backgroundColor: 'rgba(10, 17, 40, 0.62)',
+  },
+  heroTopBar: {
+    position: 'absolute',
+    top: 0,
+    left: 0,
+    right: 0,
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    paddingHorizontal: 16,
+    zIndex: 10,
+  },
+  heroRightBtns: {
+    flexDirection: 'row',
+    gap: 10,
+  },
+  heroBtn: {
+    width: 40,
+    height: 40,
+    borderRadius: 20,
+    backgroundColor: 'rgba(255,255,255,0.18)',
+    borderWidth: 1,
+    borderColor: 'rgba(255,255,255,0.28)',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  heroBtnText: {
+    color: '#FFFFFF',
+    fontSize: 18,
+    fontWeight: '600',
+    lineHeight: 22,
+  },
+  heroTitleBlock: {
+    position: 'absolute',
+    bottom: 20,
+    left: 18,
+    right: 18,
+  },
+  heroLotName: {
+    fontSize: 24,
+    fontWeight: '800',
+    color: '#FFFFFF',
+    letterSpacing: -0.3,
+    marginBottom: 6,
+    textShadowColor: 'rgba(0,0,0,0.4)',
+    textShadowOffset: { width: 0, height: 1 },
+    textShadowRadius: 4,
+  },
+  heroAddressRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+  },
+  heroAddressIcon: { fontSize: 12, marginRight: 4 },
+  heroAddress: {
+    fontSize: 13,
+    color: 'rgba(255,255,255,0.85)',
+    fontWeight: '500',
+  },
+
+  // ── 2. Stats row ──
+  statsRow: {
+    flexDirection: 'row',
+    backgroundColor: DriverColors.surface,
+    paddingVertical: 16,
+    paddingHorizontal: 20,
+    borderBottomWidth: 1,
+    borderBottomColor: DriverColors.borderLight,
+  },
+  statCell: {
+    flex: 1,
+    alignItems: 'center',
+  },
+  statDivider: {
+    width: 1,
+    backgroundColor: DriverColors.borderLight,
+    marginVertical: 4,
+  },
+  statIcon: { fontSize: 16, marginBottom: 4 },
+  statPrimary: {
+    fontSize: 13.5,
+    fontWeight: '800',
+    color: DriverColors.navyHeading,
+    textAlign: 'center',
+  },
+  statGreen: { color: '#059669' },
+  statSecondary: {
+    fontSize: 11,
+    color: DriverColors.textSecondary,
+    marginTop: 1,
+    textAlign: 'center',
+  },
+
+  // ── Sections common ──
+  section: {
+    backgroundColor: DriverColors.surface,
+    marginTop: 10,
+    paddingHorizontal: 18,
+    paddingVertical: 16,
+  },
+  sectionLabel: {
+    fontSize: 11,
+    fontWeight: '700',
+    color: DriverColors.textSecondary,
+    letterSpacing: 0.8,
+    marginBottom: 12,
+  },
+
+  // ── 3. Availability ──
+  availabilityRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+  },
+  availBadgeRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 10,
+    flex: 1,
+  },
+  statusBadge: {
+    paddingHorizontal: 10,
+    paddingVertical: 5,
+    borderRadius: 14,
+    borderWidth: 1,
+    borderColor: DriverColors.cardBorder,
+    backgroundColor: DriverColors.surface,
+  },
+  statusBadgeGreen: {
+    backgroundColor: '#ECFDF5',
+    borderColor: '#A7F3D0',
+  },
+  statusBadgeRed: {
+    backgroundColor: '#FEF2F2',
+    borderColor: '#FCA5A5',
+  },
+  statusBadgeOrange: {
+    backgroundColor: '#FFF7ED',
+    borderColor: '#FED7AA',
+  },
+  statusBadgeText: {
+    fontSize: 12,
+    fontWeight: '700',
+    color: DriverColors.textBody,
+  },
+  statusBadgeTextGreen: { color: '#059669' },
+  statusBadgeTextRed: { color: '#DC2626' },
+  statusBadgeTextOrange: { color: '#D97706' },
+  availSpacesText: {
+    fontSize: 13,
+    color: DriverColors.textSecondary,
+    flexShrink: 1,
+  },
+  availSpacesBold: {
+    fontWeight: '800',
+    color: DriverColors.navyHeading,
+    fontSize: 14,
+  },
+  availPctColumn: {
+    alignItems: 'flex-end',
+    minWidth: 90,
+  },
+  availPctText: {
+    fontSize: 12,
+    fontWeight: '700',
+    color: DriverColors.textSecondary,
+    marginBottom: 5,
+  },
+  progressTrack: {
+    width: 88,
+    height: 7,
+    borderRadius: 4,
+    backgroundColor: '#E2E8F0',
+    overflow: 'hidden',
+  },
+  progressFill: {
+    height: '100%',
+    borderRadius: 4,
+    backgroundColor: '#10B981',
+  },
+  progressFillRed: { backgroundColor: '#EF4444' },
+  progressFillOrange: { backgroundColor: '#F59E0B' },
+
+  // ── 4. Pricing ──
+  pricingCard: {
+    backgroundColor: '#F8FAFC',
+    borderRadius: 14,
+    borderWidth: 1,
+    borderColor: DriverColors.cardBorder,
+    overflow: 'hidden',
+  },
+  pricingRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    paddingHorizontal: 16,
+    paddingVertical: 14,
+  },
+  pricingLeft: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 12,
+    flex: 1,
+  },
+  pricingIcon: { fontSize: 18 },
+  pricingTitle: {
+    fontSize: 14,
+    fontWeight: '700',
+    color: DriverColors.navyHeading,
+  },
+  pricingSubtitle: {
+    fontSize: 11.5,
+    color: DriverColors.textSecondary,
+    marginTop: 2,
+  },
+  pricingDivider: {
+    height: 1,
+    backgroundColor: DriverColors.cardBorder,
+    marginHorizontal: 16,
+  },
+  pricingAmount: {
+    flexShrink: 0,
+  },
+  pricingAmountBold: {
+    fontSize: 17,
+    fontWeight: '800',
+    color: DriverColors.navyHeading,
+  },
+  pricingAmountOrange: { color: DriverColors.orangePrimary },
+  pricingUnit: {
+    fontSize: 12,
+    color: DriverColors.textSecondary,
+  },
+  feesNote: {
+    fontSize: 12,
+    color: DriverColors.textSecondary,
+    marginTop: 10,
+    lineHeight: 18,
+  },
+
+  // ── 5. Amenities ──
+  amenitiesWrap: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: 8,
+  },
+  amenityChip: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    borderWidth: 1,
+    borderColor: DriverColors.cardBorder,
+    borderRadius: 20,
+    paddingHorizontal: 12,
+    paddingVertical: 7,
+    backgroundColor: '#F8FAFC',
+    gap: 6,
+  },
+  amenityIcon: { fontSize: 13 },
+  amenityLabel: {
+    fontSize: 12.5,
+    color: DriverColors.textBody,
+    fontWeight: '600',
+  },
+
+  // ── 6. Location map ──
+  locationHeaderRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginBottom: 12,
+  },
+  openMapsLink: {
+    fontSize: 13,
+    fontWeight: '700',
+    color: DriverColors.navyDark,
+  },
+  mapContainer: {
+    height: 140,
+    borderRadius: 14,
+    overflow: 'hidden',
+    backgroundColor: '#E9F0F8',
+    borderWidth: 1,
+    borderColor: DriverColors.cardBorder,
+    position: 'relative',
+  },
+  mapBg: {
+    ...StyleSheet.absoluteFill,
+  },
+  mapRoadH: {
+    position: 'absolute',
+    top: '40%',
+    left: 0,
+    right: 0,
+    height: 22,
+    backgroundColor: '#FFFFFF',
+    opacity: 0.85,
+  },
+  mapRoadH2: {
+    position: 'absolute',
+    top: '70%',
+    left: 0,
+    right: 0,
+    height: 14,
+    backgroundColor: '#D7E5F2',
+  },
+  mapRoadV: {
+    position: 'absolute',
+    top: 0,
+    bottom: 0,
+    left: '45%',
+    width: 18,
+    backgroundColor: '#FFFFFF',
+    opacity: 0.7,
+  },
+  mapParkingBlock: {
+    position: 'absolute',
+    top: '10%',
+    left: '55%',
+    right: 12,
+    height: '35%',
+    borderRadius: 6,
+    backgroundColor: '#D0DFEE',
+    alignItems: 'center',
+    justifyContent: 'center',
+    borderWidth: 1,
+    borderColor: '#B8CEE0',
+  },
+  mapParkingLabel: {
+    fontSize: 9,
+    fontWeight: '800',
+    color: '#5B7A94',
+    letterSpacing: 0.8,
+  },
+  mapPinWrapper: {
+    position: 'absolute',
+    top: '28%',
+    left: '42%',
+    alignItems: 'center',
+  },
+  mapPinCircle: {
+    width: 34,
+    height: 34,
+    borderRadius: 17,
+    backgroundColor: DriverColors.navyDark,
+    alignItems: 'center',
+    justifyContent: 'center',
+    borderWidth: 2.5,
+    borderColor: '#FFFFFF',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.3,
+    shadowRadius: 4,
+    elevation: 6,
+  },
+  mapPinLetter: {
+    color: '#FFFFFF',
+    fontSize: 15,
+    fontWeight: '800',
+  },
+  mapPinTail: {
+    width: 0,
+    height: 0,
+    borderLeftWidth: 5,
+    borderRightWidth: 5,
+    borderTopWidth: 8,
+    borderLeftColor: 'transparent',
+    borderRightColor: 'transparent',
+    borderTopColor: DriverColors.navyDark,
+    marginTop: -1,
+  },
+  mapStreetLabelWrapper: {
+    position: 'absolute',
+    left: 8,
+    top: '36%',
+    transform: [{ rotate: '-90deg' }],
+    transformOrigin: 'left center',
+  },
+  mapStreetLabel: {
+    fontSize: 9,
+    fontWeight: '600',
+    color: '#8BA5BE',
+    letterSpacing: 0.5,
+  },
+
+  // ── 7. Contact ──
+  contactRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 10,
+  },
+  contactIcon: { fontSize: 18 },
+  contactText: {
+    fontSize: 14,
+    fontWeight: '600',
+    color: DriverColors.textBody,
+  },
+
+  // ── Bottom spacer ──
+  bottomSpacer: { height: 100 },
+
+  // ── Sticky bottom bar ──
+  bottomBar: {
+    position: 'absolute',
+    bottom: 0,
+    left: 0,
+    right: 0,
+    backgroundColor: DriverColors.surface,
+    borderTopWidth: 1,
+    borderTopColor: DriverColors.borderLight,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    paddingHorizontal: 18,
+    paddingTop: 12,
+    paddingBottom: Platform.OS === 'android' ? 16 : 28,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: -2 },
+    shadowOpacity: 0.06,
+    shadowRadius: 8,
+    elevation: 12,
+  },
+  bottomPriceBlock: {
+    flex: 1,
+    marginRight: 16,
+  },
+  bottomStartingLabel: {
+    fontSize: 11,
+    color: DriverColors.textSecondary,
+    fontWeight: '500',
+    marginBottom: 1,
+  },
+  bottomPriceMain: {
+    fontSize: 22,
+    fontWeight: '800',
+    color: DriverColors.navyHeading,
+    letterSpacing: -0.3,
+    lineHeight: 26,
+  },
+  bottomPriceUnit: {
+    fontSize: 13,
+    fontWeight: '500',
+    color: DriverColors.textSecondary,
+  },
+  bottomPriceDay: {
+    fontSize: 11.5,
+    color: DriverColors.textSecondary,
+    marginTop: 2,
+  },
+  reserveBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: DriverColors.orangePrimary,
+    paddingHorizontal: 22,
+    paddingVertical: 15,
+    borderRadius: 28,
+    gap: 8,
+    shadowColor: DriverColors.orangePrimary,
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.35,
+    shadowRadius: 8,
+    elevation: 6,
+  },
+  reserveBtnIcon: {
+    color: '#FFFFFF',
+    fontSize: 16,
+    fontWeight: '800',
+  },
+  reserveBtnText: {
+    color: '#FFFFFF',
+    fontSize: 15,
+    fontWeight: '800',
+    letterSpacing: 0.1,
+  },
+});
