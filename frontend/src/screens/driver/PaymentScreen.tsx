@@ -28,8 +28,28 @@ const METHODS = [
   { title: 'Pay with Cash on Arrival', sub: 'Show your booking confirmation to attendant', icon: '💵' },
 ];
 
+/* ── Validation helpers ─────────────────────────────────────────────────── */
+const isCardNumberValid = (v: string) => v.replace(/\s/g, '').length === 16;
+
+const isExpiryValid = (v: string) => {
+  const m = /^(\d{2})\/(\d{2})$/.exec(v);
+  if (!m) return false;
+  const month = parseInt(m[1], 10);
+  const year = parseInt(m[2], 10);
+  if (month < 1 || month > 12) return false;
+  const now = new Date();
+  const curYear = now.getFullYear() % 100;
+  const curMonth = now.getMonth() + 1;
+  if (year < curYear) return false;
+  if (year === curYear && month < curMonth) return false;
+  return true;
+};
+
+const isCvvValid = (v: string) => v.length === 3 || v.length === 4;
+
 export default function PaymentScreen({ booking, onBack, onPay }: PaymentScreenProps) {
-  const [method, setMethod] = useState(0);
+  /** null = nothing selected yet */
+  const [method, setMethod] = useState<number | null>(null);
   const [card, setCard] = useState('');
   const [exp, setExp] = useState('');
   const [cvv, setCvv] = useState('');
@@ -57,6 +77,24 @@ export default function PaymentScreen({ booking, onBack, onPay }: PaymentScreenP
   const formatExp = (t: string) => {
     const d = t.replace(/\D/g, '').slice(0, 4);
     return d.length > 2 ? `${d.slice(0, 2)}/${d.slice(2)}` : d;
+  };
+
+  /* ── What is still missing? ────────────────────────────────────────────── */
+  const cardOk = isCardNumberValid(card);
+  const expOk = isExpiryValid(exp);
+  const cvvOk = isCvvValid(cvv);
+
+  let blockReason: string | null = null;
+  if (method === null) {
+    blockReason = 'Please select a payment method to continue';
+  } else if (method === 0 && !(cardOk && expOk && cvvOk)) {
+    blockReason = 'Please enter valid card details to continue';
+  }
+  const canPay = blockReason === null;
+
+  const handlePay = () => {
+    if (!canPay) return;
+    onPay({ ...booking, total: finalTotal });
   };
 
   return (
@@ -121,8 +159,9 @@ export default function PaymentScreen({ booking, onBack, onPay }: PaymentScreenP
                       <Text style={styles.label}>ENTER CARD DETAILS</Text>
                       <Text style={styles.ssl}>🔒 256-BIT SSL</Text>
                     </View>
+
                     <TextInput
-                      style={styles.input}
+                      style={[styles.input, card.length > 0 && !cardOk && styles.inputError]}
                       placeholder="Card Number"
                       placeholderTextColor={DriverColors.textMuted}
                       keyboardType="number-pad"
@@ -130,26 +169,40 @@ export default function PaymentScreen({ booking, onBack, onPay }: PaymentScreenP
                       value={card}
                       onChangeText={(t) => setCard(formatCard(t))}
                     />
+                    {card.length > 0 && !cardOk && (
+                      <Text style={styles.errorText}>Card number must be 16 digits</Text>
+                    )}
+
                     <View style={{ flexDirection: 'row', gap: 8, marginTop: 8 }}>
-                      <TextInput
-                        style={[styles.input, { flex: 1 }]}
-                        placeholder="MM/YY"
-                        placeholderTextColor={DriverColors.textMuted}
-                        keyboardType="number-pad"
-                        maxLength={5}
-                        value={exp}
-                        onChangeText={(t) => setExp(formatExp(t))}
-                      />
-                      <TextInput
-                        style={[styles.input, { flex: 1 }]}
-                        placeholder="CVV"
-                        placeholderTextColor={DriverColors.textMuted}
-                        secureTextEntry
-                        keyboardType="number-pad"
-                        maxLength={4}
-                        value={cvv}
-                        onChangeText={setCvv}
-                      />
+                      <View style={{ flex: 1 }}>
+                        <TextInput
+                          style={[styles.input, exp.length > 0 && !expOk && styles.inputError]}
+                          placeholder="MM/YY"
+                          placeholderTextColor={DriverColors.textMuted}
+                          keyboardType="number-pad"
+                          maxLength={5}
+                          value={exp}
+                          onChangeText={(t) => setExp(formatExp(t))}
+                        />
+                        {exp.length > 0 && !expOk && (
+                          <Text style={styles.errorText}>Invalid or expired date</Text>
+                        )}
+                      </View>
+                      <View style={{ flex: 1 }}>
+                        <TextInput
+                          style={[styles.input, cvv.length > 0 && !cvvOk && styles.inputError]}
+                          placeholder="CVV"
+                          placeholderTextColor={DriverColors.textMuted}
+                          secureTextEntry
+                          keyboardType="number-pad"
+                          maxLength={4}
+                          value={cvv}
+                          onChangeText={(t) => setCvv(t.replace(/\D/g, ''))}
+                        />
+                        {cvv.length > 0 && !cvvOk && (
+                          <Text style={styles.errorText}>3 or 4 digits</Text>
+                        )}
+                      </View>
                     </View>
                   </View>
                 )}
@@ -196,20 +249,25 @@ export default function PaymentScreen({ booking, onBack, onPay }: PaymentScreenP
           </View>
 
           <Text style={styles.guarantee}>🛡️ Guaranteed Spot Lock · Instant Confirmation</Text>
-          <View style={{ height: 100 }} />
+          <View style={{ height: 120 }} />
         </ScrollView>
       </KeyboardAvoidingView>
 
       {/* Sticky pay bar */}
       <View style={styles.payBar}>
+        {blockReason && <Text style={styles.blockText}>{blockReason}</Text>}
         <TouchableOpacity
-          style={styles.payBtn}
-          activeOpacity={0.88}
-          onPress={() => onPay({ ...booking, total: finalTotal })}
+          style={[styles.payBtn, !canPay && styles.payBtnDisabled]}
+          activeOpacity={canPay ? 0.88 : 1}
+          disabled={!canPay}
+          onPress={handlePay}
           accessibilityRole="button"
-          accessibilityLabel={`Pay Rs. ${finalTotal}`}
+          accessibilityState={{ disabled: !canPay }}
+          accessibilityLabel={canPay ? `Pay Rs. ${finalTotal}` : blockReason ?? 'Pay'}
         >
-          <Text style={styles.payBtnText}>Pay Rs. {finalTotal} →</Text>
+          <Text style={[styles.payBtnText, !canPay && styles.payBtnTextDisabled]}>
+            Pay Rs. {finalTotal} →
+          </Text>
         </TouchableOpacity>
       </View>
     </SafeAreaView>
@@ -299,6 +357,8 @@ const styles = StyleSheet.create({
     fontSize: 14,
     color: DriverColors.navyHeading,
   },
+  inputError: { borderColor: '#EF4444', backgroundColor: '#FEF2F2' },
+  errorText: { color: '#EF4444', fontSize: 11, marginTop: 4 },
   applyBtn: {
     backgroundColor: DriverColors.navyDark,
     borderRadius: 10,
@@ -320,9 +380,16 @@ const styles = StyleSheet.create({
     borderTopWidth: 1,
     borderTopColor: DriverColors.borderLight,
     paddingHorizontal: 16,
-    paddingTop: 12,
+    paddingTop: 10,
     paddingBottom: Platform.OS === 'android' ? 16 : 28,
     elevation: 12,
+  },
+  blockText: {
+    textAlign: 'center',
+    color: '#D97706',
+    fontSize: 12,
+    fontWeight: '600',
+    marginBottom: 8,
   },
   payBtn: {
     backgroundColor: DriverColors.orangePrimary,
@@ -335,5 +402,11 @@ const styles = StyleSheet.create({
     shadowRadius: 8,
     elevation: 6,
   },
+  payBtnDisabled: {
+    backgroundColor: '#E2E8F0',
+    shadowOpacity: 0,
+    elevation: 0,
+  },
   payBtnText: { color: '#FFFFFF', fontSize: 15, fontWeight: '800' },
+  payBtnTextDisabled: { color: '#94A3B8' },
 });
