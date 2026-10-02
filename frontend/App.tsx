@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import {
   View,
   TouchableOpacity,
@@ -9,6 +9,12 @@ import {
   Alert,
 } from 'react-native';
 import { StatusBar } from 'expo-status-bar';
+import * as SplashScreen from 'expo-splash-screen';
+
+// Prevent native splash screen from autohiding while initial resources load
+SplashScreen.preventAutoHideAsync().catch((err) => {
+  console.warn('[SplashScreen.preventAutoHideAsync]', err);
+});
 import HomeScreen from './src/screens/driver/HomeScreen';
 import SearchResultsScreen, { SearchResultsViewMode } from './src/screens/driver/SearchResultsScreen';
 import LotDetailsScreen from './src/screens/driver/LotDetailsScreen';
@@ -49,7 +55,33 @@ type ScreenType =
   | 'leave-request';
 
 export default function App() {
+  const [appIsReady, setAppIsReady] = useState(false);
   const [currentScreen, setCurrentScreen] = useState<ScreenType>('driver-home');
+
+  useEffect(() => {
+    async function prepare() {
+      try {
+        // Essential startup resources (session restoration or asset preloading)
+        // If driver authentication is not implemented, default flow continues to driver-home
+      } catch (e) {
+        console.warn('[App.prepare] Error during startup initialization:', e);
+      } finally {
+        setAppIsReady(true);
+      }
+    }
+
+    prepare();
+  }, []);
+
+  const onLayoutRootView = useCallback(async () => {
+    if (appIsReady) {
+      try {
+        await SplashScreen.hideAsync();
+      } catch (e) {
+        console.warn('[SplashScreen.hideAsync]', e);
+      }
+    }
+  }, [appIsReady]);
   const [searchParams, setSearchParams] = useState<{
     query: string;
     viewMode: SearchResultsViewMode;
@@ -164,8 +196,19 @@ export default function App() {
     setCurrentScreen('verify');
   };
 
+  if (!appIsReady) {
+    return null;
+  }
+
+  const isDriverScreen =
+    currentScreen === 'driver-home' ||
+    currentScreen === 'driver-search' ||
+    currentScreen === 'driver-lot-details' ||
+    currentScreen === 'driver-space-selection' ||
+    currentScreen === 'driver-booking-summary';
+
   return (
-    <>
+    <View style={styles.rootContainer} onLayout={onLayoutRootView}>
       <StatusBar style={currentScreen === 'login' ? 'light' : 'dark'} />
       {currentScreen === 'driver-home' && (
         <HomeScreen
@@ -298,7 +341,7 @@ export default function App() {
           styles.devSwitchContainer,
           {
             top: Platform.OS === 'android' ? (RNStatusBar.currentHeight || 24) + 14 : 54,
-            right: currentScreen === 'driver-home' ? 68 : currentScreen === 'driver-lot-details' || currentScreen === 'driver-space-selection' ? 68 : 12,
+            right: isDriverScreen ? 68 : 12,
           },
         ]}
         pointerEvents="box-none"
@@ -308,24 +351,29 @@ export default function App() {
           activeOpacity={0.8}
           onPress={() =>
             setCurrentScreen((prev) =>
-              prev === 'driver-home' || prev === 'driver-search' || prev === 'driver-lot-details' || prev === 'driver-space-selection'
+              prev === 'driver-home' ||
+              prev === 'driver-search' ||
+              prev === 'driver-lot-details' ||
+              prev === 'driver-space-selection' ||
+              prev === 'driver-booking-summary'
                 ? 'login'
                 : 'driver-home'
             )
           }
         >
           <Text style={styles.devSwitchText}>
-            {currentScreen === 'driver-home' || currentScreen === 'driver-search' || currentScreen === 'driver-lot-details' || currentScreen === 'driver-space-selection'
-              ? '👔 Staff Flow'
-              : '🚗 Driver Flow'}
+            {isDriverScreen ? '👔 Staff Flow' : '🚗 Driver Flow'}
           </Text>
         </TouchableOpacity>
       </View>
-    </>
+    </View>
   );
 }
 
 const styles = StyleSheet.create({
+  rootContainer: {
+    flex: 1,
+  },
   devSwitchContainer: {
     position: 'absolute',
     zIndex: 9999,
