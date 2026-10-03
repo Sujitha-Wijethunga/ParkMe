@@ -17,11 +17,25 @@ import { Colors } from '../../constants/colors';
 
 interface StaffLoginScreenProps {
   onLoginSuccess?: (user: any, token: string) => void;
+  onNavigateToSignup?: () => void;
 }
 
-const API_URL = 'http://192.168.1.33:5000';
+const API_URLS = ['http://192.168.1.33:5000', 'http://localhost:5000', 'http://10.0.2.2:5000'];
 
-export default function StaffLoginScreen({ onLoginSuccess }: StaffLoginScreenProps) {
+const fetchWithFallback = async (endpoint: string, options: RequestInit) => {
+  let lastError: any = null;
+  for (const url of API_URLS) {
+    try {
+      const res = await fetch(`${url}${endpoint}`, options);
+      return res;
+    } catch (err) {
+      lastError = err;
+    }
+  }
+  throw lastError || new Error('Could not connect to backend server');
+};
+
+export default function StaffLoginScreen({ onLoginSuccess, onNavigateToSignup }: StaffLoginScreenProps) {
   const [staffId, setStaffId] = useState('');
   const [password, setPassword] = useState('');
   const [showPassword, setShowPassword] = useState(false);
@@ -62,7 +76,7 @@ export default function StaffLoginScreen({ onLoginSuccess }: StaffLoginScreenPro
     setIsLoading(true);
     
     try {
-      const response = await fetch(`${API_URL}/api/auth/login`, {
+      const response = await fetchWithFallback('/api/auth/login', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ staffId: staffId.trim().toUpperCase(), password }),
@@ -201,7 +215,7 @@ export default function StaffLoginScreen({ onLoginSuccess }: StaffLoginScreenPro
               </Pressable>
             </View>
 
-            {/* CTA Button */}
+            {/* CTA Login Button */}
             <Pressable
               onPressIn={handlePressIn}
               onPressOut={handlePressOut}
@@ -219,6 +233,15 @@ export default function StaffLoginScreen({ onLoginSuccess }: StaffLoginScreenPro
               </Animated.View>
             </Pressable>
 
+            {/* Create Staff Account Button */}
+            <TouchableOpacity
+              style={styles.signupButton}
+              onPress={onNavigateToSignup}
+              activeOpacity={0.8}
+            >
+              <Text style={styles.signupButtonText}>✨ Create New Staff Account</Text>
+            </TouchableOpacity>
+
             {/* Security Badge */}
             <View style={styles.securityBadge}>
               <View style={styles.securityLeft}>
@@ -232,6 +255,14 @@ export default function StaffLoginScreen({ onLoginSuccess }: StaffLoginScreenPro
 
             {/* Divider */}
             <View style={styles.divider} />
+
+            {/* Staff Signup Link */}
+            <View style={styles.footer}>
+              <Text style={styles.footerText}>New staff member? </Text>
+              <TouchableOpacity onPress={onNavigateToSignup}>
+                <Text style={styles.footerLink}>Sign Up Here</Text>
+              </TouchableOpacity>
+            </View>
 
             {/* Driver link */}
             <View style={styles.footer}>
@@ -432,6 +463,22 @@ const styles = StyleSheet.create({
     fontSize: 16,
     fontWeight: '700',
     color: '#FFFFFF',
+    letterSpacing: 0.2,
+  },
+  signupButton: {
+    backgroundColor: '#F0FDFA',
+    borderWidth: 1.5,
+    borderColor: Colors.accent,
+    borderRadius: 14,
+    paddingVertical: 14,
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginTop: 12,
+  },
+  signupButtonText: {
+    fontSize: 15,
+    fontWeight: '700',
+    color: Colors.accent,
     letterSpacing: 0.2,
   },
 
