@@ -6,11 +6,15 @@ const {
   createParkingLot,
   updateParkingLot,
   deleteParkingLot,
+  getNearbyDrivingParking,
+  getParkingLotAvailability,
 } = require('../controllers/parkingLotController');
 const { protect } = require('../middleware/auth');
 const { authorize } = require('../middleware/authorize');
 
 router.get('/', getParkingLots);
+router.get('/nearby-driving', getNearbyDrivingParking);
+router.get('/:id/availability', getParkingLotAvailability);
 router.get('/:id', getParkingLotById);
 router.post('/', protect, authorize('admin'), createParkingLot);
 router.put('/:id', protect, authorize('admin', 'staff'), updateParkingLot);
