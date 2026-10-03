@@ -154,7 +154,7 @@ export default function DriverSignUpScreen({
     }
   };
 
-  const handleSocialLogin = (provider: 'Google' | 'Apple') => {
+  const handleSocialLogin = (provider: 'Google') => {
     Alert.alert(
       `${provider} Sign-Up`,
       `${provider} registration is currently unavailable and will be supported in an upcoming release. Please register using your email and password.`,
@@ -467,17 +467,6 @@ export default function DriverSignUpScreen({
               >
                 <Text style={styles.socialGoogleG}>G</Text>
                 <Text style={styles.socialBtnText}>Google</Text>
-              </TouchableOpacity>
-
-              <TouchableOpacity
-                style={styles.socialBtn}
-                onPress={() => handleSocialLogin('Apple')}
-                activeOpacity={0.7}
-                accessibilityRole="button"
-                accessibilityLabel="Sign up with Apple"
-              >
-                <Text style={styles.socialAppleIcon}></Text>
-                <Text style={styles.socialBtnText}>Apple</Text>
               </TouchableOpacity>
             </View>
           </View>
