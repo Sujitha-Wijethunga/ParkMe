@@ -33,6 +33,7 @@ import {
   formatTime12,
 } from './src/constants/bookingDraft';
 import StaffLoginScreen from './src/screens/staff/StaffLoginScreen';
+import StaffSignupScreen from './src/screens/staff/StaffSignupScreen';
 import StaffDashboardScreen from './src/screens/staff/StaffDashboardScreen';
 import ManageSpaceScreen, { SpaceItem, initialSpaces } from './src/screens/staff/ManageSpaceScreen';
 import ReservationsScreen from './src/screens/staff/ReservationsScreen';
@@ -57,6 +58,7 @@ type ScreenType =
   | 'driver-navigation'
   | 'driver-booking-summary'
   | 'login'
+  | 'signup'
   | 'dashboard'
   | 'spaces'
   | 'reservations'
@@ -374,7 +376,16 @@ export default function App() {
         />
       )}
       {currentScreen === 'login' && (
-        <StaffLoginScreen onLoginSuccess={handleLoginSuccess} />
+        <StaffLoginScreen
+          onLoginSuccess={handleLoginSuccess}
+          onNavigateToSignup={() => setCurrentScreen('signup')}
+        />
+      )}
+      {currentScreen === 'signup' && (
+        <StaffSignupScreen
+          onSignupSuccess={handleLoginSuccess}
+          onBackToLogin={() => setCurrentScreen('login')}
+        />
       )}
       {currentScreen === 'dashboard' && (
         <StaffDashboardScreen
