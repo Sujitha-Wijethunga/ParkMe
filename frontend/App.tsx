@@ -10,6 +10,7 @@ import {
 } from 'react-native';
 import { StatusBar } from 'expo-status-bar';
 import * as SplashScreen from 'expo-splash-screen';
+import { SafeAreaProvider } from 'react-native-safe-area-context';
 
 // Prevent native splash screen from autohiding while initial resources load
 SplashScreen.preventAutoHideAsync().catch((err) => {
@@ -348,7 +349,8 @@ export default function App() {
     currentScreen === 'driver-navigation';
 
   return (
-    <View style={styles.rootContainer} onLayout={onLayoutRootView}>
+    <SafeAreaProvider style={styles.rootContainer}>
+      <View style={styles.rootContainer} onLayout={onLayoutRootView}>
       <StatusBar
         style={currentScreen === 'login' || currentScreen === 'driver-welcome' ? 'light' : 'dark'}
       />
@@ -590,7 +592,8 @@ export default function App() {
           </View>
         </View>
       )}
-    </View>
+      </View>
+    </SafeAreaProvider>
   );
 }
 
