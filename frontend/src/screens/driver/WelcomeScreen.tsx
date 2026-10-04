@@ -4,12 +4,12 @@ import {
   Text,
   StyleSheet,
   TouchableOpacity,
-  SafeAreaView,
   StatusBar,
   Platform,
   Image,
   Dimensions,
 } from 'react-native';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 export interface WelcomeScreenProps {
   /** Callback triggered when user taps 'Get Started' */
@@ -36,8 +36,16 @@ export default function WelcomeScreen({
   onGetStarted,
   onAlreadyHaveAccount,
 }: WelcomeScreenProps) {
+  const insets = useSafeAreaInsets();
+  const topPadding = Math.max(
+    insets.top,
+    Platform.OS === 'android' ? (StatusBar.currentHeight ?? 0) : 0
+  );
+  const bottomPadding =
+    Math.max(insets.bottom, Platform.OS === 'ios' ? 24 : 16) + 12;
+
   return (
-    <SafeAreaView style={styles.safeArea}>
+    <View style={[styles.safeArea, { paddingTop: topPadding }]}>
       <StatusBar barStyle="light-content" backgroundColor="#000066" />
       <View style={styles.container}>
         {/* Centered Brand / Logo Section */}
@@ -55,7 +63,7 @@ export default function WelcomeScreen({
         </View>
 
         {/* Bottom Actions Section */}
-        <View style={styles.bottomSection}>
+        <View style={[styles.bottomSection, { paddingBottom: bottomPadding }]}>
           {/* Get Started CTA Button */}
           <TouchableOpacity
             style={styles.getStartedButton}
@@ -87,7 +95,7 @@ export default function WelcomeScreen({
           </View>
         </View>
       </View>
-    </SafeAreaView>
+    </View>
   );
 }
 
@@ -95,7 +103,6 @@ const styles = StyleSheet.create({
   safeArea: {
     flex: 1,
     backgroundColor: '#000066',
-    paddingTop: Platform.OS === 'android' ? StatusBar.currentHeight : 0,
   },
   container: {
     flex: 1,
@@ -141,7 +148,6 @@ const styles = StyleSheet.create({
 
   // Bottom Actions Area
   bottomSection: {
-    paddingBottom: Platform.OS === 'ios' ? 24 : 32,
     alignItems: 'center',
     width: '100%',
   },

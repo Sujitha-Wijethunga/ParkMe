@@ -3,12 +3,12 @@ import {
   View,
   Text,
   StyleSheet,
-  SafeAreaView,
   Platform,
   StatusBar,
   TouchableOpacity,
   ScrollView,
 } from 'react-native';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 interface AttendanceScreenProps {
   onBack: () => void;
@@ -16,6 +16,13 @@ interface AttendanceScreenProps {
 }
 
 export default function AttendanceScreen({ onBack, onRequestLeave }: AttendanceScreenProps) {
+  const insets = useSafeAreaInsets();
+  const topPadding = Math.max(
+    insets.top,
+    Platform.OS === 'android' ? (StatusBar.currentHeight ?? 0) : 0
+  );
+  const bottomPadding = Math.max(insets.bottom, 16) + 24;
+
   const [activeTab, setActiveTab] = useState<'Attendance' | 'Leaves'>('Attendance');
 
   const attendanceRecords = [
@@ -33,7 +40,7 @@ export default function AttendanceScreen({ onBack, onRequestLeave }: AttendanceS
   ];
 
   return (
-    <SafeAreaView style={styles.safeArea}>
+    <View style={[styles.safeArea, { paddingTop: topPadding }]}>
       <StatusBar barStyle="dark-content" backgroundColor="#FFFFFF" />
 
       {/* Top Header */}
@@ -85,7 +92,7 @@ export default function AttendanceScreen({ onBack, onRequestLeave }: AttendanceS
 
       <ScrollView
         style={styles.scrollView}
-        contentContainerStyle={styles.scrollContent}
+        contentContainerStyle={[styles.scrollContent, { paddingBottom: bottomPadding }]}
         showsVerticalScrollIndicator={false}
       >
         {activeTab === 'Attendance' ? (
@@ -171,7 +178,7 @@ export default function AttendanceScreen({ onBack, onRequestLeave }: AttendanceS
           </View>
         )}
       </ScrollView>
-    </SafeAreaView>
+    </View>
   );
 }
 
@@ -179,7 +186,6 @@ const styles = StyleSheet.create({
   safeArea: {
     flex: 1,
     backgroundColor: '#FFFFFF',
-    paddingTop: Platform.OS === 'android' ? StatusBar.currentHeight : 0,
   },
   header: {
     flexDirection: 'row',
@@ -273,7 +279,6 @@ const styles = StyleSheet.create({
   scrollContent: {
     paddingHorizontal: 16,
     paddingTop: 16,
-    paddingBottom: 32,
   },
   listContainer: {
     gap: 12,

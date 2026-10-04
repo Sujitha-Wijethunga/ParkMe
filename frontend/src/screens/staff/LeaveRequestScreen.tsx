@@ -3,7 +3,6 @@ import {
   View,
   Text,
   StyleSheet,
-  SafeAreaView,
   Platform,
   StatusBar,
   TouchableOpacity,
@@ -11,6 +10,7 @@ import {
   TextInput,
   Alert,
 } from 'react-native';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 const LEAVE_TYPES = ['Annual Leave', 'Sick Leave', 'Casual Leave', 'Emergency Leave'];
 
@@ -19,6 +19,13 @@ interface LeaveRequestScreenProps {
 }
 
 export default function LeaveRequestScreen({ onBack }: LeaveRequestScreenProps) {
+  const insets = useSafeAreaInsets();
+  const topPadding = Math.max(
+    insets.top,
+    Platform.OS === 'android' ? (StatusBar.currentHeight ?? 0) : 0
+  );
+  const bottomPadding = Math.max(insets.bottom, 16) + 24;
+
   const [selectedType, setSelectedType] = useState('');
   const [startDate, setStartDate] = useState('');
   const [endDate, setEndDate] = useState('');
@@ -50,7 +57,7 @@ export default function LeaveRequestScreen({ onBack }: LeaveRequestScreenProps) 
   };
 
   return (
-    <SafeAreaView style={styles.safeArea}>
+    <View style={[styles.safeArea, { paddingTop: topPadding }]}>
       <StatusBar barStyle="dark-content" backgroundColor="#FFFFFF" />
 
       {/* Top Header */}
@@ -68,7 +75,7 @@ export default function LeaveRequestScreen({ onBack }: LeaveRequestScreenProps) 
 
       <ScrollView
         style={styles.scrollView}
-        contentContainerStyle={styles.scrollContent}
+        contentContainerStyle={[styles.scrollContent, { paddingBottom: bottomPadding }]}
         showsVerticalScrollIndicator={false}
         keyboardShouldPersistTaps="handled"
       >
@@ -185,7 +192,7 @@ export default function LeaveRequestScreen({ onBack }: LeaveRequestScreenProps) 
           <Text style={styles.cancelBtnText}>Cancel</Text>
         </TouchableOpacity>
       </ScrollView>
-    </SafeAreaView>
+    </View>
   );
 }
 
@@ -193,7 +200,6 @@ const styles = StyleSheet.create({
   safeArea: {
     flex: 1,
     backgroundColor: '#FFFFFF',
-    paddingTop: Platform.OS === 'android' ? StatusBar.currentHeight : 0,
   },
   header: {
     flexDirection: 'row',
@@ -233,7 +239,6 @@ const styles = StyleSheet.create({
   scrollContent: {
     paddingHorizontal: 16,
     paddingTop: 20,
-    paddingBottom: 32,
   },
   balanceCard: {
     backgroundColor: '#134E4A',

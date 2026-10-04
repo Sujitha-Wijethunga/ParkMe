@@ -5,14 +5,13 @@ import {
   StyleSheet,
   ScrollView,
   TouchableOpacity,
-  SafeAreaView,
   Platform,
   StatusBar,
   TextInput,
   Alert,
 } from 'react-native';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { CameraView, useCameraPermissions } from 'expo-camera';
-import { Colors } from '../../constants/colors';
 
 interface VerifyEntryProps {
   initialReference?: string;
@@ -27,6 +26,13 @@ export default function VerifyEntryScreen({
   onBack,
   onEntryConfirmed,
 }: VerifyEntryProps) {
+  const insets = useSafeAreaInsets();
+  const topPadding = Math.max(
+    insets.top,
+    Platform.OS === 'android' ? (StatusBar.currentHeight ?? 0) : 0
+  );
+  const bottomPadding = Math.max(insets.bottom, 16) + 24;
+
   const [referenceInput, setReferenceInput] = useState(initialReference);
   const [isVerified, setIsVerified] = useState(true);
   const [isConfirming, setIsConfirming] = useState(false);
@@ -74,7 +80,7 @@ export default function VerifyEntryScreen({
   };
 
   return (
-    <SafeAreaView style={styles.safeArea}>
+    <View style={[styles.safeArea, { paddingTop: topPadding }]}>
       <StatusBar barStyle="dark-content" backgroundColor="#FFFFFF" />
 
       {/* Header */}
@@ -94,7 +100,7 @@ export default function VerifyEntryScreen({
 
       <ScrollView
         style={styles.scrollView}
-        contentContainerStyle={styles.scrollContent}
+        contentContainerStyle={[styles.scrollContent, { paddingBottom: bottomPadding }]}
         showsVerticalScrollIndicator={false}
       >
         {/* ── Section 1: Scan QR Code Viewfinder Card ── */}
@@ -144,7 +150,7 @@ export default function VerifyEntryScreen({
           )}
 
           <Text style={styles.scannerTitle}>Scan booking QR code</Text>
-          <Text style={styles.scannerSubtitle}>Hold scanner over driver's mobile pass</Text>
+          <Text style={styles.scannerSubtitle}>{"Hold scanner over driver's mobile pass"}</Text>
 
           <TouchableOpacity
             style={styles.resetScannerBtn}
@@ -246,7 +252,7 @@ export default function VerifyEntryScreen({
           </>
         )}
       </ScrollView>
-    </SafeAreaView>
+    </View>
   );
 }
 
@@ -254,7 +260,6 @@ const styles = StyleSheet.create({
   safeArea: {
     flex: 1,
     backgroundColor: '#FFFFFF',
-    paddingTop: Platform.OS === 'android' ? StatusBar.currentHeight : 0,
   },
   header: {
     flexDirection: 'row',
@@ -298,7 +303,6 @@ const styles = StyleSheet.create({
   scrollContent: {
     paddingHorizontal: 16,
     paddingTop: 12,
-    paddingBottom: 40,
     gap: 12,
   },
 

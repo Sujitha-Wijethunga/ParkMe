@@ -6,13 +6,13 @@ import {
   ScrollView,
   TextInput,
   TouchableOpacity,
-  SafeAreaView,
   StatusBar,
   Platform,
   KeyboardAvoidingView,
   ActivityIndicator,
   Alert,
 } from 'react-native';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { DriverColors } from '../../constants/colors';
 import {
   SAMPLE_NEARBY_PARKING_LOTS,
@@ -92,6 +92,12 @@ export default function SearchResultsScreen({
   onNavigateBookings,
   onNavigateProfile,
 }: SearchResultsScreenProps) {
+  const insets = useSafeAreaInsets();
+  const topPadding = Math.max(
+    insets.top,
+    Platform.OS === 'android' ? (StatusBar.currentHeight ?? 0) : 0
+  );
+
   const [searchQuery, setSearchQuery] = useState(initialQuery);
   const [selectedFilter, setSelectedFilter] = useState<DriverFilterChip>(initialFilter);
   const [viewMode, setViewMode] = useState<SearchResultsViewMode>(initialViewMode);
@@ -339,7 +345,7 @@ export default function SearchResultsScreen({
   });
 
   return (
-    <SafeAreaView style={styles.safeArea}>
+    <View style={[styles.safeArea, { paddingTop: topPadding }]}>
       <StatusBar barStyle="dark-content" backgroundColor="#FFFFFF" />
 
       <KeyboardAvoidingView
@@ -931,7 +937,7 @@ export default function SearchResultsScreen({
 
       {/* 5. Driver Bottom Navigation */}
       <DriverBottomNav activeTab="map" onTabPress={handleBottomTabPress} />
-    </SafeAreaView>
+    </View>
   );
 }
 
@@ -939,7 +945,6 @@ const styles = StyleSheet.create({
   safeArea: {
     flex: 1,
     backgroundColor: '#FFFFFF',
-    paddingTop: Platform.OS === 'android' ? StatusBar.currentHeight : 0,
   },
   keyboardContainer: {
     flex: 1,
