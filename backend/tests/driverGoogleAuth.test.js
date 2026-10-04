@@ -23,6 +23,10 @@
  *    - Existing driver registration and login with password remains fully functional
  */
 
+const path = require('path');
+const dotenv = require('dotenv');
+dotenv.config({ path: path.join(__dirname, '../.env') });
+
 const assert = require('node:assert/strict');
 const { OAuth2Client } = require('google-auth-library');
 const { verifyGoogleIdToken, googleClient } = require('../services/googleAuthService');

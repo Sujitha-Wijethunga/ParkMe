@@ -4,8 +4,10 @@ const dotenv = require('dotenv');
 const connectDB = require('./config/db');
 const errorHandler = require('./middleware/errorHandler');
 
-// Load environment variables
-dotenv.config();
+const path = require('path');
+
+// Load environment variables reliably regardless of working directory
+dotenv.config({ path: path.join(__dirname, '.env') });
 
 // Connect to MongoDB (non-fatal during development)
 connectDB().catch((err) => {
