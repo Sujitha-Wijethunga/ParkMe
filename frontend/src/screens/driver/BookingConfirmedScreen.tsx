@@ -1,16 +1,16 @@
-import React, { useEffect, useMemo } from 'react';
+import React, { useEffect, useMemo, useState } from 'react';
 import {
   View,
   Text,
   StyleSheet,
   ScrollView,
   TouchableOpacity,
-  SafeAreaView,
   StatusBar,
   Platform,
   BackHandler,
   Alert,
 } from 'react-native';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { DriverColors } from '../../constants/colors';
 import { SAMPLE_NEARBY_PARKING_LOTS } from '../../constants/driverSampleData';
 import { BookingDetails } from '../../constants/bookingTypes';
@@ -26,8 +26,8 @@ interface BookingConfirmedScreenProps {
 function FakeQR({ seed }: { seed: string }) {
   const N = 21;
   const cells = useMemo(() => {
-    let h = 0;
-    for (let i = 0; i < seed.length; i++) h = (h * 31 + seed.charCodeAt(i)) >>> 0;
+    let seedHash = 0;
+    for (let i = 0; i < seed.length; i++) seedHash = (seedHash * 31 + seed.charCodeAt(i)) >>> 0;
     const finder = (r: number, c: number) =>
       [[0, 0], [0, N - 7], [N - 7, 0]].some(([fr, fc]) => {
         const rr = r - fr, cc = c - fc;
@@ -36,12 +36,18 @@ function FakeQR({ seed }: { seed: string }) {
       });
     const inFinderArea = (r: number, c: number) =>
       (r < 8 && c < 8) || (r < 8 && c > N - 9) || (r > N - 9 && c < 8);
-    return Array.from({ length: N * N }, (_, i) => {
+    let h = seedHash;
+    const result: boolean[] = [];
+    for (let i = 0; i < N * N; i++) {
       const r = Math.floor(i / N), c = i % N;
-      if (inFinderArea(r, c)) return finder(r, c);
-      h = (h * 1103515245 + 12345) >>> 0;
-      return (h >> 16) % 2 === 0;
-    });
+      if (inFinderArea(r, c)) {
+        result.push(finder(r, c));
+      } else {
+        h = (h * 1103515245 + 12345) >>> 0;
+        result.push((h >> 16) % 2 === 0);
+      }
+    }
+    return result;
   }, [seed]);
 
   const size = 7;
@@ -59,8 +65,15 @@ export default function BookingConfirmedScreen({
   onGetDirections,
   onCancel,
 }: BookingConfirmedScreenProps) {
+  const insets = useSafeAreaInsets();
+  const topPadding = Math.max(
+    insets.top,
+    Platform.OS === 'android' ? (StatusBar.currentHeight ?? 0) : 0
+  );
+  const bottomPadding = Math.max(insets.bottom, 16) + 24;
+
   const lot = SAMPLE_NEARBY_PARKING_LOTS.find((l) => l.id === booking.lotId);
-  const ref = useMemo(() => `PE-${Math.floor(10000 + Math.random() * 89999)}`, []);
+  const [ref] = useState(() => `PE-${Math.floor(10000 + Math.random() * 89999)}`);
 
   // Back button on this screen should not return to payment
   useEffect(() => {
@@ -75,9 +88,12 @@ export default function BookingConfirmedScreen({
     ]);
 
   return (
-    <SafeAreaView style={styles.safeArea}>
+    <View style={[styles.safeArea, { paddingTop: topPadding }]}>
       <StatusBar barStyle="dark-content" backgroundColor={DriverColors.background} />
-      <ScrollView contentContainerStyle={styles.content} showsVerticalScrollIndicator={false}>
+      <ScrollView
+        contentContainerStyle={[styles.content, { paddingBottom: bottomPadding }]}
+        showsVerticalScrollIndicator={false}
+      >
         {/* Success */}
         <View style={styles.success}>
           <View style={styles.checkCircle}>
@@ -156,7 +172,7 @@ export default function BookingConfirmedScreen({
           <Text style={styles.primaryText}>✕  Cancel</Text>
         </TouchableOpacity>
       </ScrollView>
-    </SafeAreaView>
+    </View>
   );
 }
 
@@ -164,9 +180,8 @@ const styles = StyleSheet.create({
   safeArea: {
     flex: 1,
     backgroundColor: DriverColors.background,
-    paddingTop: Platform.OS === 'android' ? StatusBar.currentHeight : 0,
   },
-  content: { padding: 16, gap: 12, paddingBottom: 32 },
+  content: { padding: 16, gap: 12 },
 
   success: { alignItems: 'center', marginVertical: 8 },
   checkCircle: {

@@ -5,14 +5,13 @@ import {
   StyleSheet,
   ScrollView,
   TouchableOpacity,
-  SafeAreaView,
   Platform,
   StatusBar,
   Alert,
   Modal,
   Pressable,
 } from 'react-native';
-import { Colors } from '../../constants/colors';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { StaffProfile } from '../../constants/profile';
 import { SpaceItem } from './ManageSpaceScreen';
 
@@ -37,6 +36,14 @@ export default function StaffDashboardScreen({
   onNavigateToProfile,
   spaces,
 }: StaffDashboardProps) {
+  const insets = useSafeAreaInsets();
+  const topPadding = Math.max(
+    insets.top,
+    Platform.OS === 'android' ? (StatusBar.currentHeight ?? 0) : 0
+  );
+  const bottomPadding =
+    Math.max(insets.bottom, Platform.OS === 'ios' ? 12 : 8) + (insets.bottom > 0 ? 4 : 2);
+
   const [activeTab, setActiveTab] = useState<'Dashboard' | 'Spaces' | 'Reservations' | 'Profile'>('Dashboard');
   const [showNotifications, setShowNotifications] = useState(false);
 
@@ -111,7 +118,7 @@ export default function StaffDashboardScreen({
   ];
 
   return (
-    <SafeAreaView style={styles.safeArea}>
+    <View style={[styles.safeArea, { paddingTop: topPadding }]}>
       <StatusBar barStyle="dark-content" backgroundColor="#FFFFFF" />
 
       {/* Top Main Header */}
@@ -365,7 +372,7 @@ export default function StaffDashboardScreen({
       </Modal>
 
       {/* Bottom Navigation Bar */}
-      <View style={styles.bottomNav}>
+      <View style={[styles.bottomNav, { paddingBottom: bottomPadding }]}>
         <TouchableOpacity
           style={styles.navItem}
           onPress={() => setActiveTab('Dashboard')}
@@ -413,7 +420,7 @@ export default function StaffDashboardScreen({
           <Text style={[styles.navLabel, activeTab === 'Profile' && styles.navLabelActive]}>Profile</Text>
         </TouchableOpacity>
       </View>
-    </SafeAreaView>
+    </View>
   );
 }
 
@@ -421,7 +428,6 @@ const styles = StyleSheet.create({
   safeArea: {
     flex: 1,
     backgroundColor: '#FFFFFF',
-    paddingTop: Platform.OS === 'android' ? StatusBar.currentHeight : 0,
   },
   topHeader: {
     flexDirection: 'row',
@@ -788,8 +794,7 @@ const styles = StyleSheet.create({
     backgroundColor: '#FFFFFF',
     borderTopWidth: 1,
     borderTopColor: '#F1F5F9',
-    paddingVertical: 8,
-    paddingBottom: Platform.OS === 'ios' ? 24 : 10,
+    paddingTop: 8,
   },
   navItem: {
     flex: 1,

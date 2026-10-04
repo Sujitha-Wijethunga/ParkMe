@@ -6,11 +6,11 @@ import {
   ScrollView,
   TextInput,
   TouchableOpacity,
-  SafeAreaView,
   StatusBar,
   Platform,
   Dimensions,
 } from 'react-native';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { DriverColors } from '../../constants/colors';
 import {
   SAMPLE_NEARBY_PARKING_LOTS,
@@ -58,6 +58,12 @@ export default function HomeScreen({
   onBottomTabPress,
   onOpenNearbyFiveMin,
 }: HomeScreenProps) {
+  const insets = useSafeAreaInsets();
+  const topPadding = Math.max(
+    insets.top,
+    Platform.OS === 'android' ? (StatusBar.currentHeight ?? 0) : 0
+  );
+
   const [searchQuery, setSearchQuery] = useState('');
   const [selectedChip, setSelectedChip] = useState<DriverFilterChip>('Nearest');
   const [parkingLots] = useState<ParkingLotCardItem[]>(SAMPLE_NEARBY_PARKING_LOTS);
@@ -76,7 +82,7 @@ export default function HomeScreen({
   };
 
   return (
-    <SafeAreaView style={styles.safeArea}>
+    <View style={[styles.safeArea, { paddingTop: topPadding }]}>
       <StatusBar barStyle="dark-content" backgroundColor="#FFFFFF" />
 
       {/* Main Scrollable Content */}
@@ -298,7 +304,7 @@ export default function HomeScreen({
 
       {/* 7. Driver Bottom Navigation */}
       <DriverBottomNav activeTab="home" onTabPress={handleTabPress} />
-    </SafeAreaView>
+    </View>
   );
 }
 
@@ -390,7 +396,6 @@ const styles = StyleSheet.create({
   safeArea: {
     flex: 1,
     backgroundColor: '#FFFFFF',
-    paddingTop: Platform.OS === 'android' ? StatusBar.currentHeight : 0,
   },
   scrollView: {
     flex: 1,

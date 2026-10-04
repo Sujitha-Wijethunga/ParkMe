@@ -6,12 +6,12 @@ import {
   StyleSheet,
   ScrollView,
   TouchableOpacity,
-  SafeAreaView,
   StatusBar,
   Platform,
   BackHandler,
   KeyboardAvoidingView,
 } from 'react-native';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { DriverColors } from '../../constants/colors';
 import { BookingDetails } from '../../constants/bookingTypes';
 
@@ -48,6 +48,16 @@ const isExpiryValid = (v: string) => {
 const isCvvValid = (v: string) => v.length === 3 || v.length === 4;
 
 export default function PaymentScreen({ booking, onBack, onPay }: PaymentScreenProps) {
+  const insets = useSafeAreaInsets();
+  const [payBarHeight, setPayBarHeight] = useState(0);
+
+  const topPadding = Math.max(
+    insets.top,
+    Platform.OS === 'android' ? (StatusBar.currentHeight ?? 0) : 0
+  );
+  const payBarPaddingBottom =
+    Math.max(insets.bottom, Platform.OS === 'ios' ? 14 : 8) + (insets.bottom > 0 ? 4 : 2);
+
   /** null = nothing selected yet */
   const [method, setMethod] = useState<number | null>(null);
   const [card, setCard] = useState('');
@@ -98,7 +108,7 @@ export default function PaymentScreen({ booking, onBack, onPay }: PaymentScreenP
   };
 
   return (
-    <SafeAreaView style={styles.safeArea}>
+    <View style={[styles.safeArea, { paddingTop: topPadding }]}>
       <StatusBar barStyle="dark-content" backgroundColor="#FFFFFF" />
 
       {/* Header */}
@@ -118,7 +128,13 @@ export default function PaymentScreen({ booking, onBack, onPay }: PaymentScreenP
       <KeyboardAvoidingView style={{ flex: 1 }} behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
         <ScrollView
           style={styles.scrollView}
-          contentContainerStyle={styles.scrollContent}
+          contentContainerStyle={[
+            styles.scrollContent,
+            {
+              paddingBottom:
+                (payBarHeight > 0 ? payBarHeight : 88 + insets.bottom) + 16,
+            },
+          ]}
           keyboardShouldPersistTaps="handled"
           showsVerticalScrollIndicator={false}
         >
@@ -249,12 +265,15 @@ export default function PaymentScreen({ booking, onBack, onPay }: PaymentScreenP
           </View>
 
           <Text style={styles.guarantee}>🛡️ Guaranteed Spot Lock · Instant Confirmation</Text>
-          <View style={{ height: 120 }} />
+          <View style={{ height: 0 }} />
         </ScrollView>
       </KeyboardAvoidingView>
 
       {/* Sticky pay bar */}
-      <View style={styles.payBar}>
+      <View
+        style={[styles.payBar, { paddingBottom: payBarPaddingBottom }]}
+        onLayout={(e) => setPayBarHeight(e.nativeEvent.layout.height)}
+      >
         {blockReason && <Text style={styles.blockText}>{blockReason}</Text>}
         <TouchableOpacity
           style={[styles.payBtn, !canPay && styles.payBtnDisabled]}
@@ -270,7 +289,7 @@ export default function PaymentScreen({ booking, onBack, onPay }: PaymentScreenP
           </Text>
         </TouchableOpacity>
       </View>
-    </SafeAreaView>
+    </View>
   );
 }
 
@@ -278,7 +297,6 @@ const styles = StyleSheet.create({
   safeArea: {
     flex: 1,
     backgroundColor: '#FFFFFF',
-    paddingTop: Platform.OS === 'android' ? StatusBar.currentHeight : 0,
   },
   header: {
     flexDirection: 'row',
@@ -381,7 +399,6 @@ const styles = StyleSheet.create({
     borderTopColor: DriverColors.borderLight,
     paddingHorizontal: 16,
     paddingTop: 10,
-    paddingBottom: Platform.OS === 'android' ? 16 : 28,
     elevation: 12,
   },
   blockText: {

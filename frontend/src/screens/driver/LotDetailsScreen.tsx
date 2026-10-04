@@ -5,13 +5,13 @@ import {
   StyleSheet,
   ScrollView,
   TouchableOpacity,
-  SafeAreaView,
   StatusBar,
   Platform,
   Image,
   ActivityIndicator,
   Alert,
 } from 'react-native';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { DriverColors } from '../../constants/colors';
 import {
   ParkingLotCardItem,
@@ -65,7 +65,16 @@ const AMENITY_ICONS: Record<string, string> = {
  * Select Space milestone in the next sprint.
  */
 export default function LotDetailsScreen({ lotId, onBack, onSelectSpace }: LotDetailsScreenProps) {
+  const insets = useSafeAreaInsets();
   const [isNavigating, setIsNavigating] = useState(false);
+  const [bottomBarHeight, setBottomBarHeight] = useState(0);
+
+  // Dynamic safe-area paddings
+  const bottomBarPaddingBottom =
+    Math.max(insets.bottom, Platform.OS === 'ios' ? 14 : 8) + (insets.bottom > 0 ? 4 : 2);
+  const topBarPaddingTop =
+    Math.max(insets.top, Platform.OS === 'android' ? (StatusBar.currentHeight ?? 0) : 0) + 8;
+  const heroHeight = 260 + (insets.top > 24 ? insets.top - 24 : 0);
 
   // Resolve the lot from the shared sample data by stable ID
   const lot: ParkingLotCardItem | undefined = SAMPLE_NEARBY_PARKING_LOTS.find(
@@ -75,7 +84,18 @@ export default function LotDetailsScreen({ lotId, onBack, onSelectSpace }: LotDe
   // ── Guard: unknown or missing lot ──────────────────────────────────────────
   if (!lot) {
     return (
-      <SafeAreaView style={styles.errorContainer}>
+      <View
+        style={[
+          styles.errorContainer,
+          {
+            paddingTop: Math.max(
+              insets.top,
+              Platform.OS === 'android' ? (StatusBar.currentHeight ?? 0) : 0
+            ),
+            paddingBottom: insets.bottom,
+          },
+        ]}
+      >
         <StatusBar barStyle="dark-content" backgroundColor="#FFFFFF" />
         <View style={styles.errorInner}>
           <Text style={styles.errorEmoji}>🚧</Text>
@@ -87,7 +107,7 @@ export default function LotDetailsScreen({ lotId, onBack, onSelectSpace }: LotDe
             <Text style={styles.errorBackText}>← Back</Text>
           </TouchableOpacity>
         </View>
-      </SafeAreaView>
+      </View>
     );
   }
 
@@ -141,17 +161,23 @@ export default function LotDetailsScreen({ lotId, onBack, onSelectSpace }: LotDe
   };
 
   return (
-    <SafeAreaView style={styles.safeArea}>
+    <View style={styles.safeArea}>
       <StatusBar barStyle="light-content" backgroundColor="transparent" translucent />
 
       {/* ── Scrollable body ─────────────────────────────────────────────────── */}
       <ScrollView
         style={styles.scrollView}
-        contentContainerStyle={styles.scrollContent}
+        contentContainerStyle={[
+          styles.scrollContent,
+          {
+            paddingBottom:
+              (bottomBarHeight > 0 ? bottomBarHeight : 100 + insets.bottom) + 16,
+          },
+        ]}
         showsVerticalScrollIndicator={false}
       >
         {/* 1. Hero Image + Gradient Overlay ──────────────────────────────── */}
-        <View style={styles.heroContainer}>
+        <View style={[styles.heroContainer, { height: heroHeight }]}>
           <Image
             source={{ uri: lot.imageUrl }}
             style={styles.heroImage}
@@ -164,7 +190,7 @@ export default function LotDetailsScreen({ lotId, onBack, onSelectSpace }: LotDe
           <View
             style={[
               styles.heroTopBar,
-              { paddingTop: Platform.OS === 'android' ? (StatusBar.currentHeight ?? 24) + 8 : 54 },
+              { paddingTop: topBarPaddingTop },
             ]}
           >
             <TouchableOpacity
@@ -395,12 +421,15 @@ export default function LotDetailsScreen({ lotId, onBack, onSelectSpace }: LotDe
           </View>
         )}
 
-        {/* Spacer so bottom bar doesn't cover last section */}
+        {/* Spacer not needed with dynamic scrollContent paddingBottom */}
         <View style={styles.bottomSpacer} />
       </ScrollView>
 
       {/* ── Sticky Bottom Bar ─────────────────────────────────────────────── */}
-      <View style={styles.bottomBar}>
+      <View
+        style={[styles.bottomBar, { paddingBottom: bottomBarPaddingBottom }]}
+        onLayout={(e) => setBottomBarHeight(e.nativeEvent.layout.height)}
+      >
         <View style={styles.bottomPriceBlock}>
           <Text style={styles.bottomStartingLabel}>Starting from</Text>
           <Text style={styles.bottomPriceMain}>
@@ -441,7 +470,7 @@ export default function LotDetailsScreen({ lotId, onBack, onSelectSpace }: LotDe
           </TouchableOpacity>
         </View>
       </View>
-    </SafeAreaView>
+    </View>
   );
 }
 
@@ -906,7 +935,7 @@ const styles = StyleSheet.create({
   },
 
   // ── Bottom spacer ──
-  bottomSpacer: { height: 100 },
+  bottomSpacer: { height: 0 },
 
   // ── Sticky bottom bar ──
   bottomBar: {
@@ -922,7 +951,6 @@ const styles = StyleSheet.create({
     justifyContent: 'space-between',
     paddingHorizontal: 18,
     paddingTop: 12,
-    paddingBottom: Platform.OS === 'android' ? 16 : 28,
     shadowColor: '#000',
     shadowOffset: { width: 0, height: -2 },
     shadowOpacity: 0.06,

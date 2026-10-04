@@ -6,7 +6,6 @@ import {
   TouchableOpacity,
   StyleSheet,
   ScrollView,
-  SafeAreaView,
   StatusBar,
   Platform,
   KeyboardAvoidingView,
@@ -14,6 +13,7 @@ import {
   Alert,
   Image,
 } from 'react-native';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { registerDriver, authWithGoogle } from '../../services/authApi';
 import { saveDriverToken, saveDriverUser, saveDriverSession, DriverUser } from '../../services/storage';
 import { promptNativeGoogleSignIn } from '../../services/googleAuthService';
@@ -31,6 +31,13 @@ export default function DriverSignUpScreen({
   onNavigateToStaffLogin,
   onSignUpSuccess,
 }: DriverSignUpScreenProps) {
+  const insets = useSafeAreaInsets();
+  const topPadding = Math.max(
+    insets.top,
+    Platform.OS === 'android' ? (StatusBar.currentHeight ?? 0) : 0
+  );
+  const bottomPadding = Math.max(insets.bottom, 16) + 16;
+
   const [name, setName] = useState('');
   const [email, setEmail] = useState('');
   const [phone, setPhone] = useState('');
@@ -212,14 +219,14 @@ export default function DriverSignUpScreen({
   };
 
   return (
-    <SafeAreaView style={styles.safeArea}>
+    <View style={[styles.safeArea, { paddingTop: topPadding }]}>
       <StatusBar barStyle="dark-content" backgroundColor="#FFFFFF" />
       <KeyboardAvoidingView
         style={styles.keyboardView}
         behavior={Platform.OS === 'ios' ? 'padding' : undefined}
       >
         <ScrollView
-          contentContainerStyle={styles.scrollContent}
+          contentContainerStyle={[styles.scrollContent, { paddingBottom: bottomPadding }]}
           keyboardShouldPersistTaps="handled"
           showsVerticalScrollIndicator={false}
         >
@@ -542,7 +549,7 @@ export default function DriverSignUpScreen({
           </View>
         </ScrollView>
       </KeyboardAvoidingView>
-    </SafeAreaView>
+    </View>
   );
 }
 
@@ -550,7 +557,6 @@ const styles = StyleSheet.create({
   safeArea: {
     flex: 1,
     backgroundColor: '#FFFFFF',
-    paddingTop: Platform.OS === 'android' ? StatusBar.currentHeight : 0,
   },
   keyboardView: {
     flex: 1,

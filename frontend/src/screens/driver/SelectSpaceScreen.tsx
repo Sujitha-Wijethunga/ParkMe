@@ -5,7 +5,6 @@ import {
   StyleSheet,
   ScrollView,
   TouchableOpacity,
-  SafeAreaView,
   StatusBar,
   Platform,
   BackHandler,
@@ -180,10 +179,20 @@ export default function SelectSpaceScreen({
     });
   }, [selectedSpace, activeFloor, lot, lotId, vehicleType, currentTariff, onContinue]);
 
+  const topPadding = Math.max(
+    insets.top,
+    Platform.OS === 'android' ? (StatusBar.currentHeight ?? 0) : 0
+  );
+
   /* ── Guard: missing lot ──────────────────────────────────────────────── */
   if (!lot) {
     return (
-      <SafeAreaView style={styles.errorContainer}>
+      <View
+        style={[
+          styles.errorContainer,
+          { paddingTop: topPadding, paddingBottom: insets.bottom },
+        ]}
+      >
         <StatusBar barStyle="dark-content" backgroundColor="#FFFFFF" />
         <View style={styles.errorInner}>
           <Text style={styles.errorEmoji}>🚧</Text>
@@ -195,14 +204,19 @@ export default function SelectSpaceScreen({
             <Text style={styles.errorBackText}>← Back to Details</Text>
           </TouchableOpacity>
         </View>
-      </SafeAreaView>
+      </View>
     );
   }
 
   /* ── Guard: no space layout for this lot ─────────────────────────────── */
   if (!layout || !activeFloor) {
     return (
-      <SafeAreaView style={styles.errorContainer}>
+      <View
+        style={[
+          styles.errorContainer,
+          { paddingTop: topPadding, paddingBottom: insets.bottom },
+        ]}
+      >
         <StatusBar barStyle="dark-content" backgroundColor="#FFFFFF" />
         <View style={styles.errorInner}>
           <Text style={styles.errorEmoji}>🗺️</Text>
@@ -214,7 +228,7 @@ export default function SelectSpaceScreen({
             <Text style={styles.errorBackText}>← Back to Details</Text>
           </TouchableOpacity>
         </View>
-      </SafeAreaView>
+      </View>
     );
   }
 
@@ -228,7 +242,7 @@ export default function SelectSpaceScreen({
   ) + (insets.bottom > 0 ? 8 : 4);
 
   return (
-    <SafeAreaView style={styles.safeArea}>
+    <View style={[styles.safeArea, { paddingTop: topPadding }]}>
       <StatusBar barStyle="dark-content" backgroundColor="#FFFFFF" />
 
       {/* ── Header ──────────────────────────────────────────────────────── */}
@@ -467,7 +481,7 @@ export default function SelectSpaceScreen({
           </Text>
         </TouchableOpacity>
       </View>
-    </SafeAreaView>
+    </View>
   );
 }
 
@@ -504,7 +518,6 @@ const styles = StyleSheet.create({
   errorContainer: {
     flex: 1,
     backgroundColor: '#FFFFFF',
-    paddingTop: Platform.OS === 'android' ? StatusBar.currentHeight : 0,
   },
   errorInner: {
     flex: 1, alignItems: 'center', justifyContent: 'center', paddingHorizontal: 32,
@@ -528,7 +541,6 @@ const styles = StyleSheet.create({
   safeArea: {
     flex: 1,
     backgroundColor: '#FFFFFF',
-    paddingTop: Platform.OS === 'android' ? StatusBar.currentHeight : 0,
   },
 
   // Header

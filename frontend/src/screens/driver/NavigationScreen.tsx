@@ -4,11 +4,11 @@ import {
   Text,
   StyleSheet,
   TouchableOpacity,
-  SafeAreaView,
   StatusBar,
   Platform,
   BackHandler,
 } from 'react-native';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { DriverColors } from '../../constants/colors';
 import { SAMPLE_NEARBY_PARKING_LOTS } from '../../constants/driverSampleData';
 import { BookingDetails } from '../../constants/bookingTypes';
@@ -22,7 +22,15 @@ interface NavigationScreenProps {
 }
 
 export default function NavigationScreen({ booking, onCancel, onArrived }: NavigationScreenProps) {
+  const insets = useSafeAreaInsets();
   const lot = SAMPLE_NEARBY_PARKING_LOTS.find((l) => l.id === booking.lotId);
+
+  const topPadding = Math.max(
+    insets.top,
+    Platform.OS === 'android' ? (StatusBar.currentHeight ?? 0) : 0
+  );
+  const bottomOffset =
+    Math.max(insets.bottom, Platform.OS === 'ios' ? 24 : 16) + 4;
 
   useEffect(() => {
     const sub = BackHandler.addEventListener('hardwareBackPress', () => {
@@ -33,7 +41,7 @@ export default function NavigationScreen({ booking, onCancel, onArrived }: Navig
   }, [onCancel]);
 
   return (
-    <SafeAreaView style={styles.safeArea}>
+    <View style={[styles.safeArea, { paddingTop: topPadding }]}>
       <StatusBar barStyle="dark-content" backgroundColor="#E8EEF9" />
 
       {/* Map placeholder – swap for react-native-maps <MapView/> later */}
@@ -62,7 +70,7 @@ export default function NavigationScreen({ booking, onCancel, onArrived }: Navig
       </View>
 
       {/* Bottom */}
-      <View style={styles.bottom}>
+      <View style={[styles.bottom, { bottom: bottomOffset }]}>
         <View style={styles.chipsRow}>
           <View style={styles.chip}><Text style={styles.chipText}>40 km/h zone</Text></View>
           <View style={styles.chip}>
@@ -87,11 +95,11 @@ export default function NavigationScreen({ booking, onCancel, onArrived }: Navig
             <Text style={styles.btnOutlineText}>⊗  Cancel</Text>
           </TouchableOpacity>
           <TouchableOpacity style={[styles.btn, styles.btnPrimary]} activeOpacity={0.88} onPress={onArrived}>
-            <Text style={styles.btnPrimaryText}>📍 I've Arrived</Text>
+            <Text style={styles.btnPrimaryText}>{"📍 I've Arrived"}</Text>
           </TouchableOpacity>
         </View>
       </View>
-    </SafeAreaView>
+    </View>
   );
 }
 
@@ -99,7 +107,6 @@ const styles = StyleSheet.create({
   safeArea: {
     flex: 1,
     backgroundColor: '#E8EEF9',
-    paddingTop: Platform.OS === 'android' ? StatusBar.currentHeight : 0,
   },
  map: { position: 'absolute', top: 0, left: 0, right: 0, bottom: 0 },
   block: { position: 'absolute', backgroundColor: '#D6E0F5', borderRadius: 8 },
@@ -143,7 +150,7 @@ const styles = StyleSheet.create({
   name: { fontSize: 15, fontWeight: '800', color: DriverColors.navyHeading },
   small: { fontSize: 11, color: DriverColors.textSecondary },
 
-  bottom: { position: 'absolute', left: 16, right: 16, bottom: Platform.OS === 'android' ? 20 : 30 },
+  bottom: { position: 'absolute', left: 16, right: 16 },
   chipsRow: { flexDirection: 'row', justifyContent: 'space-between', marginBottom: 8 },
   chip: {
     flexDirection: 'row',
