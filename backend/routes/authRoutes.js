@@ -5,6 +5,7 @@ const {
   login,
   driverRegister,
   driverLogin,
+  googleAuth,
   getMe,
   updateMe,
   changePassword,
@@ -12,6 +13,7 @@ const {
   loginValidation,
   driverRegisterValidation,
   driverLoginValidation,
+  googleAuthValidation,
 } = require('../controllers/authController');
 const { protect } = require('../middleware/auth');
 const { validate } = require('../middleware/validate');
@@ -23,6 +25,7 @@ router.post('/login', ...loginValidation, validate, login);
 // Driver auth routes
 router.post('/driver/register', ...driverRegisterValidation, validate, driverRegister);
 router.post('/driver/login', ...driverLoginValidation, validate, driverLogin);
+router.post('/google', ...googleAuthValidation, validate, googleAuth);
 
 // Current user profile routes
 router.get('/me', protect, getMe);
