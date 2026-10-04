@@ -3,6 +3,7 @@
   "version": "1.0.0",
   "main": "index.ts",
   "dependencies": {
+    "@react-native-google-signin/google-signin": "^16.1.5",
     "expo": "~57.0.26",
     "expo-asset": "~57.0.18",
     "expo-camera": "~57.0.6",

@@ -14,8 +14,9 @@ import {
   Alert,
   Image,
 } from 'react-native';
-import { registerDriver } from '../../services/authApi';
-import { saveDriverToken, saveDriverUser, DriverUser } from '../../services/storage';
+import { registerDriver, authWithGoogle } from '../../services/authApi';
+import { saveDriverToken, saveDriverUser, saveDriverSession, DriverUser } from '../../services/storage';
+import { promptNativeGoogleSignIn } from '../../services/googleAuthService';
 
 export interface DriverSignUpScreenProps {
   onBack: () => void;
@@ -39,6 +40,7 @@ export default function DriverSignUpScreen({
   const [showPassword, setShowPassword] = useState(false);
   const [showConfirmPassword, setShowConfirmPassword] = useState(false);
   const [isLoading, setIsLoading] = useState(false);
+  const [isGoogleLoading, setIsGoogleLoading] = useState(false);
 
   // Focus states
   const [nameFocused, setNameFocused] = useState(false);
@@ -154,12 +156,59 @@ export default function DriverSignUpScreen({
     }
   };
 
-  const handleSocialLogin = (provider: 'Google') => {
-    Alert.alert(
-      `${provider} Sign-Up`,
-      `${provider} registration is currently unavailable and will be supported in an upcoming release. Please register using your email and password.`,
-      [{ text: 'OK', style: 'default' }]
-    );
+  const handleGoogleSignUp = async () => {
+    if (isLoading || isGoogleLoading) return;
+    setIsGoogleLoading(true);
+
+    try {
+      const result = await promptNativeGoogleSignIn();
+
+      if (result.cancelled) {
+        setIsGoogleLoading(false);
+        return;
+      }
+
+      if (!result.success || !result.idToken) {
+        setIsGoogleLoading(false);
+        return;
+      }
+
+      // Send Google ID token to backend for cryptographic verification
+      const response = await authWithGoogle(result.idToken);
+
+      const driverUser: DriverUser = {
+        _id: response._id,
+        name: response.name,
+        email: response.email,
+        phone: response.phone,
+        role: 'driver',
+      };
+
+      await saveDriverSession(driverUser, response.token);
+      onSignUpSuccess(driverUser, response.token);
+    } catch (err: any) {
+      if (err?.code === 'ACCOUNT_COLLISION' || err?.status === 409) {
+        Alert.alert(
+          'Account Exists',
+          err.message || 'An account with this email already exists using password login. Please sign in with your email and password.',
+          [
+            { text: 'Cancel', style: 'cancel' },
+            {
+              text: 'Go to Login',
+              style: 'default',
+              onPress: onNavigateToLogin,
+            },
+          ]
+        );
+      } else {
+        Alert.alert(
+          'Google Sign-Up Error',
+          err?.message || 'Unable to complete Google registration. Please try again or use email and password.'
+        );
+      }
+    } finally {
+      setIsGoogleLoading(false);
+    }
   };
 
   return (
@@ -459,14 +508,21 @@ export default function DriverSignUpScreen({
             {/* Social Buttons */}
             <View style={styles.socialRow}>
               <TouchableOpacity
-                style={styles.socialBtn}
-                onPress={() => handleSocialLogin('Google')}
+                style={[styles.socialBtn, (isLoading || isGoogleLoading) && styles.socialBtnDisabled]}
+                onPress={handleGoogleSignUp}
+                disabled={isLoading || isGoogleLoading}
                 activeOpacity={0.7}
                 accessibilityRole="button"
-                accessibilityLabel="Sign up with Google"
+                accessibilityLabel="Continue with Google"
               >
-                <Text style={styles.socialGoogleG}>G</Text>
-                <Text style={styles.socialBtnText}>Google</Text>
+                {isGoogleLoading ? (
+                  <ActivityIndicator size="small" color="#EA4335" />
+                ) : (
+                  <>
+                    <Text style={styles.socialGoogleG}>G</Text>
+                    <Text style={styles.socialBtnText}>Continue with Google</Text>
+                  </>
+                )}
               </TouchableOpacity>
             </View>
           </View>
@@ -757,6 +813,9 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
+  },
+  socialBtnDisabled: {
+    opacity: 0.65,
   },
   socialGoogleG: {
     fontSize: 17,

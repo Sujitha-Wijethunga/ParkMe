@@ -13,11 +13,13 @@
     },
     "ios": {
       "supportsTablet": true,
+      "bundleIdentifier": "com.parkme.app",
       "infoPlist": {
         "NSLocationWhenInUseUsageDescription": "ParkMe uses your location to discover available parking spaces within 5 minutes driving time."
       }
     },
     "android": {
+      "package": "com.parkme.app",
       "adaptiveIcon": {
         "backgroundColor": "#000066",
         "foregroundImage": "./assets/android-icon-foreground.png",
@@ -43,7 +45,13 @@
           "resizeMode": "contain"
         }
       ],
-      "expo-secure-store"
+      "expo-secure-store",
+      [
+        "@react-native-google-signin/google-signin",
+        {
+          "iosUrlScheme": "com.googleusercontent.apps.YOUR_IOS_CLIENT_ID"
+        }
+      ]
     ]
   }
 }

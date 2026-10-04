@@ -134,3 +134,11 @@ export async function removeDriverUser(): Promise<void> {
 export async function clearDriverSession(): Promise<void> {
   await Promise.all([removeDriverToken(), removeDriverUser()]);
 }
+
+/**
+ * Stores both driver profile and JWT token into storage.
+ */
+export async function saveDriverSession(user: DriverUser, token: string): Promise<void> {
+  await Promise.all([saveDriverToken(token), saveDriverUser(user)]);
+}
+

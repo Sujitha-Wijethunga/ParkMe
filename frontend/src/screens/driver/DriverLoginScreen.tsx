@@ -14,8 +14,9 @@ import {
   Alert,
   Image,
 } from 'react-native';
-import { loginDriver } from '../../services/authApi';
-import { saveDriverToken, saveDriverUser, DriverUser } from '../../services/storage';
+import { loginDriver, authWithGoogle } from '../../services/authApi';
+import { saveDriverToken, saveDriverUser, saveDriverSession, DriverUser } from '../../services/storage';
+import { promptNativeGoogleSignIn } from '../../services/googleAuthService';
 
 export interface DriverLoginScreenProps {
   onBack: () => void;
@@ -34,6 +35,7 @@ export default function DriverLoginScreen({
   const [password, setPassword] = useState('');
   const [showPassword, setShowPassword] = useState(false);
   const [isLoading, setIsLoading] = useState(false);
+  const [isGoogleLoading, setIsGoogleLoading] = useState(false);
 
   // Field validation and error feedback
   const [identifierError, setIdentifierError] = useState('');
@@ -114,12 +116,52 @@ export default function DriverLoginScreen({
     );
   };
 
-  const handleSocialLogin = (provider: 'Google' | 'Apple') => {
-    Alert.alert(
-      `${provider} Sign-In`,
-      `${provider} authentication is currently unavailable and will be supported in an upcoming release. Please log in using your email and password.`,
-      [{ text: 'OK', style: 'default' }]
-    );
+  const handleGoogleLogin = async () => {
+    if (isLoading || isGoogleLoading) return;
+    setIsGoogleLoading(true);
+
+    try {
+      const result = await promptNativeGoogleSignIn();
+
+      if (result.cancelled) {
+        setIsGoogleLoading(false);
+        return;
+      }
+
+      if (!result.success || !result.idToken) {
+        setIsGoogleLoading(false);
+        return;
+      }
+
+      // Send Google ID token to backend for cryptographic verification
+      const response = await authWithGoogle(result.idToken);
+
+      const driverUser: DriverUser = {
+        _id: response._id,
+        name: response.name,
+        email: response.email,
+        phone: response.phone,
+        role: 'driver',
+      };
+
+      await saveDriverSession(driverUser, response.token);
+      onLoginSuccess(driverUser, response.token);
+    } catch (err: any) {
+      if (err?.code === 'ACCOUNT_COLLISION' || err?.status === 409) {
+        Alert.alert(
+          'Account Exists',
+          err.message || 'An account with this email already exists using password login. Please sign in with your email and password.',
+          [{ text: 'OK', style: 'default' }]
+        );
+      } else {
+        Alert.alert(
+          'Google Sign-In Error',
+          err?.message || 'Unable to sign in with Google. Please try again or use your password.'
+        );
+      }
+    } finally {
+      setIsGoogleLoading(false);
+    }
   };
 
   return (
@@ -319,25 +361,21 @@ export default function DriverLoginScreen({
             {/* Social Buttons */}
             <View style={styles.socialRow}>
               <TouchableOpacity
-                style={styles.socialBtn}
-                onPress={() => handleSocialLogin('Google')}
+                style={[styles.socialBtn, (isLoading || isGoogleLoading) && styles.socialBtnDisabled]}
+                onPress={handleGoogleLogin}
+                disabled={isLoading || isGoogleLoading}
                 activeOpacity={0.7}
                 accessibilityRole="button"
-                accessibilityLabel="Sign in with Google"
+                accessibilityLabel="Continue with Google"
               >
-                <Text style={styles.socialGoogleG}>G</Text>
-                <Text style={styles.socialBtnText}>Google</Text>
-              </TouchableOpacity>
-
-              <TouchableOpacity
-                style={styles.socialBtn}
-                onPress={() => handleSocialLogin('Apple')}
-                activeOpacity={0.7}
-                accessibilityRole="button"
-                accessibilityLabel="Sign in with Apple"
-              >
-                <Text style={styles.socialAppleIcon}></Text>
-                <Text style={styles.socialBtnText}>Apple</Text>
+                {isGoogleLoading ? (
+                  <ActivityIndicator size="small" color="#EA4335" />
+                ) : (
+                  <>
+                    <Text style={styles.socialGoogleG}>G</Text>
+                    <Text style={styles.socialBtnText}>Continue with Google</Text>
+                  </>
+                )}
               </TouchableOpacity>
             </View>
           </View>
@@ -640,17 +678,14 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
   },
+  socialBtnDisabled: {
+    opacity: 0.6,
+  },
   socialGoogleG: {
     fontSize: 17,
     fontWeight: '700',
     color: '#EA4335',
     marginRight: 8,
-  },
-  socialAppleIcon: {
-    fontSize: 18,
-    color: '#000000',
-    marginRight: 6,
-    lineHeight: 20,
   },
   socialBtnText: {
     fontSize: 14,

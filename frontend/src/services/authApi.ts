@@ -173,3 +173,36 @@ export async function getCurrentUser(token: string): Promise<DriverUser> {
 
   return data as DriverUser;
 }
+
+export interface GoogleAuthResponse extends AuthResponse {
+  authProvider?: string;
+}
+
+/**
+ * Authenticates with ParkMe backend using a verified Google ID token.
+ */
+export async function authWithGoogle(idToken: string): Promise<GoogleAuthResponse> {
+  const baseUrl = getApiBaseUrl();
+  const url = `${baseUrl}/api/auth/google`;
+
+  const response = await fetchWithTimeout(url, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ idToken }),
+  });
+
+  const data = await response.json().catch(() => ({}));
+
+  if (!response.ok) {
+    const err: ApiError & { code?: string } = {
+      message: data.message || 'Google authentication failed. Please try again.',
+      errors: data.errors,
+      status: response.status,
+      code: data.code,
+    };
+    throw err;
+  }
+
+  return data as GoogleAuthResponse;
+}
+
