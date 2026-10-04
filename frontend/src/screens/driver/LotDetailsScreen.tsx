@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useState } from 'react';
 import {
   View,
   Text,
@@ -9,12 +9,17 @@ import {
   StatusBar,
   Platform,
   Image,
+  ActivityIndicator,
+  Alert,
 } from 'react-native';
 import { DriverColors } from '../../constants/colors';
 import {
   ParkingLotCardItem,
   SAMPLE_NEARBY_PARKING_LOTS,
 } from '../../constants/driverSampleData';
+import { getCurrentDriverLocation } from '../../services/locationService';
+import { checkLotAvailability } from '../../services/parkingService';
+import { launchDrivingNavigation } from '../../services/navigationLauncher';
 
 interface LotDetailsScreenProps {
   /** Stable lot ID passed from the card that was tapped. */
@@ -27,6 +32,13 @@ interface LotDetailsScreenProps {
    */
   onSelectSpace: (lotId: string) => void;
 }
+
+const LOT_SAMPLE_COORDINATES: Record<string, { lat: number; lng: number }> = {
+  'lot-1': { lat: 6.9271, lng: 79.8456 }, // One Galle Face
+  'lot-2': { lat: 6.9065, lng: 79.8519 }, // Liberty Plaza
+  'lot-3': { lat: 6.9175, lng: 79.8492 }, // Crescat Boulevard
+  'lot-4': { lat: 6.8940, lng: 79.8548 }, // Majestic City
+};
 
 const AMENITY_ICONS: Record<string, string> = {
   'CCTV Surveillance': '📷',
@@ -53,6 +65,8 @@ const AMENITY_ICONS: Record<string, string> = {
  * Select Space milestone in the next sprint.
  */
 export default function LotDetailsScreen({ lotId, onBack, onSelectSpace }: LotDetailsScreenProps) {
+  const [isNavigating, setIsNavigating] = useState(false);
+
   // Resolve the lot from the shared sample data by stable ID
   const lot: ParkingLotCardItem | undefined = SAMPLE_NEARBY_PARKING_LOTS.find(
     (l) => l.id === lotId
@@ -85,6 +99,45 @@ export default function LotDetailsScreen({ lotId, onBack, onSelectSpace }: LotDe
 
   const handleReserve = () => {
     onSelectSpace(lot.id);
+  };
+
+  const handleNavigate = async () => {
+    setIsNavigating(true);
+    try {
+      // 1. Verify availability
+      const check = await checkLotAvailability(lot.id).catch(() => null);
+      if (check && (!check.isAvailable || check.availableSpaces <= 0)) {
+        Alert.alert(
+          'Parking Lot Full',
+          `Unfortunately, ${lot.name} currently has no reported available spaces. Please select another parking lot.`,
+          [{ text: 'OK' }]
+        );
+        setIsNavigating(false);
+        return;
+      }
+
+      // 2. Obtain current GPS location
+      const coords = await getCurrentDriverLocation(8000);
+
+      // 3. Resolve destination coordinates
+      const dest =
+        check?.navigationCoordinates ||
+        LOT_SAMPLE_COORDINATES[lot.id] || { lat: 6.9271, lng: 79.8456 };
+      const hasEntrance = Boolean(check?.hasEntranceCoordinates);
+
+      await launchDrivingNavigation({
+        originLat: coords.latitude,
+        originLng: coords.longitude,
+        destLat: dest.lat,
+        destLng: dest.lng,
+        lotName: lot.name,
+        hasEntranceCoordinates: hasEntrance,
+      });
+    } catch (err: any) {
+      Alert.alert('Navigation Error', err?.message || 'Could not launch turn-by-turn navigation.');
+    } finally {
+      setIsNavigating(false);
+    }
   };
 
   return (
@@ -357,16 +410,36 @@ export default function LotDetailsScreen({ lotId, onBack, onSelectSpace }: LotDe
           <Text style={styles.bottomPriceDay}>Rs. {dailyRateEstimate} / day max</Text>
         </View>
 
-        <TouchableOpacity
-          style={styles.reserveBtn}
-          activeOpacity={0.88}
-          onPress={handleReserve}
-          accessibilityRole="button"
-          accessibilityLabel={`Reserve a space at ${lot.name}`}
-        >
-          <Text style={styles.reserveBtnIcon}>✓</Text>
-          <Text style={styles.reserveBtnText}>Reserve a Space</Text>
-        </TouchableOpacity>
+        <View style={styles.bottomButtonsRow}>
+          <TouchableOpacity
+            style={styles.navigateBtn}
+            activeOpacity={0.85}
+            onPress={handleNavigate}
+            disabled={isNavigating}
+            accessibilityRole="button"
+            accessibilityLabel={`Navigate to ${lot.name}`}
+          >
+            {isNavigating ? (
+              <ActivityIndicator size="small" color="#FFFFFF" />
+            ) : (
+              <>
+                <Text style={styles.navigateBtnIcon}>🧭</Text>
+                <Text style={styles.navigateBtnText}>Navigate</Text>
+              </>
+            )}
+          </TouchableOpacity>
+
+          <TouchableOpacity
+            style={styles.reserveBtn}
+            activeOpacity={0.88}
+            onPress={handleReserve}
+            accessibilityRole="button"
+            accessibilityLabel={`Reserve a space at ${lot.name}`}
+          >
+            <Text style={styles.reserveBtnIcon}>✓</Text>
+            <Text style={styles.reserveBtnText}>Reserve</Text>
+          </TouchableOpacity>
+        </View>
       </View>
     </SafeAreaView>
   );
@@ -883,14 +956,41 @@ const styles = StyleSheet.create({
     color: DriverColors.textSecondary,
     marginTop: 2,
   },
+  bottomButtonsRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+  },
+  navigateBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: '#1E3A8A',
+    paddingHorizontal: 16,
+    paddingVertical: 14,
+    borderRadius: 28,
+    gap: 6,
+    shadowColor: '#1E3A8A',
+    shadowOffset: { width: 0, height: 3 },
+    shadowOpacity: 0.25,
+    shadowRadius: 6,
+    elevation: 5,
+  },
+  navigateBtnIcon: {
+    fontSize: 15,
+  },
+  navigateBtnText: {
+    color: '#FFFFFF',
+    fontSize: 14,
+    fontWeight: '800',
+  },
   reserveBtn: {
     flexDirection: 'row',
     alignItems: 'center',
     backgroundColor: DriverColors.orangePrimary,
-    paddingHorizontal: 22,
-    paddingVertical: 15,
+    paddingHorizontal: 18,
+    paddingVertical: 14,
     borderRadius: 28,
-    gap: 8,
+    gap: 6,
     shadowColor: DriverColors.orangePrimary,
     shadowOffset: { width: 0, height: 4 },
     shadowOpacity: 0.35,
@@ -899,12 +999,12 @@ const styles = StyleSheet.create({
   },
   reserveBtnIcon: {
     color: '#FFFFFF',
-    fontSize: 16,
+    fontSize: 15,
     fontWeight: '800',
   },
   reserveBtnText: {
     color: '#FFFFFF',
-    fontSize: 15,
+    fontSize: 14,
     fontWeight: '800',
     letterSpacing: 0.1,
   },
