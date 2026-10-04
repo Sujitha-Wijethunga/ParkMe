@@ -4,8 +4,10 @@ const dotenv = require('dotenv');
 const connectDB = require('./config/db');
 const errorHandler = require('./middleware/errorHandler');
 
-// Load environment variables
-dotenv.config();
+const path = require('path');
+
+// Load environment variables reliably regardless of working directory
+dotenv.config({ path: path.join(__dirname, '.env') });
 
 // Connect to MongoDB (non-fatal during development)
 connectDB().catch((err) => {
@@ -26,6 +28,9 @@ app.use('/api/parking-lots', require('./routes/parkingLotRoutes'));
 app.use('/api/parking-lots/:lotId/spaces', require('./routes/parkingSpaceRoutes'));
 app.use('/api/reservations', require('./routes/reservationRoutes'));
 app.use('/api/payments', require('./routes/paymentRoutes'));
+app.use('/api/attendance', require('./routes/attendanceRoutes'));
+app.use('/api/leave-requests', require('./routes/leaveRequestRoutes'));
+app.use('/api/notifications', require('./routes/notificationRoutes'));
 
 // Health check
 app.get('/api/health', (req, res) => {

@@ -23,6 +23,16 @@ const parkingLotSchema = new mongoose.Schema(
         required: [true, 'Coordinates are required'],
       },
     },
+    entranceLocation: {
+      type: {
+        type: String,
+        enum: ['Point'],
+        default: 'Point',
+      },
+      coordinates: {
+        type: [Number], // [longitude, latitude] optional entrance coordinates
+      },
+    },
     totalSpaces: {
       type: Number,
       required: [true, 'Total spaces count is required'],
