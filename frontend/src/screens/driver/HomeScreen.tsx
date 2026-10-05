@@ -8,19 +8,18 @@ import {
   TouchableOpacity,
   StatusBar,
   Platform,
-  Dimensions,
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { DriverColors } from '../../constants/colors';
 import {
   SAMPLE_NEARBY_PARKING_LOTS,
   DRIVER_FILTER_CHIPS,
-  STATIC_MAP_MARKERS,
   ParkingLotCardItem,
   DriverFilterChip,
 } from '../../constants/driverSampleData';
 import DriverBottomNav, { DriverTabType } from '../../components/DriverBottomNav';
 import ParkingLotCard from '../../components/ParkingLotCard';
+import DriverNotificationsModal from '../../components/DriverNotificationsModal';
 
 interface HomeScreenProps {
   userName?: string;
@@ -35,8 +34,6 @@ interface HomeScreenProps {
   onBottomTabPress?: (tab: DriverTabType) => void;
   onOpenNearbyFiveMin?: () => void;
 }
-
-const { width: SCREEN_WIDTH } = Dimensions.get('window');
 
 /**
  * Driver Parking Finder / Home Screen
@@ -67,6 +64,7 @@ export default function HomeScreen({
   const [searchQuery, setSearchQuery] = useState('');
   const [selectedChip, setSelectedChip] = useState<DriverFilterChip>('Nearest');
   const [parkingLots] = useState<ParkingLotCardItem[]>(SAMPLE_NEARBY_PARKING_LOTS);
+  const [notificationsVisible, setNotificationsVisible] = useState(false);
 
   // Handle bottom navigation tab switching
   const handleTabPress = (tab: DriverTabType) => {
@@ -99,14 +97,19 @@ export default function HomeScreen({
               <Text style={styles.greetingTitle}>Hi, {userName}</Text>
               <Text style={styles.waveEmoji}>👋</Text>
             </View>
-            <Text style={styles.greetingSubtitle}>Find your spot in Colombo</Text>
+            <Text style={styles.greetingSubtitle}>Find available parking in Sri Lanka</Text>
           </View>
 
           {/* Notification Bell Button */}
           <TouchableOpacity
             style={styles.notificationBtn}
             activeOpacity={0.7}
-            onPress={onNavigateToNotifications}
+            onPress={() => {
+              if (onNavigateToNotifications) {
+                onNavigateToNotifications();
+              }
+              setNotificationsVisible(true);
+            }}
             accessibilityLabel="Notifications"
           >
             <NotificationBellIcon />
@@ -190,7 +193,7 @@ export default function HomeScreen({
           })}
         </ScrollView>
 
-        {/* 3b. Prominent "Find Parking • 5 min away" Feature Button */}
+        {/* 3b. Prominent "Find Fastest Available Parking" Feature Button */}
         <TouchableOpacity
           style={styles.nearbyFiveMinBtn}
           activeOpacity={0.88}
@@ -202,20 +205,20 @@ export default function HomeScreen({
             }
           }}
           accessibilityRole="button"
-          accessibilityLabel="Find Parking within 5 minutes driving time"
+          accessibilityLabel="Find Fastest Available Parking"
         >
           <View style={styles.nearbyFiveMinGlowIcon}>
             <Text style={styles.nearbyFiveMinIconText}>⚡</Text>
           </View>
           <View style={styles.nearbyFiveMinBody}>
             <View style={styles.nearbyFiveMinTitleRow}>
-              <Text style={styles.nearbyFiveMinTitle}>Find Parking • 5 min away</Text>
+              <Text style={styles.nearbyFiveMinTitle}>Find Fastest Available Parking</Text>
               <View style={styles.nearbyFiveMinLiveBadge}>
                 <Text style={styles.nearbyFiveMinLiveBadgeText}>LIVE GPS</Text>
               </View>
             </View>
             <Text style={styles.nearbyFiveMinSubtitle}>
-              Available spots within 300s road driving reach
+              Reachable spots ranked by live travel time & availability
             </Text>
           </View>
           <View style={styles.nearbyFiveMinChevron}>
@@ -223,16 +226,19 @@ export default function HomeScreen({
           </View>
         </TouchableOpacity>
 
-        {/* 4. Static Map Graphic Preview (Documented Non-Functional Milestone Preview) */}
+        {/* 4. GPS Spatial Radar Preview Card */}
         <View style={styles.mapPreviewCard}>
-          {/* Stylized vector map background representation */}
           <View style={styles.mapBackgroundLayer}>
-            {/* Primary slanted avenue road */}
-            <View style={styles.mapAvenueRoad} />
-            {/* Secondary cross streets */}
-            <View style={styles.mapCrossStreet1} />
-            <View style={styles.mapCrossStreet2} />
-            <View style={styles.mapCurvedRoad} />
+            {/* Compass / Directional North Indicator */}
+            <View style={styles.compassContainer}>
+              <Text style={styles.compassLabel}>🧭 N</Text>
+            </View>
+
+            {/* Radar / Distance rings */}
+            <View style={styles.radarRingOuter} />
+            <View style={styles.radarRingInner} />
+            <View style={styles.radarCrosshairH} />
+            <View style={styles.radarCrosshairV} />
 
             {/* Current User Location Blue Indicator with Pulse Aura */}
             <View style={styles.userLocationPulseWrapper}>
@@ -240,32 +246,40 @@ export default function HomeScreen({
               <View style={styles.userLocationDot} />
             </View>
 
-            {/* Price Markers Placed on Map */}
-            {STATIC_MAP_MARKERS.map((marker) => (
-              <View
-                key={marker.id}
-                style={[
-                  styles.mapPricePill,
-                  {
-                    top: `${marker.topPercent}%`,
-                    left: `${marker.leftPercent}%`,
-                  },
-                ]}
-              >
-                <View style={styles.mapPriceDot} />
-                <Text style={styles.mapPriceText}>{marker.price}</Text>
-              </View>
-            ))}
+            {/* Real Nearby Lot Price Markers */}
+            {parkingLots.slice(0, 3).map((lot, idx) => {
+              const offsets = [
+                { topPercent: 22, leftPercent: 18 },
+                { topPercent: 32, leftPercent: 54 },
+                { topPercent: 58, leftPercent: 68 },
+              ];
+              const pos = offsets[idx] || { topPercent: 40, leftPercent: 40 };
+              return (
+                <View
+                  key={lot.id}
+                  style={[
+                    styles.mapPricePill,
+                    {
+                      top: `${pos.topPercent}%`,
+                      left: `${pos.leftPercent}%`,
+                    },
+                  ]}
+                >
+                  <View style={styles.mapPriceDot} />
+                  <Text style={styles.mapPriceText}>Rs.{lot.pricePerHour}</Text>
+                </View>
+              );
+            })}
           </View>
 
-          {/* "View Full Map" Action Button */}
+          {/* "View Interactive Map" Action Button */}
           <TouchableOpacity
             style={styles.viewFullMapBtn}
             activeOpacity={0.85}
             onPress={onNavigateToMap}
           >
-            <Text style={styles.compassEmoji}>🧭</Text>
-            <Text style={styles.viewFullMapText}>View Full Map</Text>
+            <Text style={styles.compassEmoji}>📍</Text>
+            <Text style={styles.viewFullMapText}>Open Interactive Map</Text>
             <Text style={styles.chevronRightText}>›</Text>
           </TouchableOpacity>
         </View>
@@ -274,7 +288,7 @@ export default function HomeScreen({
         <View style={styles.sectionHeaderRow}>
           <View>
             <Text style={styles.sectionTitle}>Nearby Parking</Text>
-            <Text style={styles.sectionSubtitle}>Real-time available spaces in Colombo</Text>
+            <Text style={styles.sectionSubtitle}>Real-time available spaces</Text>
           </View>
           <TouchableOpacity
             activeOpacity={0.7}
@@ -286,7 +300,7 @@ export default function HomeScreen({
               }
             }}
           >
-            <Text style={styles.seeAllText}>See All (14)</Text>
+            <Text style={styles.seeAllText}>See All ({parkingLots.length})</Text>
           </TouchableOpacity>
         </View>
 
@@ -304,6 +318,12 @@ export default function HomeScreen({
 
       {/* 7. Driver Bottom Navigation */}
       <DriverBottomNav activeTab="home" onTabPress={handleTabPress} />
+
+      {/* 8. Driver Notifications Modal */}
+      <DriverNotificationsModal
+        visible={notificationsVisible}
+        onClose={() => setNotificationsVisible(false)}
+      />
     </View>
   );
 }
@@ -573,41 +593,59 @@ const styles = StyleSheet.create({
   mapBackgroundLayer: {
     ...StyleSheet.absoluteFill,
   },
-  mapAvenueRoad: {
+  compassContainer: {
+    position: 'absolute',
+    top: 10,
+    right: 12,
+    backgroundColor: 'rgba(255, 255, 255, 0.92)',
+    paddingHorizontal: 7,
+    paddingVertical: 3,
+    borderRadius: 8,
+    borderWidth: 1,
+    borderColor: '#CBD5E1',
+    zIndex: 5,
+  },
+  compassLabel: {
+    fontSize: 11,
+    fontWeight: '700',
+    color: DriverColors.navyHeading,
+  },
+  radarRingOuter: {
+    position: 'absolute',
+    top: 15,
+    left: 45,
+    width: 140,
+    height: 140,
+    borderRadius: 70,
+    borderWidth: 1,
+    borderColor: 'rgba(30, 58, 138, 0.15)',
+    borderStyle: 'dashed',
+  },
+  radarRingInner: {
     position: 'absolute',
     top: 45,
-    left: -20,
-    width: SCREEN_WIDTH + 60,
-    height: 22,
-    backgroundColor: DriverColors.mapRoadMain,
-    transform: [{ rotate: '-12deg' }],
+    left: 75,
+    width: 80,
+    height: 80,
+    borderRadius: 40,
+    borderWidth: 1,
+    borderColor: 'rgba(30, 58, 138, 0.22)',
   },
-  mapCrossStreet1: {
+  radarCrosshairH: {
     position: 'absolute',
-    top: -10,
-    left: 80,
-    width: 16,
-    height: 190,
-    backgroundColor: DriverColors.mapRoad,
-    transform: [{ rotate: '25deg' }],
+    top: 85,
+    left: 20,
+    right: 20,
+    height: 1,
+    backgroundColor: 'rgba(30, 58, 138, 0.1)',
   },
-  mapCrossStreet2: {
+  radarCrosshairV: {
     position: 'absolute',
-    top: -10,
-    right: 90,
-    width: 18,
-    height: 190,
-    backgroundColor: DriverColors.mapRoad,
-    transform: [{ rotate: '-35deg' }],
-  },
-  mapCurvedRoad: {
-    position: 'absolute',
-    bottom: -15,
-    left: 30,
-    width: SCREEN_WIDTH - 80,
-    height: 20,
-    backgroundColor: DriverColors.mapRoadMain,
-    transform: [{ rotate: '5deg' }],
+    top: 10,
+    bottom: 10,
+    left: 115,
+    width: 1,
+    backgroundColor: 'rgba(30, 58, 138, 0.1)',
   },
   // User Location Dot
   userLocationPulseWrapper: {
