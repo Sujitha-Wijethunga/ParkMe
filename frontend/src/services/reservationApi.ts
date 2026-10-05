@@ -9,6 +9,7 @@ export interface ReservationLocation {
   _id: string;
   name?: string;
   address?: string;
+  pricePerHour?: number;
 }
 
 export interface ReservationSpace {
@@ -28,6 +29,18 @@ export interface DriverReservation {
   cancellationReason?: string;
   cancelledAt?: string;
   createdAt?: string;
+  verifiedAt?: string;
+}
+
+export function isWithinScheduledWindow(
+  reservation: Pick<DriverReservation, 'status' | 'startTime' | 'endTime'>,
+  now = Date.now()
+): boolean {
+  return (
+    reservation.status === 'pending' &&
+    new Date(reservation.startTime).getTime() <= now &&
+    now < new Date(reservation.endTime).getTime()
+  );
 }
 
 export interface MyReservationsResult {
@@ -58,7 +71,11 @@ function isDriverReservation(value: unknown): value is DriverReservation {
     typeof related === 'string' ||
     (isRecord(related) &&
       typeof related._id === 'string' &&
-      fields.every((field) => related[field] === undefined || typeof related[field] === 'string'));
+      fields.every((field) =>
+        related[field] === undefined ||
+        typeof related[field] === 'string' ||
+        (field === 'pricePerHour' && typeof related[field] === 'number' && Number.isFinite(related[field]))
+      ));
 
   return (
     typeof value._id === 'string' &&
@@ -71,6 +88,8 @@ function isDriverReservation(value: unknown): value is DriverReservation {
     typeof value.totalAmount === 'number' &&
     Number.isFinite(value.totalAmount) &&
     value.totalAmount >= 0 &&
+    (value.verifiedAt === undefined ||
+      (typeof value.verifiedAt === 'string' && !Number.isNaN(Date.parse(value.verifiedAt)))) &&
     isPopulatedValue(value.parkingLot, ['name', 'address']) &&
     isPopulatedValue(value.parkingSpace, ['spaceNumber', 'floor'])
   );
@@ -242,6 +261,19 @@ export async function cancelReservation(
 
   await reservationRequest<{ message: string }>(
     `/${encodeURIComponent(reservationId)}/cancel`,
+    token,
+    'PUT'
+  );
+}
+
+export async function releaseActiveReservation(token: string, reservationId: string): Promise<void> {
+  if (!token) throw new Error('Please sign in to release your parking space.');
+  if (!reservationId || reservationId.startsWith('local-')) {
+    throw new Error('Only a server-confirmed active session can release a parking space.');
+  }
+
+  await reservationRequest<{ message: string }>(
+    `/${encodeURIComponent(reservationId)}/release`,
     token,
     'PUT'
   );

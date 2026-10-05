@@ -6,6 +6,7 @@ const {
   getReservationById,
   cancelReservation,
   completeReservation,
+  releaseReservation,
   verifyReservation,
   getAllReservations,
 } = require('../controllers/reservationController');
@@ -19,5 +20,6 @@ router.get('/:id', protect, getReservationById);
 router.put('/:id/cancel', protect, authorize('driver'), cancelReservation);
 router.put('/:id/verify', protect, authorize('admin', 'staff'), verifyReservation);
 router.put('/:id/complete', protect, authorize('admin', 'staff'), completeReservation);
+router.put('/:id/release', protect, authorize('driver'), releaseReservation);
 
 module.exports = router;

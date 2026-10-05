@@ -27,10 +27,15 @@ import BookingSummaryScreen from './src/screens/driver/BookingSummaryScreen';
 import PaymentScreen from './src/screens/driver/PaymentScreen';
 import BookingConfirmedScreen from './src/screens/driver/BookingConfirmedScreen';
 import MyBookingsScreen, { BookingDetailsScreen } from './src/screens/driver/MyBookingsScreen';
+import ActiveParkingScreen, { ReleaseParkingScreen } from './src/screens/driver/ActiveParkingScreen';
 import NavigationScreen from './src/screens/driver/NavigationScreen';
 import { BookingDetails } from './src/constants/bookingTypes';
 import { DriverUser, getDriverToken, clearDriverSession } from './src/services/storage';
-import { saveConfirmedBooking } from './src/services/reservationApi';
+import {
+  DriverReservation,
+  isWithinScheduledWindow,
+  saveConfirmedBooking,
+} from './src/services/reservationApi';
 import { getCurrentUser } from './src/services/authApi';
 
 import {
@@ -65,6 +70,8 @@ type ScreenType =
   | 'driver-navigation'
   | 'driver-bookings'
   | 'driver-booking-details'
+  | 'driver-active-parking'
+  | 'driver-release-parking'
   | 'login'
   | 'dashboard'
   | 'spaces'
@@ -157,6 +164,7 @@ export default function App() {
   /** NEW: booking used by Payment, Booking Confirmed and Navigation screens. */
   const [confirmedBooking, setConfirmedBooking] = useState<BookingDetails | null>(null);
   const [selectedReservationId, setSelectedReservationId] = useState<string | null>(null);
+  const [reservationToRelease, setReservationToRelease] = useState<DriverReservation | null>(null);
 
   const handleOpenSearch = (
     query: string = '',
@@ -199,9 +207,13 @@ export default function App() {
     setCurrentScreen('driver-bookings');
   };
 
-  const handleSelectReservation = (reservationId: string) => {
-    setSelectedReservationId(reservationId);
-    setCurrentScreen('driver-booking-details');
+  const handleSelectReservation = (reservation: DriverReservation) => {
+    setSelectedReservationId(reservation._id);
+    setCurrentScreen(
+      reservation.status === 'active' || isWithinScheduledWindow(reservation)
+        ? 'driver-active-parking'
+        : 'driver-booking-details'
+    );
   };
 
   const handleOpenSpaceSelection = (lotId: string) => {
@@ -372,7 +384,9 @@ export default function App() {
     currentScreen === 'driver-booking-confirmed' ||
     currentScreen === 'driver-navigation' ||
     currentScreen === 'driver-bookings' ||
-    currentScreen === 'driver-booking-details';
+    currentScreen === 'driver-booking-details' ||
+    currentScreen === 'driver-active-parking' ||
+    currentScreen === 'driver-release-parking';
 
   return (
     <SafeAreaProvider style={styles.rootContainer}>
@@ -449,6 +463,10 @@ export default function App() {
           userId={driverUser?._id || 'guest'}
           onBack={() => setCurrentScreen('driver-home')}
           onSelectBooking={handleSelectReservation}
+          onViewActiveParking={() => {
+            setSelectedReservationId(null);
+            setCurrentScreen('driver-active-parking');
+          }}
           onNavigateHome={() => setCurrentScreen('driver-home')}
           onNavigateMap={() => handleOpenSearch('', 'map', 'Nearest')}
           onNavigateProfile={handleDriverProfilePress}
@@ -464,6 +482,31 @@ export default function App() {
           onNavigateMap={() => handleOpenSearch('', 'map', 'Nearest')}
           onNavigateProfile={handleDriverProfilePress}
           onReservationCancelled={() => setCurrentScreen('driver-bookings')}
+        />
+      )}
+      {currentScreen === 'driver-active-parking' && (
+        <ActiveParkingScreen
+          token={driverToken}
+          userId={driverUser?._id || 'guest'}
+          selectedReservationId={selectedReservationId}
+          onBack={() => setCurrentScreen('driver-bookings')}
+          onViewBookings={() => setCurrentScreen('driver-bookings')}
+          onRelease={(reservation) => {
+            setReservationToRelease(reservation);
+            setCurrentScreen('driver-release-parking');
+          }}
+        />
+      )}
+      {currentScreen === 'driver-release-parking' && reservationToRelease && (
+        <ReleaseParkingScreen
+          token={driverToken}
+          reservation={reservationToRelease}
+          onBack={() => setCurrentScreen('driver-active-parking')}
+          onReleased={() => {
+            setReservationToRelease(null);
+            setSelectedReservationId(null);
+            setCurrentScreen('driver-bookings');
+          }}
         />
       )}
       {currentScreen === 'driver-lot-details' && (
@@ -630,7 +673,9 @@ export default function App() {
                     prev === 'driver-booking-confirmed' ||
                     prev === 'driver-navigation' ||
                     prev === 'driver-bookings' ||
-                    prev === 'driver-booking-details'
+                    prev === 'driver-booking-details' ||
+                    prev === 'driver-active-parking' ||
+                    prev === 'driver-release-parking'
                   ) {
                     return 'login';
                   }
