@@ -47,11 +47,11 @@ export default function StaffDashboardScreen({
   const [activeTab, setActiveTab] = useState<'Dashboard' | 'Spaces' | 'Reservations' | 'Profile'>('Dashboard');
   const [showNotifications, setShowNotifications] = useState(false);
 
-  const notifications = [
+  const [notifications, setNotifications] = useState([
     {
       id: '1',
       title: 'New Reservation',
-      message: 'Kasun Dias just booked slot A3 for 02:00 PM.',
+      message: 'Kasun Dias booked slot A3 for 02:00 PM.',
       time: '2m ago',
       isUnread: true,
       icon: '📅',
@@ -75,7 +75,7 @@ export default function StaffDashboardScreen({
       icon: '⏳',
       color: '#FEF08A',
     },
-  ];
+  ]);
 
   const handleActionPress = (actionName: string, screenNumber: string) => {
     Alert.alert(actionName, `Navigating to ${actionName} (${screenNumber})`);
@@ -363,7 +363,11 @@ export default function StaffDashboardScreen({
                   {notif.isUnread && <View style={styles.unreadDot} />}
                 </TouchableOpacity>
               ))}
-              <TouchableOpacity style={styles.viewAllNotifications}>
+              <TouchableOpacity
+                style={styles.viewAllNotifications}
+                onPress={() => setNotifications((prev) => prev.map((n) => ({ ...n, isUnread: false })))}
+                accessibilityLabel="Mark all notifications as read"
+              >
                 <Text style={styles.viewAllNotificationsText}>Mark all as read</Text>
               </TouchableOpacity>
             </ScrollView>
@@ -820,21 +824,19 @@ const styles = StyleSheet.create({
   },
   notificationOverlay: {
     flex: 1,
-    backgroundColor: 'rgba(0,0,0,0.3)',
+    backgroundColor: 'rgba(0,0,0,0.4)',
+    justifyContent: 'center',
+    paddingHorizontal: 16,
   },
   notificationPanel: {
     backgroundColor: '#FFFFFF',
-    position: 'absolute',
-    top: Platform.OS === 'ios' ? 100 : 70,
-    right: 16,
-    left: 16,
-    borderRadius: 16,
-    maxHeight: '70%',
+    borderRadius: 20,
+    maxHeight: '80%',
     shadowColor: '#000',
-    shadowOpacity: 0.1,
+    shadowOpacity: 0.15,
     shadowRadius: 15,
-    shadowOffset: { width: 0, height: 5 },
-    elevation: 8,
+    shadowOffset: { width: 0, height: 4 },
+    elevation: 10,
     overflow: 'hidden',
   },
   notificationHeader: {

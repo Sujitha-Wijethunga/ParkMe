@@ -27,11 +27,16 @@ export interface NearbyDrivingLot {
   openTime?: string;
   closeTime?: string;
   durationSeconds: number;
-  durationMinutes: number;
+  durationMinutes?: number | null;
   durationFormatted: string;
   distanceMeters: number;
   distanceFormatted: string;
   imageUrl?: string;
+  isWithinFiveMinutes?: boolean;
+  isDistanceFallback?: boolean;
+  freshness?: string;
+  parkingType?: string;
+  isCovered?: boolean;
 }
 
 export interface NearbyDrivingResponse {
@@ -42,6 +47,7 @@ export interface NearbyDrivingResponse {
   provider: string;
   providerAttribution: string;
   isLiveTraffic: boolean;
+  isDistanceFallback?: boolean;
   disclaimer: string;
 }
 
@@ -175,3 +181,40 @@ export async function checkLotAvailability(lotId: string): Promise<LotAvailabili
     throw err;
   }
 }
+
+/**
+ * Fetches all active parking lots across Sri Lanka from backend API,
+ * with optional text search (by city, landmark, or street name).
+ */
+export async function fetchAllParkingLots(search?: string): Promise<any[]> {
+  const baseUrl = getApiBaseUrl();
+  const url = search && search.trim()
+    ? `${baseUrl}/api/parking-lots?search=${encodeURIComponent(search.trim())}`
+    : `${baseUrl}/api/parking-lots`;
+
+  const controller = new AbortController();
+  const timeoutId = setTimeout(() => controller.abort(), 8000);
+
+  try {
+    const response = await fetch(url, {
+      signal: controller.signal,
+      headers: { Accept: 'application/json' },
+    });
+
+    clearTimeout(timeoutId);
+
+    if (!response.ok) {
+      throw new Error(`Server returned status ${response.status}`);
+    }
+
+    const data = await response.json();
+    return Array.isArray(data) ? data : [];
+  } catch (err: any) {
+    clearTimeout(timeoutId);
+    if (err.name === 'AbortError') {
+      throw new Error('Search request timed out. Please check your connection.');
+    }
+    throw err;
+  }
+}
+

@@ -151,7 +151,7 @@ export default function CoordinateMapView({
 
   return (
     <View style={styles.container} onLayout={onLayout}>
-      {/* 1. Map Canvas Background with Geographic Grid */}
+      {/* 1. Map Canvas Background with Geographic Scale & Orientation */}
       <View style={styles.mapCanvas}>
         {/* Geographic grid reference lines */}
         <View style={styles.gridLineHorizontal1} />
@@ -161,34 +161,48 @@ export default function CoordinateMapView({
         <View style={styles.gridLineVertical2} />
         <View style={styles.gridLineVertical3} />
 
-        {/* Stylized road arteries */}
-        <View style={styles.majorAvenue} />
-        <View style={styles.arterialRoad} />
-        <View style={styles.secondaryBoulevard} />
+        {/* Cardinal North Compass Indicator */}
+        <View style={styles.compassIndicator}>
+          <Text style={styles.compassText}>▲ N</Text>
+        </View>
 
-        {/* 2. Driver Location Indicator with Pulsing Ring & 5-Min Reach Boundary */}
+        {/* 2. Driver Location Indicator with Radar Rings */}
         {userPixel && (
           <>
-            {/* Driving Reach Perimeter Circle */}
+            {/* Concentric Distance Radar Circles */}
             <View
               style={[
-                styles.reachPerimeter,
+                styles.radarRingOuter,
                 {
-                  left: userPixel.x - 110,
-                  top: userPixel.y - 110,
-                  width: 220,
-                  height: 220,
-                  borderRadius: 110,
+                  left: userPixel.x - 120,
+                  top: userPixel.y - 120,
+                  width: 240,
+                  height: 240,
+                  borderRadius: 120,
                 },
               ]}
               pointerEvents="none"
             >
               <View style={styles.reachLabelBadge}>
                 <Text style={styles.reachLabelText}>
-                  {maxDurationSeconds <= 300 ? '⏱ 5 min reach' : '⏱ 10 min reach'}
+                  {maxDurationSeconds <= 300 ? '⚡ Fastest Reach' : '⏱ Driving Range'}
                 </Text>
               </View>
             </View>
+
+            <View
+              style={[
+                styles.radarRingInner,
+                {
+                  left: userPixel.x - 60,
+                  top: userPixel.y - 60,
+                  width: 120,
+                  height: 120,
+                  borderRadius: 60,
+                },
+              ]}
+              pointerEvents="none"
+            />
 
             {/* Current Driver Location Dot */}
             <View
@@ -363,42 +377,44 @@ const styles = StyleSheet.create({
     backgroundColor: 'rgba(203, 213, 225, 0.45)',
   },
 
-  // Stylized road arteries
-  majorAvenue: {
+  // Compass orientation
+  compassIndicator: {
     position: 'absolute',
-    left: '-10%',
-    top: '40%',
-    width: '120%',
-    height: 14,
-    backgroundColor: '#FFFFFF',
-    transform: [{ rotate: '-22deg' }],
-    borderTopWidth: 1,
-    borderBottomWidth: 1,
-    borderColor: '#D7DFE9',
+    top: 14,
+    right: 14,
+    backgroundColor: 'rgba(255, 255, 255, 0.92)',
+    paddingHorizontal: 8,
+    paddingVertical: 4,
+    borderRadius: 8,
+    borderWidth: 1,
+    borderColor: '#CBD5E1',
+    zIndex: 10,
   },
-  arterialRoad: {
-    position: 'absolute',
-    left: '35%',
-    top: '-10%',
-    width: 10,
-    height: '120%',
-    backgroundColor: '#FFFFFF',
-    transform: [{ rotate: '12deg' }],
-    borderLeftWidth: 1,
-    borderRightWidth: 1,
-    borderColor: '#D7DFE9',
+  compassText: {
+    fontSize: 10,
+    fontWeight: '800',
+    color: '#0F172A',
+    letterSpacing: 0.5,
   },
-  secondaryBoulevard: {
+
+  // Concentric radar distance rings
+  radarRingOuter: {
     position: 'absolute',
-    right: '15%',
-    top: '-10%',
-    width: 8,
-    height: '120%',
-    backgroundColor: '#FFFFFF',
-    transform: [{ rotate: '-35deg' }],
-    borderLeftWidth: 1,
-    borderRightWidth: 1,
-    borderColor: '#D7DFE9',
+    borderWidth: 1.5,
+    borderColor: 'rgba(37, 99, 235, 0.35)',
+    borderStyle: 'dashed',
+    backgroundColor: 'rgba(59, 130, 246, 0.04)',
+    alignItems: 'center',
+    justifyContent: 'flex-start',
+    zIndex: 5,
+  },
+  radarRingInner: {
+    position: 'absolute',
+    borderWidth: 1,
+    borderColor: 'rgba(37, 99, 235, 0.2)',
+    borderStyle: 'dotted',
+    backgroundColor: 'transparent',
+    zIndex: 4,
   },
 
   // 5-minute reach perimeter circle

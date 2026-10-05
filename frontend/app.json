@@ -10,7 +10,7 @@
       "supportsTablet": true,
       "bundleIdentifier": "com.parkme.app",
       "infoPlist": {
-        "NSLocationWhenInUseUsageDescription": "ParkMe uses your location to discover available parking spaces within 5 minutes driving time."
+        "NSLocationWhenInUseUsageDescription": "ParkMe uses your foreground GPS location to find the fastest available parking spaces nearby and provide driving directions."
       }
     },
     "android": {

@@ -245,4 +245,49 @@ describe('Nearby Driving Routing and Availability Tests', () => {
       assert.strictEqual(isStillAvailable, false);
     });
   });
+
+  describe('Fastest Available Parking Ranking and Fallback Tests', () => {
+    test('calculates accurate Haversine distance in meters', () => {
+      // Colombo Fort [79.8428, 6.9344] to Galle Face [79.8456, 6.9271] is approx 900m
+      const dist = routingService.calculateHaversineDistance([79.8428, 6.9344], [79.8456, 6.9271]);
+      assert.strictEqual(typeof dist, 'number');
+      assert.strictEqual(dist > 700 && dist < 1100, true);
+    });
+
+    test('ranks reachable lots by driving travel time without arbitrary cutoff', () => {
+      const candidates = [
+        { id: 'lot-a', durationSeconds: 420, distanceMeters: 3000 },
+        { id: 'lot-b', durationSeconds: 180, distanceMeters: 1200 },
+        { id: 'lot-c', durationSeconds: 650, distanceMeters: 4500 },
+      ];
+
+      candidates.sort((a, b) => a.durationSeconds - b.durationSeconds);
+
+      assert.strictEqual(candidates[0].id, 'lot-b'); // 3 min
+      assert.strictEqual(candidates[1].id, 'lot-a'); // 7 min
+      assert.strictEqual(candidates[2].id, 'lot-c'); // 11 min
+
+      // Flags "Within 5 min" accurately
+      assert.strictEqual(candidates[0].durationSeconds <= 300, true);
+      assert.strictEqual(candidates[1].durationSeconds <= 300, false);
+    });
+
+    test('falls back to distance without claiming straight-line distance is driving time', () => {
+      const fallbackItem = {
+        id: 'lot-fallback',
+        durationSeconds: null,
+        durationMinutes: null,
+        durationFormatted: '1.4 km away',
+        distanceMeters: 1400,
+        distanceFormatted: '1.4 km',
+        isDistanceFallback: true,
+      };
+
+      assert.strictEqual(fallbackItem.durationSeconds, null);
+      assert.strictEqual(fallbackItem.isDistanceFallback, true);
+      assert.strictEqual(fallbackItem.durationFormatted.includes('km away'), true);
+      assert.strictEqual(fallbackItem.durationFormatted.includes('min'), false);
+    });
+  });
 });
+

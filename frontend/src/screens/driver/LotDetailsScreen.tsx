@@ -7,7 +7,6 @@ import {
   TouchableOpacity,
   StatusBar,
   Platform,
-  Image,
   ActivityIndicator,
   Alert,
 } from 'react-native';
@@ -17,6 +16,7 @@ import {
   ParkingLotCardItem,
   SAMPLE_NEARBY_PARKING_LOTS,
 } from '../../constants/driverSampleData';
+import ParkingLotImage from '../../components/ParkingLotImage';
 import { getCurrentDriverLocation } from '../../services/locationService';
 import { checkLotAvailability } from '../../services/parkingService';
 import { launchDrivingNavigation } from '../../services/navigationLauncher';
@@ -116,6 +116,7 @@ export default function LotDetailsScreen({ lotId, onBack, onSelectSpace }: LotDe
     ? Math.round((lot.availableSpaces / lot.totalSpaces) * 100)
     : 0;
   const dailyRateEstimate = lot.pricePerHour * 6; // display-only estimate (6 hr cap convention)
+  const lotCoords = lot.entranceCoordinates || LOT_SAMPLE_COORDINATES[lot.id];
 
   const handleReserve = () => {
     onSelectSpace(lot.id);
@@ -178,10 +179,10 @@ export default function LotDetailsScreen({ lotId, onBack, onSelectSpace }: LotDe
       >
         {/* 1. Hero Image + Gradient Overlay ──────────────────────────────── */}
         <View style={[styles.heroContainer, { height: heroHeight }]}>
-          <Image
-            source={{ uri: lot.imageUrl }}
-            style={styles.heroImage}
-            resizeMode="cover"
+          <ParkingLotImage
+            uri={lot.imageUrl}
+            style={[styles.heroImage, { height: heroHeight }]}
+            altName={lot.name}
           />
           {/* Dark gradient overlay */}
           <View style={styles.heroOverlay} />
@@ -372,41 +373,53 @@ export default function LotDetailsScreen({ lotId, onBack, onSelectSpace }: LotDe
           </View>
         )}
 
-        {/* 6. Location (Illustrative static map) ─────────────────────────── */}
+        {/* 6. Location & Verified Entrance Card ─────────────────────────── */}
         <View style={styles.section}>
           <View style={styles.locationHeaderRow}>
-            <Text style={styles.sectionLabel}>LOCATION</Text>
-            <TouchableOpacity activeOpacity={0.7}>
+            <Text style={styles.sectionLabel}>LOCATION & ENTRANCE</Text>
+            <TouchableOpacity activeOpacity={0.7} onPress={handleNavigate} disabled={isNavigating}>
               <Text style={styles.openMapsLink}>Open in Maps &gt;</Text>
             </TouchableOpacity>
           </View>
 
-          {/* Static illustrative map matching app design language */}
-          <View style={styles.mapContainer}>
-            {/* Road grid */}
-            <View style={styles.mapBg}>
-              <View style={styles.mapRoadH} />
-              <View style={styles.mapRoadV} />
-              <View style={styles.mapRoadH2} />
-            </View>
-
-            {/* Parking block */}
-            <View style={styles.mapParkingBlock}>
-              <Text style={styles.mapParkingLabel}>PARKING</Text>
-            </View>
-
-            {/* Pin */}
-            <View style={styles.mapPinWrapper}>
-              <View style={styles.mapPinCircle}>
-                <Text style={styles.mapPinLetter}>P</Text>
+          <View style={styles.locationCard}>
+            <View style={styles.locationCardHeader}>
+              <View style={styles.locationIconCircle}>
+                <Text style={styles.locationPinIcon}>📍</Text>
               </View>
-              <View style={styles.mapPinTail} />
+              <View style={styles.locationTextContainer}>
+                <Text style={styles.locationCardTitle}>{lot.name}</Text>
+                <Text style={styles.locationCardAddress}>{lot.address}, Sri Lanka</Text>
+                {lot.entranceName ? (
+                  <Text style={styles.locationEntranceName}>
+                    Vehicle Entrance: {lot.entranceName}
+                  </Text>
+                ) : null}
+                {lotCoords ? (
+                  <Text style={styles.locationCoords}>
+                    Verified GPS: {lotCoords.lat.toFixed(4)}° N, {lotCoords.lng.toFixed(4)}° E
+                  </Text>
+                ) : null}
+              </View>
             </View>
 
-            {/* Street label */}
-            <View style={styles.mapStreetLabelWrapper}>
-              <Text style={styles.mapStreetLabel}>Marine Dr.</Text>
-            </View>
+            <TouchableOpacity
+              style={styles.openMapsBtn}
+              activeOpacity={0.85}
+              onPress={handleNavigate}
+              disabled={isNavigating}
+              accessibilityRole="button"
+              accessibilityLabel="Start navigation in Google Maps"
+            >
+              {isNavigating ? (
+                <ActivityIndicator size="small" color="#FFFFFF" />
+              ) : (
+                <>
+                  <Text style={styles.openMapsBtnIcon}>🧭</Text>
+                  <Text style={styles.openMapsBtnText}>Start Navigation in Google Maps</Text>
+                </>
+              )}
+            </TouchableOpacity>
           </View>
         </View>
 
@@ -813,112 +826,75 @@ const styles = StyleSheet.create({
     fontWeight: '700',
     color: DriverColors.navyDark,
   },
-  mapContainer: {
-    height: 140,
+  locationCard: {
+    backgroundColor: '#F8FAFC',
     borderRadius: 14,
-    overflow: 'hidden',
-    backgroundColor: '#E9F0F8',
     borderWidth: 1,
-    borderColor: DriverColors.cardBorder,
-    position: 'relative',
+    borderColor: '#E2E8F0',
+    padding: 14,
+    marginTop: 4,
   },
-  mapBg: {
-    ...StyleSheet.absoluteFill,
+  locationCardHeader: {
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+    marginBottom: 12,
   },
-  mapRoadH: {
-    position: 'absolute',
-    top: '40%',
-    left: 0,
-    right: 0,
-    height: 22,
-    backgroundColor: '#FFFFFF',
-    opacity: 0.85,
-  },
-  mapRoadH2: {
-    position: 'absolute',
-    top: '70%',
-    left: 0,
-    right: 0,
-    height: 14,
-    backgroundColor: '#D7E5F2',
-  },
-  mapRoadV: {
-    position: 'absolute',
-    top: 0,
-    bottom: 0,
-    left: '45%',
-    width: 18,
-    backgroundColor: '#FFFFFF',
-    opacity: 0.7,
-  },
-  mapParkingBlock: {
-    position: 'absolute',
-    top: '10%',
-    left: '55%',
-    right: 12,
-    height: '35%',
-    borderRadius: 6,
-    backgroundColor: '#D0DFEE',
+  locationIconCircle: {
+    width: 38,
+    height: 38,
+    borderRadius: 19,
+    backgroundColor: '#EFF6FF',
+    borderWidth: 1,
+    borderColor: '#BFDBFE',
     alignItems: 'center',
     justifyContent: 'center',
-    borderWidth: 1,
-    borderColor: '#B8CEE0',
+    marginRight: 12,
   },
-  mapParkingLabel: {
-    fontSize: 9,
-    fontWeight: '800',
-    color: '#5B7A94',
-    letterSpacing: 0.8,
+  locationPinIcon: {
+    fontSize: 18,
   },
-  mapPinWrapper: {
-    position: 'absolute',
-    top: '28%',
-    left: '42%',
-    alignItems: 'center',
+  locationTextContainer: {
+    flex: 1,
   },
-  mapPinCircle: {
-    width: 34,
-    height: 34,
-    borderRadius: 17,
-    backgroundColor: DriverColors.navyDark,
-    alignItems: 'center',
-    justifyContent: 'center',
-    borderWidth: 2.5,
-    borderColor: '#FFFFFF',
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.3,
-    shadowRadius: 4,
-    elevation: 6,
+  locationCardTitle: {
+    fontSize: 14.5,
+    fontWeight: '700',
+    color: DriverColors.navyHeading,
   },
-  mapPinLetter: {
-    color: '#FFFFFF',
-    fontSize: 15,
-    fontWeight: '800',
+  locationCardAddress: {
+    fontSize: 12.5,
+    color: DriverColors.textSecondary,
+    marginTop: 2,
   },
-  mapPinTail: {
-    width: 0,
-    height: 0,
-    borderLeftWidth: 5,
-    borderRightWidth: 5,
-    borderTopWidth: 8,
-    borderLeftColor: 'transparent',
-    borderRightColor: 'transparent',
-    borderTopColor: DriverColors.navyDark,
-    marginTop: -1,
-  },
-  mapStreetLabelWrapper: {
-    position: 'absolute',
-    left: 8,
-    top: '36%',
-    transform: [{ rotate: '-90deg' }],
-    transformOrigin: 'left center',
-  },
-  mapStreetLabel: {
-    fontSize: 9,
+  locationEntranceName: {
+    fontSize: 12,
     fontWeight: '600',
-    color: '#8BA5BE',
-    letterSpacing: 0.5,
+    color: '#2563EB',
+    marginTop: 4,
+  },
+  locationCoords: {
+    fontSize: 11,
+    color: '#64748B',
+    marginTop: 3,
+    fontStyle: 'italic',
+  },
+  openMapsBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: DriverColors.brandPrimary,
+    paddingVertical: 11,
+    paddingHorizontal: 16,
+    borderRadius: 10,
+    gap: 8,
+  },
+  openMapsBtnIcon: {
+    fontSize: 16,
+  },
+  openMapsBtnText: {
+    color: '#FFFFFF',
+    fontSize: 13.5,
+    fontWeight: '700',
   },
 
   // ── 7. Contact ──
