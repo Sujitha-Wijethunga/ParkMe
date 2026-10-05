@@ -6,15 +6,24 @@ const ParkingLot = require('../models/ParkingLot');
 // @query   lat, lng, radius (metres), available (boolean)
 const getParkingLots = async (req, res, next) => {
   try {
-    const { lat, lng, radius, available } = req.query;
+    const { lat, lng, radius, available, search } = req.query;
     let query = { isActive: true };
+
+    if (search && typeof search === 'string' && search.trim()) {
+      const escaped = search.trim().replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+      const searchRegex = new RegExp(escaped, 'i');
+      query.$or = [
+        { name: searchRegex },
+        { address: searchRegex },
+      ];
+    }
 
     // Geospatial filter if coordinates provided
     if (lat && lng) {
       query.location = {
         $near: {
           $geometry: { type: 'Point', coordinates: [parseFloat(lng), parseFloat(lat)] },
-          $maxDistance: radius ? parseInt(radius) : 5000, // default 5 km
+          $maxDistance: radius ? parseInt(radius) : 15000,
         },
       };
     }
@@ -184,52 +193,99 @@ const getNearbyDrivingParking = async (req, res, next) => {
 
     // Request driving travel times from routing service (batched matrix)
     let matrixData;
+    let isDistanceFallback = false;
     try {
       matrixData = await routingService.calculateDrivingTravelTimes({
         origin: [parsedLng, parsedLat],
         destinations,
       });
     } catch (routingErr) {
-      return res.status(503).json({
-        message: `Driving route estimation failed: ${routingErr.message}`,
-        error: routingErr.message,
-        provider: process.env.ROUTING_PROVIDER || 'osrm',
-        isRoutingFailure: true,
+      console.warn('Driving routing service unavailable, using distance-based nearby fallback:', routingErr.message);
+      isDistanceFallback = true;
+      const fallbackResults = destinations.map((dest) => {
+        const dist = routingService.calculateHaversineDistance([parsedLng, parsedLat], dest);
+        return {
+          durationSeconds: null,
+          distanceMeters: dist,
+        };
       });
+      matrixData = {
+        provider: 'distance',
+        providerAttribution: 'Distance-based nearby search (live driving routing unavailable)',
+        isLiveTraffic: false,
+        results: fallbackResults,
+      };
     }
 
-    // Merge and filter by driving duration (boundary included: <= durationLimitSec)
+    // Merge and filter by driving duration or distance
     const eligibleResults = [];
 
     for (let i = 0; i < validCandidates.length; i++) {
       const lot = validCandidates[i];
       const travel = matrixData.results[i];
 
-      if (!travel || travel.durationSeconds == null || travel.durationSeconds === undefined) {
-        // Route not reachable or calculation failed for this destination
+      if (!travel) {
         continue;
       }
 
-      if (travel.durationSeconds <= durationLimitSec) {
-        const hasEntrance = Boolean(
-          lot.entranceLocation &&
-            Array.isArray(lot.entranceLocation.coordinates) &&
-            lot.entranceLocation.coordinates.length === 2
-        );
+      const hasEntrance = Boolean(
+        lot.entranceLocation &&
+          Array.isArray(lot.entranceLocation.coordinates) &&
+          lot.entranceLocation.coordinates.length === 2
+      );
 
-        const navCoords = hasEntrance
-          ? {
-              lng: lot.entranceLocation.coordinates[0],
-              lat: lot.entranceLocation.coordinates[1],
-            }
-          : {
-              lng: lot.location.coordinates[0],
-              lat: lot.location.coordinates[1],
-            };
+      const navCoords = hasEntrance
+        ? {
+            lng: lot.entranceLocation.coordinates[0],
+            lat: lot.entranceLocation.coordinates[1],
+          }
+        : {
+            lng: lot.location.coordinates[0],
+            lat: lot.location.coordinates[1],
+          };
 
+      const distanceKm =
+        travel.distanceMeters != null ? (travel.distanceMeters / 1000).toFixed(1) : null;
+
+      if (isDistanceFallback) {
+        // Distance fallback mode: never fabricate driving travel times
+        eligibleResults.push({
+          id: lot._id.toString(),
+          name: lot.name,
+          address: lot.address,
+          coordinates: {
+            lng: lot.location.coordinates[0],
+            lat: lot.location.coordinates[1],
+          },
+          entranceCoordinates: hasEntrance
+            ? {
+                lng: lot.entranceLocation.coordinates[0],
+                lat: lot.entranceLocation.coordinates[1],
+              }
+            : null,
+          hasEntranceCoordinates: hasEntrance,
+          navigationCoordinates: navCoords,
+          navigationCoordinatesNote: hasEntrance
+            ? 'Using designated parking entrance'
+            : 'Using parking lot center (entrance coordinates not specified by operator)',
+          availableSpaces: lot.availableSpaces,
+          totalSpaces: lot.totalSpaces,
+          pricePerHour: lot.pricePerHour,
+          status: lot.availableSpaces > 5 ? 'Available' : 'Limited',
+          amenities: lot.amenities || [],
+          openTime: lot.openTime,
+          closeTime: lot.closeTime,
+          durationSeconds: null,
+          durationMinutes: null,
+          durationFormatted: distanceKm ? `${distanceKm} km away` : 'Near',
+          distanceMeters: travel.distanceMeters,
+          distanceFormatted: distanceKm ? `${distanceKm} km` : 'Near',
+          isWithinFiveMinutes: false,
+          isDistanceFallback: true,
+          freshness: 'Live availability',
+        });
+      } else if (travel.durationSeconds != null && travel.durationSeconds <= durationLimitSec) {
         const durationMinutes = Math.max(1, Math.round(travel.durationSeconds / 60));
-        const distanceKm =
-          travel.distanceMeters != null ? (travel.distanceMeters / 1000).toFixed(1) : null;
 
         eligibleResults.push({
           id: lot._id.toString(),
@@ -262,14 +318,17 @@ const getNearbyDrivingParking = async (req, res, next) => {
           durationFormatted: `${durationMinutes} min`,
           distanceMeters: travel.distanceMeters,
           distanceFormatted: distanceKm ? `${distanceKm} km` : 'Near',
+          isWithinFiveMinutes: travel.durationSeconds <= 300,
+          isDistanceFallback: false,
+          freshness: 'Live availability',
         });
       }
     }
 
-    // Sort: primary by durationSeconds ascending, secondary by distanceMeters ascending
+    // Sort: primary by durationSeconds ascending (or distanceMeters in fallback), secondary by distanceMeters ascending
     eligibleResults.sort((a, b) => {
-      if (a.durationSeconds !== b.durationSeconds) {
-        return a.durationSeconds - b.durationSeconds;
+      if (!isDistanceFallback && a.durationSeconds !== b.durationSeconds) {
+        return (a.durationSeconds || Infinity) - (b.durationSeconds || Infinity);
       }
       return (a.distanceMeters || 0) - (b.distanceMeters || 0);
     });
@@ -282,6 +341,7 @@ const getNearbyDrivingParking = async (req, res, next) => {
       provider: matrixData.provider,
       providerAttribution: matrixData.providerAttribution,
       isLiveTraffic: matrixData.isLiveTraffic,
+      isDistanceFallback,
       disclaimer: 'Current reported availability, not a guaranteed space or reservation.',
     });
   } catch (error) {
