@@ -27,7 +27,7 @@ const { width: SCREEN_WIDTH, height: SCREEN_HEIGHT } = Dimensions.get('window');
  * - Deep navy full-screen background (#000066)
  * - Centered ParkMe car/parking squircle logo
  * - Bold white "ParkMe" wordmark
- * - Muted light-purple "Arrive. Park. Go." tagline
+ * - Clear white "Drive. Park. Go." tagline
  * - Large rounded orange "Get Started" CTA button with right arrow (#FF6B35)
  * - "I already have an account" navigation link
  * - 3 pagination dots with the middle dot in brand orange
@@ -59,7 +59,7 @@ export default function WelcomeScreen({
             />
           </View>
           <Text style={styles.brandTitle}>ParkMe</Text>
-          <Text style={styles.tagline}>Arrive. Park. Go.</Text>
+          <Text style={styles.tagline}>Drive. Park. Go.</Text>
         </View>
 
         {/* Bottom Actions Section */}
@@ -139,8 +139,8 @@ const styles = StyleSheet.create({
   },
   tagline: {
     fontSize: SCREEN_WIDTH < 380 ? 15 : 16,
-    fontWeight: '400',
-    color: '#B2B2D1',
+    fontWeight: '600',
+    color: '#FFFFFF',
     letterSpacing: 0.3,
     marginTop: 8,
     textAlign: 'center',
