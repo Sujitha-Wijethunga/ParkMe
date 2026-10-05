@@ -17,9 +17,9 @@ import {
   SAMPLE_NEARBY_PARKING_LOTS,
 } from '../../constants/driverSampleData';
 import ParkingLotImage from '../../components/ParkingLotImage';
-import { getCurrentDriverLocation } from '../../services/locationService';
 import { checkLotAvailability } from '../../services/parkingService';
-import { launchDrivingNavigation } from '../../services/navigationLauncher';
+import { launchDrivingNavigation, isValidCoordinate } from '../../services/navigationLauncher';
+import { VERIFIED_LOT_ENTRANCES } from '../../services/parkingEntranceService';
 
 interface LotDetailsScreenProps {
   /** Stable lot ID passed from the card that was tapped. */
@@ -116,7 +116,24 @@ export default function LotDetailsScreen({ lotId, onBack, onSelectSpace }: LotDe
     ? Math.round((lot.availableSpaces / lot.totalSpaces) * 100)
     : 0;
   const dailyRateEstimate = lot.pricePerHour * 6; // display-only estimate (6 hr cap convention)
-  const lotCoords = lot.entranceCoordinates || LOT_SAMPLE_COORDINATES[lot.id];
+
+  // Documented verified entrance registry check
+  const verifiedRegistryEntry = lot.id ? VERIFIED_LOT_ENTRANCES[lot.id] : undefined;
+
+  // Prioritize documented entrance coordinates from lot or registry
+  const entranceCoords =
+    lot.entranceCoordinates ||
+    (verifiedRegistryEntry
+      ? { lat: verifiedRegistryEntry.latitude, lng: verifiedRegistryEntry.longitude }
+      : undefined);
+
+  // Verification label is ONLY true if documented in data (verified registry or lot.entranceCoordinates)
+  const isEntranceVerified = Boolean(
+    verifiedRegistryEntry ||
+    (lot.entranceCoordinates && isValidCoordinate(lot.entranceCoordinates.lat, lot.entranceCoordinates.lng))
+  );
+
+  const lotCoords = entranceCoords || LOT_SAMPLE_COORDINATES[lot.id];
 
   const handleReserve = () => {
     onSelectSpace(lot.id);
@@ -137,22 +154,29 @@ export default function LotDetailsScreen({ lotId, onBack, onSelectSpace }: LotDe
         return;
       }
 
-      // 2. Obtain current GPS location
-      const coords = await getCurrentDriverLocation(8000);
-
-      // 3. Resolve destination coordinates
-      const dest =
+      // 2. Resolve destination coordinates prioritizing documented entrance coordinates
+      const destCoords =
+        entranceCoords ||
         check?.navigationCoordinates ||
-        LOT_SAMPLE_COORDINATES[lot.id] || { lat: 6.9271, lng: 79.8456 };
-      const hasEntrance = Boolean(check?.hasEntranceCoordinates);
+        LOT_SAMPLE_COORDINATES[lot.id];
 
+      // 3. Strict coordinate validation before attempting to build or open navigation URL
+      if (!destCoords || !isValidCoordinate(destCoords.lat, destCoords.lng)) {
+        Alert.alert(
+          'Navigation Unavailable',
+          'Valid entrance coordinates are not available for this parking lot.',
+          [{ text: 'OK' }]
+        );
+        setIsNavigating(false);
+        return;
+      }
+
+      // 4. Launch driving navigation directly to destination coordinates
       await launchDrivingNavigation({
-        originLat: coords.latitude,
-        originLng: coords.longitude,
-        destLat: dest.lat,
-        destLng: dest.lng,
+        destLat: destCoords.lat,
+        destLng: destCoords.lng,
         lotName: lot.name,
-        hasEntranceCoordinates: hasEntrance,
+        hasEntranceCoordinates: isEntranceVerified,
       });
     } catch (err: any) {
       Alert.alert('Navigation Error', err?.message || 'Could not launch turn-by-turn navigation.');
@@ -376,7 +400,9 @@ export default function LotDetailsScreen({ lotId, onBack, onSelectSpace }: LotDe
         {/* 6. Location & Verified Entrance Card ─────────────────────────── */}
         <View style={styles.section}>
           <View style={styles.locationHeaderRow}>
-            <Text style={styles.sectionLabel}>LOCATION & ENTRANCE</Text>
+            <Text style={styles.sectionLabel}>
+              {isEntranceVerified ? 'LOCATION & VERIFIED ENTRANCE' : 'LOCATION & ENTRANCE'}
+            </Text>
             <TouchableOpacity activeOpacity={0.7} onPress={handleNavigate} disabled={isNavigating}>
               <Text style={styles.openMapsLink}>Open in Maps &gt;</Text>
             </TouchableOpacity>
@@ -392,12 +418,14 @@ export default function LotDetailsScreen({ lotId, onBack, onSelectSpace }: LotDe
                 <Text style={styles.locationCardAddress}>{lot.address}, Sri Lanka</Text>
                 {lot.entranceName ? (
                   <Text style={styles.locationEntranceName}>
-                    Vehicle Entrance: {lot.entranceName}
+                    {isEntranceVerified ? `Verified Entrance: ${lot.entranceName}` : `Vehicle Entrance: ${lot.entranceName}`}
                   </Text>
                 ) : null}
                 {lotCoords ? (
                   <Text style={styles.locationCoords}>
-                    Verified GPS: {lotCoords.lat.toFixed(4)}° N, {lotCoords.lng.toFixed(4)}° E
+                    {isEntranceVerified
+                      ? `Verified Entrance GPS: ${lotCoords.lat.toFixed(4)}° N, ${lotCoords.lng.toFixed(4)}° E`
+                      : `GPS Coordinates: ${lotCoords.lat.toFixed(4)}° N, ${lotCoords.lng.toFixed(4)}° E`}
                   </Text>
                 ) : null}
               </View>

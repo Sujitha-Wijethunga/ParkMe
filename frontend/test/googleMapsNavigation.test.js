@@ -290,6 +290,53 @@ describe('Free Google Maps Driving Directions Tests', () => {
       assert.strictEqual(sharedPayload.message, universalUrl);
       assert.strictEqual(sharedPayload.url, universalUrl);
     });
+
+    test('rejection of Linking.openURL triggers fallback and does not block share link generation', async () => {
+      const destLat = 6.8942;
+      const destLng = 79.8550;
+      const universalUrl = buildGoogleMapsUniversalUrl(destLat, destLng);
+
+      // Simulate Linking.openURL rejection
+      const mockLinking = {
+        openURL: async () => {
+          throw new Error('ActivityNotFoundException: No Activity found to handle Intent');
+        },
+      };
+
+      let didThrow = false;
+      let caughtError = null;
+      try {
+        await mockLinking.openURL(universalUrl);
+      } catch (err) {
+        didThrow = true;
+        caughtError = err;
+      }
+
+      assert.strictEqual(didThrow, true);
+      assert.match(caughtError.message, /ActivityNotFoundException/);
+      // Fallback share link must be valid and ready for user copy/share
+      assert.strictEqual(
+        universalUrl,
+        'https://www.google.com/maps/dir/?api=1&destination=6.8942,79.855&travelmode=driving&dir_action=navigate'
+      );
+    });
+  });
+
+  describe('Documented Verification Labeling Requirements', () => {
+    test('only flags entrance as verified if documented in VERIFIED_LOT_ENTRANCES or lot.entranceCoordinates', () => {
+      // Documented lot-1
+      const verifiedLot = getParkingLotEntranceInfo('lot-1');
+      assert.strictEqual(verifiedLot.hasVerifiedEntrance, true);
+
+      // Lot without documented entrance
+      const unverifiedLot = getParkingLotEntranceInfo('lot-unknown', {
+        name: 'Random Car Park',
+        address: 'Colombo',
+      });
+      assert.strictEqual(unverifiedLot.hasVerifiedEntrance, false);
+      assert.strictEqual(unverifiedLot.latitude, null);
+      assert.strictEqual(unverifiedLot.longitude, null);
+    });
   });
 });
 

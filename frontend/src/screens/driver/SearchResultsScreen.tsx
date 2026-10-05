@@ -36,7 +36,8 @@ import {
   fetchAllParkingLots,
   NearbyDrivingLot,
 } from '../../services/parkingService';
-import { launchDrivingNavigation } from '../../services/navigationLauncher';
+import { launchDrivingNavigation, isValidCoordinate } from '../../services/navigationLauncher';
+import { VERIFIED_LOT_ENTRANCES } from '../../services/parkingEntranceService';
 
 export type SearchResultsViewMode = 'map' | 'list';
 
@@ -185,29 +186,42 @@ export default function SearchResultsScreen({
 
   // Project lots as NearbyDrivingLot with real coordinates for honest coordinate map view
   const sampleLotsAsNearby: NearbyDrivingLot[] = useMemo(() => {
-    return filteredSampleLots.map((lot, idx) => ({
-      id: lot.id,
-      name: lot.name,
-      address: lot.address,
-      status: lot.status,
-      availableSpaces: lot.availableSpaces,
-      totalSpaces: lot.totalSpaces,
-      pricePerHour: lot.pricePerHour,
-      durationSeconds: (idx + 1) * 240,
-      durationFormatted: `${(idx + 1) * 4} min`,
-      distanceMeters: (idx + 1) * 1200,
-      distanceKm: (idx + 1) * 1.2,
-      distanceFormatted: `${((idx + 1) * 1.2).toFixed(1)} km`,
-      coordinates: lot.entranceCoordinates || { lat: 6.9272 + idx * 0.005, lng: 79.8462 + idx * 0.005 },
-      entranceCoordinates: lot.entranceCoordinates || null,
-      hasEntranceCoordinates: Boolean(lot.entranceCoordinates),
-      navigationCoordinates: lot.entranceCoordinates || { lat: 6.9272 + idx * 0.005, lng: 79.8462 + idx * 0.005 },
-      navigationCoordinatesNote: lot.entranceName || 'Verified vehicle entrance',
-      amenities: lot.amenities || [],
-      imageUrl: lot.imageUrl,
-      isWithinFiveMinutes: idx === 0,
-      freshness: 'Database verified',
-    }));
+    return filteredSampleLots.map((lot, idx) => {
+      const isEntranceVerified = Boolean(
+        (lot.id && VERIFIED_LOT_ENTRANCES[lot.id]) ||
+        (lot.entranceCoordinates && isValidCoordinate(lot.entranceCoordinates.lat, lot.entranceCoordinates.lng))
+      );
+      const verifiedEntry = lot.id ? VERIFIED_LOT_ENTRANCES[lot.id] : undefined;
+      const resolvedEntranceCoords =
+        lot.entranceCoordinates ||
+        (verifiedEntry ? { lat: verifiedEntry.latitude, lng: verifiedEntry.longitude } : null);
+
+      return {
+        id: lot.id,
+        name: lot.name,
+        address: lot.address,
+        status: lot.status,
+        availableSpaces: lot.availableSpaces,
+        totalSpaces: lot.totalSpaces,
+        pricePerHour: lot.pricePerHour,
+        durationSeconds: (idx + 1) * 240,
+        durationFormatted: `${(idx + 1) * 4} min`,
+        distanceMeters: (idx + 1) * 1200,
+        distanceKm: (idx + 1) * 1.2,
+        distanceFormatted: `${((idx + 1) * 1.2).toFixed(1)} km`,
+        coordinates: resolvedEntranceCoords || { lat: 6.9272 + idx * 0.005, lng: 79.8462 + idx * 0.005 },
+        entranceCoordinates: resolvedEntranceCoords,
+        hasEntranceCoordinates: isEntranceVerified,
+        navigationCoordinates: resolvedEntranceCoords || { lat: 6.9272 + idx * 0.005, lng: 79.8462 + idx * 0.005 },
+        navigationCoordinatesNote: lot.entranceName
+          ? (isEntranceVerified ? `Verified Entrance: ${lot.entranceName}` : `Vehicle Entrance: ${lot.entranceName}`)
+          : (isEntranceVerified ? 'Verified vehicle entrance' : 'General lot coordinates'),
+        amenities: lot.amenities || [],
+        imageUrl: lot.imageUrl,
+        isWithinFiveMinutes: idx === 0,
+        freshness: isEntranceVerified ? 'Database verified' : 'Estimated',
+      };
+    });
   }, [filteredSampleLots]);
 
   // Selected sample lot reference for normal map mode
@@ -343,15 +357,6 @@ export default function SearchResultsScreen({
    * 3. Opens turn-by-turn platform driving navigation to lot/entrance.
    */
   const handleStartDrivingNavigation = async (lot: NearbyDrivingLot) => {
-    if (!driverLocation) {
-      Alert.alert(
-        'Location Required',
-        'Cannot launch driving navigation without your current GPS coordinates. Please tap Refresh to update location.',
-        [{ text: 'OK' }]
-      );
-      return;
-    }
-
     setIsNavigating(true);
 
     try {
@@ -378,10 +383,21 @@ export default function SearchResultsScreen({
       // 2. Determine destination navigation coordinates (entrance or center)
       const navCoords = lot.navigationCoordinates || lot.coordinates;
 
+      // Validate destination coordinates first
+      if (!navCoords || !isValidCoordinate(navCoords.lat, navCoords.lng)) {
+        setIsNavigating(false);
+        Alert.alert(
+          'Navigation Unavailable',
+          'Valid destination coordinates are not available for this parking lot.',
+          [{ text: 'OK' }]
+        );
+        return;
+      }
+
       // 3. Launch platform turn-by-turn navigation
       await launchDrivingNavigation({
-        originLat: driverLocation.latitude,
-        originLng: driverLocation.longitude,
+        originLat: driverLocation?.latitude,
+        originLng: driverLocation?.longitude,
         destLat: navCoords.lat,
         destLng: navCoords.lng,
         lotName: lot.name,
