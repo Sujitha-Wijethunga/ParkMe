@@ -3,6 +3,7 @@ import { Platform } from 'react-native';
 
 const TOKEN_KEY = 'parkme_driver_token';
 const USER_KEY = 'parkme_driver_user';
+const BOOKING_KEY_PREFIX = 'parkme_driver_bookings_';
 
 export interface DriverUser {
   _id: string;
@@ -142,3 +143,18 @@ export async function saveDriverSession(user: DriverUser, token: string): Promis
   await Promise.all([saveDriverToken(token), saveDriverUser(user)]);
 }
 
+/**
+ * Stores bookings created by the current client-side booking flow, keyed by driver.
+ */
+export async function saveDriverBookingData(userId: string, data: string): Promise<void> {
+  if (!userId) throw new Error('A driver ID is required to save a booking.');
+  await setItem(`${BOOKING_KEY_PREFIX}${userId}`, data);
+}
+
+/**
+ * Retrieves bookings created by the current client-side booking flow.
+ */
+export async function getDriverBookingData(userId: string): Promise<string | null> {
+  if (!userId) return null;
+  return getItem(`${BOOKING_KEY_PREFIX}${userId}`);
+}

@@ -19,7 +19,7 @@ interface PaymentScreenProps {
   booking: BookingDetails;
   onBack: () => void;
   /** Called after "Pay" is pressed. Receives the booking with the final (discounted) total. */
-  onPay: (booking: BookingDetails) => void;
+  onPay: (booking: BookingDetails) => Promise<void> | void;
 }
 
 const METHODS = [
@@ -65,6 +65,8 @@ export default function PaymentScreen({ booking, onBack, onPay }: PaymentScreenP
   const [cvv, setCvv] = useState('');
   const [promo, setPromo] = useState('');
   const [discount, setDiscount] = useState(0);
+  const [isProcessing, setIsProcessing] = useState(false);
+  const [paymentError, setPaymentError] = useState<string | null>(null);
 
   useEffect(() => {
     const sub = BackHandler.addEventListener('hardwareBackPress', () => {
@@ -102,9 +104,17 @@ export default function PaymentScreen({ booking, onBack, onPay }: PaymentScreenP
   }
   const canPay = blockReason === null;
 
-  const handlePay = () => {
-    if (!canPay) return;
-    onPay({ ...booking, total: finalTotal });
+  const handlePay = async () => {
+    if (!canPay || isProcessing) return;
+    setIsProcessing(true);
+    setPaymentError(null);
+    try {
+      await onPay({ ...booking, total: finalTotal });
+    } catch (error) {
+      setPaymentError(error instanceof Error ? error.message : 'Could not save your booking. Please try again.');
+    } finally {
+      setIsProcessing(false);
+    }
   };
 
   return (
@@ -275,17 +285,18 @@ export default function PaymentScreen({ booking, onBack, onPay }: PaymentScreenP
         onLayout={(e) => setPayBarHeight(e.nativeEvent.layout.height)}
       >
         {blockReason && <Text style={styles.blockText}>{blockReason}</Text>}
+        {!!paymentError && <Text style={styles.paymentError}>{paymentError}</Text>}
         <TouchableOpacity
-          style={[styles.payBtn, !canPay && styles.payBtnDisabled]}
+          style={[styles.payBtn, (!canPay || isProcessing) && styles.payBtnDisabled]}
           activeOpacity={canPay ? 0.88 : 1}
-          disabled={!canPay}
+          disabled={!canPay || isProcessing}
           onPress={handlePay}
           accessibilityRole="button"
-          accessibilityState={{ disabled: !canPay }}
-          accessibilityLabel={canPay ? `Pay Rs. ${finalTotal}` : blockReason ?? 'Pay'}
+          accessibilityState={{ disabled: !canPay || isProcessing }}
+          accessibilityLabel={isProcessing ? 'Saving booking' : canPay ? `Pay Rs. ${finalTotal}` : blockReason ?? 'Pay'}
         >
           <Text style={[styles.payBtnText, !canPay && styles.payBtnTextDisabled]}>
-            Pay Rs. {finalTotal} →
+            {isProcessing ? 'Saving Booking…' : `Pay Rs. ${finalTotal} →`}
           </Text>
         </TouchableOpacity>
       </View>
@@ -406,6 +417,14 @@ const styles = StyleSheet.create({
     color: '#D97706',
     fontSize: 12,
     fontWeight: '600',
+    marginBottom: 8,
+  },
+  paymentError: {
+    textAlign: 'center',
+    color: '#B42318',
+    fontSize: 12,
+    fontWeight: '600',
+    lineHeight: 17,
     marginBottom: 8,
   },
   payBtn: {
