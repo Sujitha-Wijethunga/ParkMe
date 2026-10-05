@@ -243,4 +243,53 @@ describe('Free Google Maps Driving Directions Tests', () => {
       assert.strictEqual(isArrivedCalled, true);
     });
   });
+
+  describe('Direct Linking.openURL & Fallback Handling', () => {
+    test('attempts direct Linking.openURL with universal URL without requiring canOpenURL gate', async () => {
+      const openedUrls = [];
+      const mockLinking = {
+        openURL: async (url) => {
+          openedUrls.push(url);
+          return true;
+        },
+      };
+
+      const destLat = 6.9272;
+      const destLng = 79.8462;
+      const universalUrl = buildGoogleMapsUniversalUrl(destLat, destLng);
+
+      await mockLinking.openURL(universalUrl);
+
+      assert.strictEqual(openedUrls.length, 1);
+      assert.strictEqual(
+        openedUrls[0],
+        'https://www.google.com/maps/dir/?api=1&destination=6.9272,79.8462&travelmode=driving&dir_action=navigate'
+      );
+    });
+
+    test('captures actual failure message and provides shareable URL for copying', async () => {
+      const destLat = 6.9064;
+      const destLng = 79.8522;
+      const universalUrl = buildGoogleMapsUniversalUrl(destLat, destLng);
+
+      let sharedPayload = null;
+      const mockShare = {
+        share: async (payload) => {
+          sharedPayload = payload;
+          return { action: 'sharedAction' };
+        },
+      };
+
+      await mockShare.share({
+        title: 'Directions to Liberty Plaza',
+        message: universalUrl,
+        url: universalUrl,
+      });
+
+      assert.notStrictEqual(sharedPayload, null);
+      assert.strictEqual(sharedPayload.message, universalUrl);
+      assert.strictEqual(sharedPayload.url, universalUrl);
+    });
+  });
 });
+

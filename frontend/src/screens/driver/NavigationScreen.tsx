@@ -17,6 +17,8 @@ import { BookingDetails } from '../../constants/bookingTypes';
 import {
   getParkingLotEntranceInfo,
   launchGoogleMapsNavigation,
+  shareDirectionsUrl,
+  buildGoogleMapsUniversalUrl,
 } from '../../services/parkingEntranceService';
 
 interface NavigationScreenProps {
@@ -74,6 +76,17 @@ export default function NavigationScreen({
     }
   };
 
+  const handleCopyOrShareLink = async () => {
+    if (
+      !entranceInfo.hasVerifiedEntrance ||
+      entranceInfo.latitude === null ||
+      entranceInfo.longitude === null
+    ) {
+      return;
+    }
+    const url = buildGoogleMapsUniversalUrl(entranceInfo.latitude, entranceInfo.longitude);
+    await shareDirectionsUrl(url, entranceInfo.lotName);
+  };
 
   return (
     <View style={[styles.safeArea, { paddingTop: topPadding }]}>
@@ -217,6 +230,18 @@ export default function NavigationScreen({
                     </Text>
                   </View>
                 )}
+              </TouchableOpacity>
+
+              {/* Direct Copy / Share Directions Link Option */}
+              <TouchableOpacity
+                accessibilityRole="button"
+                accessibilityLabel="Copy or share directions link"
+                accessibilityHint="Opens share sheet to copy or send the Google Maps directions link"
+                style={styles.shareLinkBtn}
+                activeOpacity={0.7}
+                onPress={handleCopyOrShareLink}
+              >
+                <Text style={styles.shareLinkBtnText}>🔗 Copy or Share Directions Link</Text>
               </TouchableOpacity>
 
               <Text style={styles.instructionNotice}>
@@ -569,6 +594,21 @@ const styles = StyleSheet.create({
     paddingHorizontal: 8,
   },
   instructionNoticeBold: {
+    fontWeight: '700',
+    color: DriverColors.navyHeading,
+  },
+  shareLinkBtn: {
+    marginTop: 10,
+    paddingVertical: 11,
+    alignItems: 'center',
+    justifyContent: 'center',
+    borderRadius: 12,
+    backgroundColor: '#F1F5F9',
+    borderWidth: 1,
+    borderColor: '#CBD5E1',
+  },
+  shareLinkBtnText: {
+    fontSize: 13,
     fontWeight: '700',
     color: DriverColors.navyHeading,
   },
