@@ -18,6 +18,7 @@ import {
   DriverReservation,
   getMyReservations,
   getReservationById,
+  isWithinScheduledWindow,
   ReservationStatus,
 } from '../../services/reservationApi';
 
@@ -27,7 +28,8 @@ interface MyBookingsScreenProps {
   token: string | null;
   userId: string;
   onBack: () => void;
-  onSelectBooking: (reservationId: string) => void;
+  onSelectBooking: (reservation: DriverReservation) => void;
+  onViewActiveParking: () => void;
   onNavigateHome: () => void;
   onNavigateMap: () => void;
   onNavigateProfile: () => void;
@@ -50,9 +52,13 @@ const CATEGORY_TABS: { key: BookingCategory; label: string }[] = [
   { key: 'past', label: 'Past' },
 ];
 
-function getBookingCategory(status: ReservationStatus): BookingCategory {
-  if (status === 'pending') return 'upcoming';
-  if (status === 'active') return 'active';
+function getBookingCategory(
+  reservation: Pick<DriverReservation, 'status' | 'startTime' | 'endTime'>,
+  now: number
+): BookingCategory {
+  if (reservation.status === 'active') return 'active';
+  if (isWithinScheduledWindow(reservation, now)) return 'active';
+  if (reservation.status === 'pending' && new Date(reservation.startTime).getTime() > now) return 'upcoming';
   return 'past';
 }
 
@@ -153,6 +159,7 @@ export default function MyBookingsScreen({
   userId,
   onBack,
   onSelectBooking,
+  onViewActiveParking,
   onNavigateHome,
   onNavigateMap,
   onNavigateProfile,
@@ -163,6 +170,7 @@ export default function MyBookingsScreen({
   const [isRefreshing, setIsRefreshing] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [warning, setWarning] = useState<string | null>(null);
+  const [now, setNow] = useState(() => Date.now());
   const requestId = useRef(0);
 
   const loadReservations = useCallback(async (refresh = false) => {
@@ -197,17 +205,22 @@ export default function MyBookingsScreen({
     };
   }, [loadReservations]);
 
+  useEffect(() => {
+    const interval = setInterval(() => setNow(Date.now()), 30_000);
+    return () => clearInterval(interval);
+  }, []);
+
   const categoryCounts = useMemo(() => {
     const counts: Record<BookingCategory, number> = { upcoming: 0, active: 0, past: 0 };
     for (const reservation of reservations) {
-      counts[getBookingCategory(reservation.status)] += 1;
+      counts[getBookingCategory(reservation, now)] += 1;
     }
     return counts;
-  }, [reservations]);
+  }, [now, reservations]);
 
   const visibleReservations = useMemo(
-    () => reservations.filter((reservation) => getBookingCategory(reservation.status) === activeCategory),
-    [activeCategory, reservations]
+    () => reservations.filter((reservation) => getBookingCategory(reservation, now) === activeCategory),
+    [activeCategory, now, reservations]
   );
 
   const handleTabPress = (tab: DriverTabType) => {
@@ -293,11 +306,16 @@ export default function MyBookingsScreen({
                   ? 'Your upcoming parking reservations will appear here.'
                   : activeCategory === 'active'
                   ? 'Bookings you are currently using will appear here.'
-                  : 'Your completed and cancelled bookings will appear here.'}
+                  : 'Your completed, cancelled, and expired bookings will appear here.'}
               </Text>
               <TouchableOpacity style={styles.refreshButton} onPress={() => void loadReservations(true)}>
                 <Text style={styles.refreshButtonText}>Refresh bookings</Text>
               </TouchableOpacity>
+              {activeCategory === 'active' && (
+                <TouchableOpacity style={styles.refreshButton} onPress={onViewActiveParking}>
+                  <Text style={styles.refreshButtonText}>Open Active Parking</Text>
+                </TouchableOpacity>
+              )}
             </View>
           ) : (
             visibleReservations.map((reservation) => (
@@ -307,7 +325,7 @@ export default function MyBookingsScreen({
                 accessibilityLabel={`Booking ${reservation._id}, ${getLotName(reservation)}, ${getStatusLabel(reservation.status)}`}
                 activeOpacity={0.85}
                 style={styles.bookingCard}
-                onPress={() => onSelectBooking(reservation._id)}
+                onPress={() => onSelectBooking(reservation)}
               >
                 <View style={styles.cardTopRow}>
                   <Text style={styles.reference} numberOfLines={1}>REF: {reservation._id}</Text>

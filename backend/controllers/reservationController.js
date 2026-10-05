@@ -71,7 +71,7 @@ const getMyReservations = async (req, res, next) => {
   try {
     const reservations = await Reservation.find({ driver: req.user._id })
       .populate('parkingSpace', 'spaceNumber floor type')
-      .populate('parkingLot', 'name address')
+      .populate('parkingLot', 'name address pricePerHour')
       .sort({ createdAt: -1 });
     res.json(reservations);
   } catch (error) {
@@ -87,7 +87,7 @@ const getReservationById = async (req, res, next) => {
     const reservation = await Reservation.findById(req.params.id)
       .populate('driver', 'name email phone')
       .populate('parkingSpace', 'spaceNumber floor type')
-      .populate('parkingLot', 'name address');
+      .populate('parkingLot', 'name address pricePerHour');
 
     if (!reservation) return res.status(404).json({ message: 'Reservation not found' });
 
@@ -158,6 +158,32 @@ const completeReservation = async (req, res, next) => {
   }
 };
 
+// @desc    Release an active reservation by its driver
+// @route   PUT /api/reservations/:id/release
+// @access  Driver (own active reservation)
+const releaseReservation = async (req, res, next) => {
+  try {
+    const reservation = await Reservation.findById(req.params.id);
+    if (!reservation) return res.status(404).json({ message: 'Reservation not found' });
+    if (reservation.driver.toString() !== req.user._id.toString()) {
+      return res.status(403).json({ message: 'Access denied' });
+    }
+    if (reservation.status !== 'active') {
+      return res.status(400).json({ message: 'Only active reservations can be released' });
+    }
+
+    reservation.status = 'completed';
+    await reservation.save();
+
+    await ParkingSpace.findByIdAndUpdate(reservation.parkingSpace, { status: 'available' });
+    await ParkingLot.findByIdAndUpdate(reservation.parkingLot, { $inc: { availableSpaces: 1 } });
+
+    res.json({ message: 'Parking space released', reservation });
+  } catch (error) {
+    next(error);
+  }
+};
+
 // @desc    Verify driver arrival
 // @route   PUT /api/reservations/:id/verify
 // @access  Staff / Admin
@@ -208,6 +234,7 @@ module.exports = {
   getReservationById,
   cancelReservation,
   completeReservation,
+  releaseReservation,
   verifyReservation,
   getAllReservations,
 };
