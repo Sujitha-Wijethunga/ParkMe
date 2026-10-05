@@ -9,7 +9,7 @@ import { DriverUser } from './storage';
  */
 export function getApiBaseUrl(): string {
   if (process.env.EXPO_PUBLIC_API_URL) {
-    return process.env.EXPO_PUBLIC_API_URL.replace(/\/+$/, '');
+    return process.env.EXPO_PUBLIC_API_URL.replace(/\/+$/, '').replace(/\/api$/, '');
   }
 
   // Derive host IP from Expo Constants when running in Expo Go / development client

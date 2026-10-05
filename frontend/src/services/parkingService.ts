@@ -73,7 +73,7 @@ export interface LotAvailabilityCheck {
  */
 export function getApiBaseUrl(): string {
   if (process.env.EXPO_PUBLIC_API_URL) {
-    return process.env.EXPO_PUBLIC_API_URL;
+    return process.env.EXPO_PUBLIC_API_URL.replace(/\/+$/, '').replace(/\/api$/, '');
   }
 
   // Attempt to extract development host IP from Expo Constants
