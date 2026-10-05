@@ -9,4 +9,5 @@ export interface BookingDetails {
   hours: number;
   /** Final amount to pay (parking + service fee) */
   total: number;
+  paymentMethod?: string;
 }

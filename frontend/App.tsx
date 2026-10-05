@@ -27,13 +27,17 @@ import BookingSummaryScreen from './src/screens/driver/BookingSummaryScreen';
 import PaymentScreen from './src/screens/driver/PaymentScreen';
 import BookingConfirmedScreen from './src/screens/driver/BookingConfirmedScreen';
 import MyBookingsScreen, { BookingDetailsScreen } from './src/screens/driver/MyBookingsScreen';
-import ActiveParkingScreen, { ReleaseParkingScreen } from './src/screens/driver/ActiveParkingScreen';
+import ActiveParkingScreen, {
+  ExitConfirmationScreen,
+  ReleaseParkingScreen,
+} from './src/screens/driver/ActiveParkingScreen';
 import NavigationScreen from './src/screens/driver/NavigationScreen';
 import { BookingDetails } from './src/constants/bookingTypes';
 import { DriverUser, getDriverToken, clearDriverSession } from './src/services/storage';
 import {
   DriverReservation,
   isWithinScheduledWindow,
+  ReleasedReservationReceipt,
   saveConfirmedBooking,
 } from './src/services/reservationApi';
 import { getCurrentUser } from './src/services/authApi';
@@ -72,6 +76,7 @@ type ScreenType =
   | 'driver-booking-details'
   | 'driver-active-parking'
   | 'driver-release-parking'
+  | 'driver-exit-confirmation'
   | 'login'
   | 'dashboard'
   | 'spaces'
@@ -165,6 +170,7 @@ export default function App() {
   const [confirmedBooking, setConfirmedBooking] = useState<BookingDetails | null>(null);
   const [selectedReservationId, setSelectedReservationId] = useState<string | null>(null);
   const [reservationToRelease, setReservationToRelease] = useState<DriverReservation | null>(null);
+  const [releaseReceipt, setReleaseReceipt] = useState<ReleasedReservationReceipt | null>(null);
 
   const handleOpenSearch = (
     query: string = '',
@@ -500,10 +506,21 @@ export default function App() {
       {currentScreen === 'driver-release-parking' && reservationToRelease && (
         <ReleaseParkingScreen
           token={driverToken}
+          userId={driverUser?._id || 'guest'}
           reservation={reservationToRelease}
           onBack={() => setCurrentScreen('driver-active-parking')}
-          onReleased={() => {
+          onReleased={(receipt) => {
+            setReleaseReceipt(receipt);
             setReservationToRelease(null);
+            setCurrentScreen('driver-exit-confirmation');
+          }}
+        />
+      )}
+      {currentScreen === 'driver-exit-confirmation' && releaseReceipt && (
+        <ExitConfirmationScreen
+          receipt={releaseReceipt}
+          onViewBookings={() => {
+            setReleaseReceipt(null);
             setSelectedReservationId(null);
             setCurrentScreen('driver-bookings');
           }}

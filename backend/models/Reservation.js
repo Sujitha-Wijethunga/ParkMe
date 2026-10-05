@@ -25,6 +25,13 @@ const reservationSchema = new mongoose.Schema(
       type: Date,
       required: [true, 'End time is required'],
     },
+    actualEndTime: {
+      type: Date,
+    },
+    finalAmount: {
+      type: Number,
+      min: [0, 'Final amount cannot be negative'],
+    },
     status: {
       type: String,
       enum: ['pending', 'active', 'completed', 'cancelled'],
