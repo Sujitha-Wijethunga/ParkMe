@@ -26,6 +26,9 @@ export interface DriverReservation {
   endTime: string;
   status: ReservationStatus;
   totalAmount: number;
+  paymentMethod?: string;
+  actualEndTime?: string;
+  finalAmount?: number;
   cancellationReason?: string;
   cancelledAt?: string;
   createdAt?: string;
@@ -46,6 +49,11 @@ export function isWithinScheduledWindow(
 export interface MyReservationsResult {
   reservations: DriverReservation[];
   warning: string | null;
+}
+
+export interface ReleasedReservationReceipt {
+  reservation: DriverReservation;
+  paymentMethod: string | null;
 }
 
 export interface ConfirmedBookingInput {
@@ -88,6 +96,11 @@ function isDriverReservation(value: unknown): value is DriverReservation {
     typeof value.totalAmount === 'number' &&
     Number.isFinite(value.totalAmount) &&
     value.totalAmount >= 0 &&
+    (value.paymentMethod === undefined || typeof value.paymentMethod === 'string') &&
+    (value.actualEndTime === undefined ||
+      (typeof value.actualEndTime === 'string' && !Number.isNaN(Date.parse(value.actualEndTime)))) &&
+    (value.finalAmount === undefined ||
+      (typeof value.finalAmount === 'number' && Number.isFinite(value.finalAmount) && value.finalAmount >= 0)) &&
     (value.verifiedAt === undefined ||
       (typeof value.verifiedAt === 'string' && !Number.isNaN(Date.parse(value.verifiedAt)))) &&
     isPopulatedValue(value.parkingLot, ['name', 'address']) &&
@@ -198,12 +211,18 @@ export async function saveConfirmedBooking(input: ConfirmedBookingInput): Promis
   const now = Date.now();
   const reservation: DriverReservation = {
     _id: `local-${now}-${Math.random().toString(36).slice(2, 8)}`,
-    parkingLot: { _id: booking.lotId, name: lot.name, address: lot.address },
+    parkingLot: {
+      _id: booking.lotId,
+      name: lot.name,
+      address: lot.address,
+      pricePerHour: lot.pricePerHour,
+    },
     parkingSpace: { _id: booking.spaceId, spaceNumber: booking.spaceId, floor: booking.floor },
     startTime: startTime.toISOString(),
     endTime: endTime.toISOString(),
     status: 'pending',
     totalAmount: booking.total,
+    ...(booking.paymentMethod ? { paymentMethod: booking.paymentMethod } : {}),
     createdAt: new Date(now).toISOString(),
   };
 
@@ -266,15 +285,98 @@ export async function cancelReservation(
   );
 }
 
-export async function releaseActiveReservation(token: string, reservationId: string): Promise<void> {
-  if (!token) throw new Error('Please sign in to release your parking space.');
-  if (!reservationId || reservationId.startsWith('local-')) {
-    throw new Error('Only a server-confirmed active session can release a parking space.');
+export function calculateFinalParkingCost(reservation: DriverReservation, exitTime: Date): number {
+  const startedAt = new Date(reservation.verifiedAt || reservation.startTime).getTime();
+  const endedAt = exitTime.getTime();
+  const lotRate =
+    typeof reservation.parkingLot !== 'string' ? reservation.parkingLot.pricePerHour : undefined;
+  const bookedDuration = new Date(reservation.endTime).getTime() - new Date(reservation.startTime).getTime();
+  const ratePerHour =
+    typeof lotRate === 'number' && Number.isFinite(lotRate)
+      ? lotRate
+      : bookedDuration > 0
+      ? reservation.totalAmount / (bookedDuration / 3600000)
+      : 0;
+
+  if (!Number.isFinite(startedAt) || !Number.isFinite(endedAt) || endedAt < startedAt || ratePerHour <= 0) {
+    throw new Error('Unable to calculate the final parking cost from this session.');
   }
 
-  await reservationRequest<{ message: string }>(
-    `/${encodeURIComponent(reservationId)}/release`,
+  return Math.round((ratePerHour * ((endedAt - startedAt) / 3600000) + Number.EPSILON) * 100) / 100;
+}
+
+export async function releaseActiveReservation(
+  token: string,
+  userId: string,
+  reservation: DriverReservation
+): Promise<ReleasedReservationReceipt> {
+  const now = new Date();
+  const isReleasable =
+    reservation.status === 'active' || isWithinScheduledWindow(reservation, now.getTime());
+  if (!reservation._id || !isReleasable) {
+    throw new Error('Only a current active parking session can be released.');
+  }
+
+  if (reservation._id.startsWith('local-')) {
+    if (!userId) throw new Error('A driver ID is required to release this saved booking.');
+    const reservations = await readLocalReservations(userId);
+    const savedReservation = reservations.find((item) => item._id === reservation._id);
+    if (!savedReservation || savedReservation.status !== reservation.status) {
+      throw new Error('This saved booking is no longer active.');
+    }
+    const actualEndTime = now.toISOString();
+    const finalAmount = calculateFinalParkingCost(savedReservation, now);
+    const completedReservation: DriverReservation = {
+      ...savedReservation,
+      status: 'completed',
+      actualEndTime,
+      finalAmount,
+    };
+    await saveDriverBookingData(
+      userId,
+      JSON.stringify(reservations.map((item) =>
+        item._id === completedReservation._id ? completedReservation : item
+      ))
+    );
+    return {
+      reservation: completedReservation,
+      paymentMethod: completedReservation.paymentMethod || null,
+    };
+  }
+  if (!token) throw new Error('Please sign in to release your parking space.');
+
+  const result = await reservationRequest<{
+    reservation?: { actualEndTime?: string; finalAmount?: number; status?: ReservationStatus };
+    paymentMethod?: string | null;
+  }>(
+    `/${encodeURIComponent(reservation._id)}/release`,
     token,
     'PUT'
   );
+
+  const actualEndTime = result.reservation?.actualEndTime;
+  const finalAmount = result.reservation?.finalAmount;
+  if (
+    result.reservation?.status !== 'completed' ||
+    typeof actualEndTime !== 'string' ||
+    Number.isNaN(Date.parse(actualEndTime)) ||
+    typeof finalAmount !== 'number' ||
+    !Number.isFinite(finalAmount) ||
+    finalAmount < 0
+  ) {
+    throw new Error('The server released the space but returned incomplete receipt information.');
+  }
+
+  const returnedPaymentMethod =
+    typeof result.paymentMethod === 'string' ? result.paymentMethod : reservation.paymentMethod || null;
+  return {
+    reservation: {
+      ...reservation,
+      status: 'completed',
+      actualEndTime,
+      finalAmount,
+      paymentMethod: returnedPaymentMethod || undefined,
+    },
+    paymentMethod: returnedPaymentMethod,
+  };
 }

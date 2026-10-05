@@ -1,4 +1,5 @@
 const Reservation = require('../models/Reservation');
+const Payment = require('../models/Payment');
 const ParkingSpace = require('../models/ParkingSpace');
 const ParkingLot = require('../models/ParkingLot');
 
@@ -73,7 +74,23 @@ const getMyReservations = async (req, res, next) => {
       .populate('parkingSpace', 'spaceNumber floor type')
       .populate('parkingLot', 'name address pricePerHour')
       .sort({ createdAt: -1 });
-    res.json(reservations);
+    const payments = reservations.length
+      ? await Payment.find({
+          reservation: { $in: reservations.map((reservation) => reservation._id) },
+          driver: req.user._id,
+          status: 'paid',
+        }).select('reservation method')
+      : [];
+    const paymentMethods = new Map(
+      payments.map((payment) => [payment.reservation.toString(), payment.method])
+    );
+    res.json(reservations.map((reservation) => {
+      const data = reservation.toObject();
+      return {
+        ...data,
+        paymentMethod: paymentMethods.get(data._id.toString()),
+      };
+    }));
   } catch (error) {
     next(error);
   }
@@ -158,9 +175,9 @@ const completeReservation = async (req, res, next) => {
   }
 };
 
-// @desc    Release an active reservation by its driver
+// @desc    Release a current reservation by its driver
 // @route   PUT /api/reservations/:id/release
-// @access  Driver (own active reservation)
+// @access  Driver (own active reservation or started pending reservation)
 const releaseReservation = async (req, res, next) => {
   try {
     const reservation = await Reservation.findById(req.params.id);
@@ -168,17 +185,42 @@ const releaseReservation = async (req, res, next) => {
     if (reservation.driver.toString() !== req.user._id.toString()) {
       return res.status(403).json({ message: 'Access denied' });
     }
-    if (reservation.status !== 'active') {
-      return res.status(400).json({ message: 'Only active reservations can be released' });
+    const actualStartTime = reservation.verifiedAt || reservation.startTime;
+    const actualEndTime = new Date();
+    const isActive = reservation.status === 'active';
+    const isStartedPending =
+      reservation.status === 'pending' &&
+      new Date(reservation.startTime) <= actualEndTime &&
+      actualEndTime < new Date(reservation.endTime);
+    if (!isActive && !isStartedPending) {
+      return res.status(400).json({ message: 'Only a current active parking session can be released' });
     }
 
+    const parkingLot = await ParkingLot.findById(reservation.parkingLot);
+    const ratePerHour = parkingLot?.pricePerHour;
+    if (!Number.isFinite(ratePerHour) || ratePerHour <= 0) {
+      return res.status(400).json({ message: 'Parking rate is unavailable; the session cannot be finalized.' });
+    }
+
+    const durationMs = actualEndTime.getTime() - new Date(actualStartTime).getTime();
+    if (!Number.isFinite(durationMs) || durationMs < 0) {
+      return res.status(400).json({ message: 'The session start time is invalid; the session cannot be finalized.' });
+    }
+
+    const payment = await Payment.findOne({ reservation: reservation._id, status: 'paid' }).select('method');
+    reservation.actualEndTime = actualEndTime;
+    reservation.finalAmount = Number(((ratePerHour * durationMs) / 3600000).toFixed(2));
     reservation.status = 'completed';
     await reservation.save();
 
     await ParkingSpace.findByIdAndUpdate(reservation.parkingSpace, { status: 'available' });
     await ParkingLot.findByIdAndUpdate(reservation.parkingLot, { $inc: { availableSpaces: 1 } });
 
-    res.json({ message: 'Parking space released', reservation });
+    res.json({
+      message: 'Parking space released',
+      reservation,
+      paymentMethod: payment?.method || null,
+    });
   } catch (error) {
     next(error);
   }

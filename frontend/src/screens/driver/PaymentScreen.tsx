@@ -105,11 +105,11 @@ export default function PaymentScreen({ booking, onBack, onPay }: PaymentScreenP
   const canPay = blockReason === null;
 
   const handlePay = async () => {
-    if (!canPay || isProcessing) return;
+    if (!canPay || isProcessing || method === null) return;
     setIsProcessing(true);
     setPaymentError(null);
     try {
-      await onPay({ ...booking, total: finalTotal });
+      await onPay({ ...booking, total: finalTotal, paymentMethod: METHODS[method].title });
     } catch (error) {
       setPaymentError(error instanceof Error ? error.message : 'Could not save your booking. Please try again.');
     } finally {

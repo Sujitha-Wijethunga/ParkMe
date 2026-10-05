@@ -1,12 +1,15 @@
 const assert = require('node:assert/strict');
 const { afterEach, beforeEach, suite, test } = require('node:test');
 const Reservation = require('../models/Reservation');
+const Payment = require('../models/Payment');
 const ParkingSpace = require('../models/ParkingSpace');
 const ParkingLot = require('../models/ParkingLot');
 const { releaseReservation } = require('../controllers/reservationController');
 
 const originalMethods = {
   reservationFindById: Reservation.findById,
+  paymentFindOne: Payment.findOne,
+  lotFindById: ParkingLot.findById,
   spaceFindByIdAndUpdate: ParkingSpace.findByIdAndUpdate,
   lotFindByIdAndUpdate: ParkingLot.findByIdAndUpdate,
 };
@@ -22,6 +25,9 @@ suite('Driver active reservation release', () => {
       driver: { toString: () => 'driver-1' },
       parkingSpace: 'space-1',
       parkingLot: 'lot-1',
+      startTime: new Date(Date.now() - 60 * 60 * 1000),
+      verifiedAt: new Date(Date.now() - 30 * 60 * 1000),
+      endTime: new Date(Date.now() + 60 * 60 * 1000),
       status: 'active',
       save: async function save() {
         return this;
@@ -30,6 +36,8 @@ suite('Driver active reservation release', () => {
     spaceUpdate = null;
     lotUpdate = null;
     Reservation.findById = async () => reservation;
+    Payment.findOne = () => ({ select: async () => ({ method: 'card' }) });
+    ParkingLot.findById = async () => ({ pricePerHour: 120 });
     ParkingSpace.findByIdAndUpdate = async (...args) => {
       spaceUpdate = args;
     };
@@ -40,6 +48,8 @@ suite('Driver active reservation release', () => {
 
   afterEach(() => {
     Reservation.findById = originalMethods.reservationFindById;
+    Payment.findOne = originalMethods.paymentFindOne;
+    ParkingLot.findById = originalMethods.lotFindById;
     ParkingSpace.findByIdAndUpdate = originalMethods.spaceFindByIdAndUpdate;
     ParkingLot.findByIdAndUpdate = originalMethods.lotFindByIdAndUpdate;
   });
@@ -74,6 +84,9 @@ suite('Driver active reservation release', () => {
     assert.equal(response.statusCode, 200);
     assert.equal(response.body.message, 'Parking space released');
     assert.equal(reservation.status, 'completed');
+    assert.equal(reservation.finalAmount, 60);
+    assert.ok(reservation.actualEndTime instanceof Date);
+    assert.equal(response.body.paymentMethod, 'card');
     assert.deepEqual(spaceUpdate, ['space-1', { status: 'available' }]);
     assert.deepEqual(lotUpdate, ['lot-1', { $inc: { availableSpaces: 1 } }]);
   });
@@ -89,6 +102,8 @@ suite('Driver active reservation release', () => {
 
   test('rejects release unless the reservation is active', async () => {
     reservation.status = 'pending';
+    reservation.startTime = new Date(Date.now() + 60 * 60 * 1000);
+    reservation.endTime = new Date(Date.now() + 2 * 60 * 60 * 1000);
     const response = await callRelease();
 
     assert.equal(response.statusCode, 400);
@@ -97,12 +112,38 @@ suite('Driver active reservation release', () => {
     assert.equal(lotUpdate, null);
   });
 
+  test('completes and frees a pending reservation during its scheduled window', async () => {
+    reservation.status = 'pending';
+    reservation.startTime = new Date(Date.now() - 30 * 60 * 1000);
+    reservation.verifiedAt = undefined;
+    reservation.endTime = new Date(Date.now() + 30 * 60 * 1000);
+    const response = await callRelease();
+
+    assert.equal(response.statusCode, 200);
+    assert.equal(reservation.status, 'completed');
+    assert.ok(reservation.actualEndTime instanceof Date);
+    assert.ok(reservation.finalAmount > 0);
+    assert.deepEqual(spaceUpdate, ['space-1', { status: 'available' }]);
+    assert.deepEqual(lotUpdate, ['lot-1', { $inc: { availableSpaces: 1 } }]);
+  });
+
   test('returns not found when the reservation does not exist', async () => {
     Reservation.findById = async () => null;
     const response = await callRelease();
 
     assert.equal(response.statusCode, 404);
     assert.equal(response.body.message, 'Reservation not found');
+    assert.equal(spaceUpdate, null);
+    assert.equal(lotUpdate, null);
+  });
+
+  test('does not release the space when the parking rate is unavailable', async () => {
+    ParkingLot.findById = async () => ({ pricePerHour: null });
+    const response = await callRelease();
+
+    assert.equal(response.statusCode, 400);
+    assert.equal(reservation.status, 'active');
+    assert.equal(reservation.actualEndTime, undefined);
     assert.equal(spaceUpdate, null);
     assert.equal(lotUpdate, null);
   });

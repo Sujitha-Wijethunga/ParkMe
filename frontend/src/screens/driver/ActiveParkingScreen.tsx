@@ -12,9 +12,11 @@ import {
 } from 'react-native';
 import { DriverColors } from '../../constants/colors';
 import {
+  calculateFinalParkingCost,
   DriverReservation,
   getMyReservations,
   isWithinScheduledWindow,
+  ReleasedReservationReceipt,
   releaseActiveReservation,
 } from '../../services/reservationApi';
 
@@ -29,9 +31,15 @@ interface ActiveParkingScreenProps {
 
 interface ReleaseParkingScreenProps {
   token: string | null;
+  userId: string;
   reservation: DriverReservation;
   onBack: () => void;
-  onReleased: () => void;
+  onReleased: (receipt: ReleasedReservationReceipt) => void;
+}
+
+interface ExitConfirmationScreenProps {
+  receipt: ReleasedReservationReceipt;
+  onViewBookings: () => void;
 }
 
 function getRelatedString(
@@ -320,7 +328,8 @@ export default function ActiveParkingScreen({
             </View>
           </ScrollView>
 
-          {activeReservation.status === 'active' ? (
+          {activeReservation.status === 'active' ||
+          (now !== null && isWithinScheduledWindow(activeReservation, now)) ? (
             <View style={styles.footer}>
               <TouchableOpacity
                 accessibilityRole="button"
@@ -338,6 +347,81 @@ export default function ActiveParkingScreen({
   );
 }
 
+function getPaymentMethodLabel(method?: string | null): string {
+  if (!method) return '';
+  switch (method.toLowerCase()) {
+    case 'card':
+      return 'Card';
+    case 'cash':
+      return 'Cash';
+    case 'wallet':
+      return 'Wallet';
+    default:
+      return method;
+  }
+}
+
+function SummaryRow({ label, value, detail }: { label: string; value: string; detail?: string }) {
+  return (
+    <View style={styles.summaryRow}>
+      <Text style={styles.summaryLabel}>{label}</Text>
+      <View style={styles.summaryValueBlock}>
+        <Text style={styles.summaryValue} numberOfLines={2}>{value}</Text>
+        {!!detail && <Text style={styles.summaryDetail} numberOfLines={2}>{detail}</Text>}
+      </View>
+    </View>
+  );
+}
+
+export function ExitConfirmationScreen({ receipt, onViewBookings }: ExitConfirmationScreenProps) {
+  const reservation = receipt.reservation;
+  const exitTime = reservation.actualEndTime || reservation.endTime;
+  const entryTime = reservation.verifiedAt || reservation.startTime;
+  const finalAmount = reservation.finalAmount ?? reservation.totalAmount;
+
+  return (
+    <SafeAreaView style={styles.safeArea}>
+      <StatusBar barStyle="dark-content" backgroundColor={DriverColors.background} />
+      <View style={styles.header}>
+        <View style={styles.headerButton} />
+        <Text style={styles.headerTitle}>Parking Receipt</Text>
+        <View style={styles.headerButton} />
+      </View>
+      <ScrollView contentContainerStyle={styles.receiptContent}>
+        <View style={styles.receiptSuccess}><Text style={styles.receiptCheck}>✓</Text></View>
+        <Text style={styles.receiptTitle}>Space Released</Text>
+        <Text style={styles.receiptSubtitle}>Your parking session has ended successfully.</Text>
+        <View style={styles.releaseSummaryCard}>
+          <Text style={styles.reference}>REF: {reservation._id}</Text>
+          <Text style={styles.locationName}>{getLocationName(reservation)}</Text>
+          {!!getLocationAddress(reservation) && (
+            <Text style={styles.address}>{getLocationAddress(reservation)}</Text>
+          )}
+          <View style={styles.summaryDivider} />
+          <SummaryRow label="Space" value={`${getSpace(reservation)} (${getFloor(reservation)})`} />
+          <SummaryRow label="Entry time" value={formatClock(entryTime)} />
+          <SummaryRow label="Exit time" value={formatClock(exitTime)} />
+          <SummaryRow
+            label="Duration parked"
+            value={formatDuration(new Date(exitTime).getTime() - new Date(entryTime).getTime())}
+          />
+          <SummaryRow label="Payment method" value={getPaymentMethodLabel(receipt.paymentMethod) || 'Not recorded'} />
+          <View style={styles.summaryDivider} />
+          <View style={styles.finalCostRow}>
+            <Text style={styles.finalCostLabel}>Final total</Text>
+            <Text style={styles.finalCostValue}>{formatMoney(finalAmount)}</Text>
+          </View>
+        </View>
+      </ScrollView>
+      <View style={styles.releaseFooter}>
+        <TouchableOpacity accessibilityRole="button" style={styles.confirmButton} onPress={onViewBookings}>
+          <Text style={styles.confirmButtonText}>Back to My Bookings</Text>
+        </TouchableOpacity>
+      </View>
+    </SafeAreaView>
+  );
+}
+
 function Info({ label, value }: { label: string; value: string }) {
   return (
     <View style={styles.infoColumn}>
@@ -349,20 +433,55 @@ function Info({ label, value }: { label: string; value: string }) {
 
 export function ReleaseParkingScreen({
   token,
+  userId,
   reservation,
   onBack,
   onReleased,
 }: ReleaseParkingScreenProps) {
   const [isReleasing, setIsReleasing] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [now, setNow] = useState<number | null>(null);
+  const sessionStart = reservation.verifiedAt || reservation.startTime;
+  const elapsedMs = now === null ? 0 : Math.max(0, now - new Date(sessionStart).getTime());
+  const finalAmountResult = useMemo(() => {
+    if (now === null) return { amount: null, error: null };
+    try {
+      return { amount: calculateFinalParkingCost(reservation, new Date(now)), error: null };
+    } catch (costError) {
+      return {
+        amount: null,
+        error: costError instanceof Error ? costError.message : 'Unable to estimate final cost.',
+      };
+    }
+  }, [now, reservation]);
+
+  useEffect(() => {
+    const initialTick = setTimeout(() => setNow(Date.now()), 0);
+    const interval = setInterval(() => setNow(Date.now()), 1000);
+    return () => {
+      clearTimeout(initialTick);
+      clearInterval(interval);
+    };
+  }, []);
 
   const handleRelease = async () => {
     if (isReleasing) return;
+    if (
+      reservation.status !== 'active' &&
+      !isWithinScheduledWindow(reservation, now ?? Date.now())
+    ) {
+      setError('This parking session is no longer active. Refresh your bookings before releasing it.');
+      return;
+    }
+    if (finalAmountResult.amount === null) {
+      setError(finalAmountResult.error || 'Unable to calculate the final parking cost.');
+      return;
+    }
     setIsReleasing(true);
     setError(null);
     try {
-      await releaseActiveReservation(token || '', reservation._id);
-      onReleased();
+      const receipt = await releaseActiveReservation(token || '', userId, reservation);
+      onReleased(receipt);
     } catch (releaseError) {
       setError(releaseError instanceof Error ? releaseError.message : 'Unable to release the parking space.');
     } finally {
@@ -377,42 +496,90 @@ export function ReleaseParkingScreen({
         <TouchableOpacity accessibilityRole="button" accessibilityLabel="Back to active parking" style={styles.headerButton} onPress={onBack}>
           <Text style={styles.backArrow}>‹</Text>
         </TouchableOpacity>
-        <Text style={styles.headerTitle}>Release Parking</Text>
+        <View style={styles.releaseHeaderTitle}>
+          <Text style={styles.headerTitle}>Release Parking</Text>
+          <Text style={styles.headerReference} numberOfLines={1}>REF: {reservation._id}</Text>
+        </View>
         <View style={styles.headerButton} />
       </View>
-      <ScrollView contentContainerStyle={styles.releaseContent}>
-        <View style={styles.confirmIconCircle}><Text style={styles.confirmIcon}>↪</Text></View>
-        <Text style={styles.confirmTitle}>Release this space?</Text>
-        <Text style={styles.confirmDescription}>
-          Confirm that you have finished parking. The session will be marked completed and the space released.
-        </Text>
-        <View style={styles.sessionCard}>
-          <Text style={styles.reference}>REF: {reservation._id}</Text>
-          <Text style={styles.locationName}>{getLocationName(reservation)}</Text>
-          {!!getLocationAddress(reservation) && (
-            <Text style={styles.address}>{getLocationAddress(reservation)}</Text>
-          )}
-          <View style={styles.informationRow}>
-            <Info label="SPACE" value={getSpace(reservation)} />
-            <Info label="FLOOR" value={getFloor(reservation)} />
-            <Info label="ARRIVED" value={formatClock(reservation.startTime)} />
+      <ScrollView contentContainerStyle={styles.releaseContent} showsVerticalScrollIndicator={false}>
+        <View style={styles.releaseHero}>
+          <View style={styles.garageIllustration}>
+            <View style={styles.garageBuilding}><Text style={styles.garageCar}>🚗</Text></View>
+            <View style={styles.garageMarker}><Text style={styles.garageMarkerText}>{getSpace(reservation)}</Text></View>
+          </View>
+          <Text style={styles.confirmTitle}>Leaving Your Spot?</Text>
+          <Text style={styles.confirmDescription}>
+            Are you ready to leave <Text style={styles.heroEmphasis}>{getLocationName(reservation)}</Text>?
+            {' '}This will release Space <Text style={styles.heroEmphasis}>{getSpace(reservation)}</Text> for fellow drivers.
+          </Text>
+        </View>
+
+        <View style={styles.releaseStatsRow}>
+          <View style={styles.releaseStatCard}>
+            <View style={styles.releaseStatIcon}><Text>🚘</Text></View>
+            <View style={styles.releaseStatText}>
+              <Text style={styles.releaseStatLabel}>ASSIGNED SPACE</Text>
+              <Text style={styles.releaseStatValue}>{getSpace(reservation)} ({getFloor(reservation)})</Text>
+            </View>
+          </View>
+          <View style={styles.releaseStatCard}>
+            <View style={[styles.releaseStatIcon, styles.durationStatIcon]}><Text>◷</Text></View>
+            <View style={styles.releaseStatText}>
+              <Text style={styles.releaseStatLabel}>DURATION PARKED</Text>
+              <Text style={styles.releaseStatValue}>{now === null ? '—' : formatDuration(elapsedMs)}</Text>
+            </View>
           </View>
         </View>
+
+        <View style={styles.releaseSummaryCard}>
+          <View style={styles.summaryHeading}>
+            <Text style={styles.summaryTitle}>SESSION SUMMARY</Text>
+            <View style={styles.endingBadge}><Text style={styles.endingBadgeText}>✓ Session Ending</Text></View>
+          </View>
+          <View style={styles.summaryDivider} />
+          <SummaryRow
+            label="Parking Location"
+            value={getLocationName(reservation)}
+            detail={getLocationAddress(reservation)}
+          />
+          <SummaryRow
+            label="Entry & Exit Time"
+            value={`${formatClock(sessionStart)} – ${now === null ? '…' : formatClock(new Date(now).toISOString())}`}
+          />
+          <SummaryRow
+            label="Payment Method"
+            value={getPaymentMethodLabel(reservation.paymentMethod) || 'Not recorded'}
+          />
+          <View style={styles.summaryDivider} />
+          <View style={styles.finalCostRow}>
+            <View style={styles.finalCostLabels}>
+              <Text style={styles.finalCostLabel}>Final Total Cost</Text>
+              <Text style={styles.costNote}>Parking rate only · no tax/fee data recorded</Text>
+            </View>
+            <Text style={styles.finalCostValue}>
+              {finalAmountResult.amount === null ? 'Unavailable' : formatMoney(finalAmountResult.amount)}
+            </Text>
+          </View>
+          {!!finalAmountResult.error && <Text style={styles.costError}>{finalAmountResult.error}</Text>}
+        </View>
         {!!error && <Text style={styles.releaseError}>{error}</Text>}
+      </ScrollView>
+      <View style={styles.releaseFooter}>
         <TouchableOpacity
           accessibilityRole="button"
-          disabled={isReleasing}
-          style={[styles.confirmButton, isReleasing && styles.disabledButton]}
+          disabled={isReleasing || finalAmountResult.amount === null}
+          style={[styles.confirmButton, (isReleasing || finalAmountResult.amount === null) && styles.disabledButton]}
           onPress={() => void handleRelease()}
         >
           {isReleasing
             ? <ActivityIndicator color="#FFFFFF" />
-            : <Text style={styles.confirmButtonText}>Confirm Release</Text>}
+            : <Text style={styles.confirmButtonText}>⚑  Confirm & Release</Text>}
         </TouchableOpacity>
         <TouchableOpacity disabled={isReleasing} style={styles.keepButton} onPress={onBack}>
-          <Text style={styles.keepButtonText}>Keep Parking</Text>
+          <Text style={styles.keepButtonText}>Not Yet</Text>
         </TouchableOpacity>
-      </ScrollView>
+      </View>
     </SafeAreaView>
   );
 }
@@ -436,6 +603,8 @@ const styles = StyleSheet.create({
   backArrow: { color: DriverColors.navyHeading, fontSize: 30, lineHeight: 32, marginTop: -3 },
   qrIcon: { color: DriverColors.navyHeading, fontSize: 21, fontWeight: '700' },
   headerTitle: { color: DriverColors.navyHeading, fontSize: 18, fontWeight: '800' },
+  releaseHeaderTitle: { flex: 1, alignItems: 'center' },
+  headerReference: { color: DriverColors.textSecondary, fontSize: 9, marginTop: 1, maxWidth: '100%' },
   content: { paddingHorizontal: 16, paddingTop: 4, paddingBottom: 18, flexGrow: 1 },
   timerSection: { alignItems: 'center', paddingTop: 6, paddingBottom: 16 },
   timerCircle: { width: 200, height: 200, alignItems: 'center', justifyContent: 'center' },
@@ -613,37 +782,103 @@ const styles = StyleSheet.create({
     fontSize: 11,
     marginBottom: 7,
   },
-  releaseContent: { flexGrow: 1, paddingHorizontal: 18, paddingTop: 30, paddingBottom: 24, alignItems: 'stretch' },
-  confirmIconCircle: {
-    width: 66,
-    height: 66,
-    borderRadius: 33,
-    backgroundColor: DriverColors.orangeLight,
+  releaseContent: { flexGrow: 1, paddingHorizontal: 18, paddingTop: 12, paddingBottom: 12, alignItems: 'stretch' },
+  releaseHero: {
+    backgroundColor: '#25154F',
+    borderRadius: 22,
+    minHeight: 220,
+    paddingHorizontal: 20,
+    paddingTop: 20,
+    paddingBottom: 18,
     alignItems: 'center',
     justifyContent: 'center',
-    alignSelf: 'center',
   },
-  confirmIcon: { color: DriverColors.orangeDark, fontSize: 26, fontWeight: '800' },
-  confirmTitle: { color: DriverColors.navyHeading, fontSize: 21, fontWeight: '800', textAlign: 'center', marginTop: 17 },
+  garageIllustration: {
+    width: 150,
+    height: 52,
+    backgroundColor: '#FFFFFF',
+    marginBottom: 15,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  garageBuilding: { width: 54, height: 52, backgroundColor: DriverColors.orangePrimary, alignItems: 'center', justifyContent: 'center', borderRadius: 14 },
+  garageCar: { fontSize: 24 },
+  garageMarker: { position: 'absolute', right: 8, top: 19, backgroundColor: '#7C4A2D', borderRadius: 3, paddingHorizontal: 4, paddingVertical: 2 },
+  garageMarkerText: { color: '#FFFFFF', fontSize: 7, fontWeight: '800' },
+  confirmTitle: { color: '#FFFFFF', fontSize: 21, fontWeight: '800', textAlign: 'center', marginTop: 0 },
   confirmDescription: {
-    color: DriverColors.textSecondary,
-    fontSize: 13,
-    lineHeight: 19,
+    color: '#D8D2E9',
+    fontSize: 12,
+    lineHeight: 18,
     textAlign: 'center',
-    marginTop: 8,
-    marginBottom: 20,
+    marginTop: 9,
   },
+  heroEmphasis: { color: '#FFFFFF', fontWeight: '800' },
+  releaseStatsRow: { flexDirection: 'row', gap: 10, marginTop: 14 },
+  releaseStatCard: {
+    flex: 1,
+    minHeight: 68,
+    backgroundColor: '#FFFFFF',
+    borderRadius: 15,
+    borderWidth: 1,
+    borderColor: DriverColors.cardBorder,
+    paddingHorizontal: 10,
+    paddingVertical: 9,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+  },
+  releaseStatIcon: { width: 34, height: 34, borderRadius: 10, backgroundColor: '#EEF2FF', alignItems: 'center', justifyContent: 'center' },
+  durationStatIcon: { backgroundColor: '#FFF0DF' },
+  releaseStatText: { flex: 1, minWidth: 0 },
+  releaseStatLabel: { color: DriverColors.textSecondary, fontSize: 8, fontWeight: '700' },
+  releaseStatValue: { color: DriverColors.navyHeading, fontSize: 10, lineHeight: 14, fontWeight: '800', marginTop: 3 },
+  releaseSummaryCard: {
+    backgroundColor: '#FFFFFF',
+    borderRadius: 17,
+    borderWidth: 1,
+    borderColor: DriverColors.cardBorder,
+    padding: 14,
+    marginTop: 14,
+    shadowColor: '#0F172A',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.04,
+    shadowRadius: 5,
+    elevation: 1,
+  },
+  summaryHeading: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: 7 },
+  summaryTitle: { color: DriverColors.navyHeading, fontSize: 11, fontWeight: '800', letterSpacing: 0.2 },
+  endingBadge: { backgroundColor: '#DCFCE7', borderRadius: 12, paddingHorizontal: 8, paddingVertical: 4 },
+  endingBadgeText: { color: '#15803D', fontSize: 8, fontWeight: '700' },
+  summaryDivider: { height: 1, backgroundColor: DriverColors.borderLight, marginVertical: 9 },
+  summaryRow: { flexDirection: 'row', alignItems: 'flex-start', justifyContent: 'space-between', gap: 8, paddingVertical: 5 },
+  summaryLabel: { flex: 0.85, color: DriverColors.textSecondary, fontSize: 9, lineHeight: 14 },
+  summaryValueBlock: { flex: 1.3, alignItems: 'flex-end' },
+  summaryValue: { color: DriverColors.navyHeading, fontSize: 10, lineHeight: 14, fontWeight: '700', textAlign: 'right' },
+  summaryDetail: { color: DriverColors.textSecondary, fontSize: 8, lineHeight: 12, textAlign: 'right', marginTop: 2 },
+  finalCostRow: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', gap: 8 },
+  finalCostLabels: { flex: 1 },
+  finalCostLabel: { color: DriverColors.navyHeading, fontSize: 11, fontWeight: '700' },
+  costNote: { color: DriverColors.textSecondary, fontSize: 8, marginTop: 3 },
+  finalCostValue: { color: '#33216C', fontSize: 19, fontWeight: '900', textAlign: 'right' },
+  costError: { color: '#B42318', fontSize: 9, lineHeight: 13, marginTop: 7 },
   releaseError: { color: '#B42318', fontSize: 12, lineHeight: 18, marginTop: 12 },
+  releaseFooter: { paddingHorizontal: 18, paddingTop: 8, paddingBottom: 10, backgroundColor: DriverColors.background },
   confirmButton: {
     minHeight: 49,
     backgroundColor: DriverColors.orangePrimary,
-    borderRadius: 14,
+    borderRadius: 25,
     alignItems: 'center',
     justifyContent: 'center',
-    marginTop: 18,
+    marginTop: 0,
   },
   disabledButton: { opacity: 0.65 },
   confirmButtonText: { color: '#FFFFFF', fontSize: 14, fontWeight: '800' },
-  keepButton: { minHeight: 45, alignItems: 'center', justifyContent: 'center', marginTop: 7 },
-  keepButtonText: { color: DriverColors.textSecondary, fontSize: 13, fontWeight: '700' },
+  keepButton: { minHeight: 43, alignItems: 'center', justifyContent: 'center', marginTop: 8, borderRadius: 23, borderWidth: 1, borderColor: '#33216C', backgroundColor: '#FFFFFF' },
+  keepButtonText: { color: '#33216C', fontSize: 13, fontWeight: '800' },
+  receiptContent: { flexGrow: 1, paddingHorizontal: 18, paddingTop: 28, paddingBottom: 18 },
+  receiptSuccess: { width: 68, height: 68, borderRadius: 34, backgroundColor: '#DCFCE7', alignItems: 'center', justifyContent: 'center', alignSelf: 'center' },
+  receiptCheck: { color: '#15803D', fontSize: 35, fontWeight: '800' },
+  receiptTitle: { color: DriverColors.navyHeading, fontSize: 22, fontWeight: '900', textAlign: 'center', marginTop: 15 },
+  receiptSubtitle: { color: DriverColors.textSecondary, fontSize: 12, textAlign: 'center', marginTop: 6, marginBottom: 15 },
 });
