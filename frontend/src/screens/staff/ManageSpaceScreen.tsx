@@ -20,6 +20,8 @@ export interface SpaceItem {
   id: string;
   slot: string;
   status: SpaceStatus;
+  location?: string;
+  level?: string;
 }
 
 export const initialSpaces: SpaceItem[] = [
@@ -59,11 +61,13 @@ export const initialSpaces: SpaceItem[] = [
 
 interface ManageSpaceProps {
   onBack: () => void;
+  onAddSpace?: () => void;
   spaces: SpaceItem[];
   setSpaces: React.Dispatch<React.SetStateAction<SpaceItem[]>>;
+  selectedSpaceId?: string | null;
 }
 
-export default function ManageSpaceScreen({ onBack, spaces, setSpaces }: ManageSpaceProps) {
+export default function ManageSpaceScreen({ onBack, onAddSpace, spaces, setSpaces, selectedSpaceId }: ManageSpaceProps) {
   const [searchQuery, setSearchQuery] = useState('');
   const [activeFilter, setActiveFilter] = useState<'All' | 'Available' | 'Reserved' | 'Occupied'>('All');
 
@@ -71,6 +75,7 @@ export default function ManageSpaceScreen({ onBack, spaces, setSpaces }: ManageS
   const [selectedSpace, setSelectedSpace] = useState<SpaceItem | null>(null);
   const [newStatus, setNewStatus] = useState<SpaceStatus>('Available');
   const [isModalVisible, setIsModalVisible] = useState(false);
+  const selectedSlotLabel = spaces.find((item) => item.id === selectedSpaceId)?.slot || null;
 
   // Compute counts
   const availableCount = spaces.filter((s) => s.status === 'Available').length;
@@ -117,8 +122,17 @@ export default function ManageSpaceScreen({ onBack, spaces, setSpaces }: ManageS
         </TouchableOpacity>
         <View style={styles.headerTitleContainer}>
           <Text style={styles.headerTitle}>Manage Space</Text>
-          <Text style={styles.headerSubtitle}>One Galle Face Mall- Ground Floor</Text>
+          <Text style={styles.headerSubtitle}>
+            {selectedSlotLabel ? `Selected: ${selectedSlotLabel}` : 'One Galle Face Mall- Ground Floor'}
+          </Text>
         </View>
+        <TouchableOpacity
+          style={styles.addButton}
+          onPress={onAddSpace}
+          activeOpacity={0.85}
+        >
+          <Text style={styles.addButtonText}>Add Space</Text>
+        </TouchableOpacity>
       </View>
 
       {/* Search Input */}
@@ -240,6 +254,7 @@ export default function ManageSpaceScreen({ onBack, spaces, setSpaces }: ManageS
                   isAvail && styles.tileAvailable,
                   isRes && styles.tileReserved,
                   isOcc && styles.tileOccupied,
+                  selectedSpaceId === space.id && styles.selectedSpaceTile,
                 ]}
                 onPress={() => handleTilePress(space)}
                 activeOpacity={0.7}
@@ -400,6 +415,18 @@ const styles = StyleSheet.create({
     paddingBottom: 8,
     backgroundColor: '#FFFFFF',
   },
+  addButton: {
+    backgroundColor: '#0F766E',
+    paddingHorizontal: 12,
+    paddingVertical: 8,
+    borderRadius: 10,
+    marginLeft: 8,
+  },
+  addButtonText: {
+    color: '#FFFFFF',
+    fontSize: 12,
+    fontWeight: '700',
+  },
   backButton: {
     width: 36,
     height: 36,
@@ -426,6 +453,14 @@ const styles = StyleSheet.create({
     color: '#64748B',
     marginTop: 2,
     fontWeight: '500',
+  },
+  selectedSpaceTile: {
+    borderWidth: 2,
+    borderColor: '#0F766E',
+    shadowColor: '#0F766E',
+    shadowOpacity: 0.25,
+    shadowRadius: 6,
+    shadowOffset: { width: 0, height: 0 },
   },
   searchContainer: {
     paddingHorizontal: 16,

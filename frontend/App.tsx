@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import {
   View,
   TouchableOpacity,
@@ -24,6 +24,8 @@ import StaffLoginScreen from './src/screens/staff/StaffLoginScreen';
 import StaffSignupScreen from './src/screens/staff/StaffSignupScreen';
 import StaffDashboardScreen from './src/screens/staff/StaffDashboardScreen';
 import ManageSpaceScreen, { SpaceItem, initialSpaces } from './src/screens/staff/ManageSpaceScreen';
+import SpaceListScreen from './src/screens/staff/SpaceListScreen';
+import AddSpaceScreen from './src/screens/staff/AddSpaceScreen';
 import ReservationsScreen from './src/screens/staff/ReservationsScreen';
 import VerifyEntryScreen from './src/screens/staff/VerifyEntryScreen';
 import StaffProfileScreen from './src/screens/staff/StaffProfileScreen';
@@ -31,7 +33,11 @@ import ChangePasswordScreen from './src/screens/staff/ChangePasswordScreen';
 import AttendanceScreen from './src/screens/staff/AttendanceScreen';
 import LeaveRequestScreen from './src/screens/staff/LeaveRequestScreen';
 import { StaffProfile, defaultStaffProfile } from './src/constants/profile';
-import { DriverFilterChip } from './src/constants/driverSampleData';
+import {
+  DriverFilterChip,
+  ParkingLotCardItem,
+  SAMPLE_NEARBY_PARKING_LOTS,
+} from './src/constants/driverSampleData';
 
 type ScreenType =
   | 'driver-home'
@@ -42,13 +48,57 @@ type ScreenType =
   | 'login'
   | 'signup'
   | 'dashboard'
+  | 'spaces-list'
   | 'spaces'
+  | 'add-space'
   | 'reservations'
   | 'verify'
   | 'profile'
   | 'change-password'
   | 'attendance'
   | 'leave-request';
+
+const API_BASE_URL = (() => {
+  if (Platform.OS === 'web' && typeof window !== 'undefined') {
+    const host = window.location.hostname;
+    if (host === 'localhost' || host === '127.0.0.1') {
+      return 'http://localhost:5000';
+    }
+  }
+  return 'http://192.168.1.33:5000';
+})();
+
+const normalizeSpaceStatus = (status?: string): SpaceItem['status'] => {
+  switch (status) {
+    case 'occupied':
+      return 'Occupied';
+    case 'maintenance':
+      return 'Reserved';
+    case 'available':
+    default:
+      return 'Available';
+  }
+};
+
+const mapLotToDriverCard = (lot: any): ParkingLotCardItem => ({
+  id: lot._id || lot.id,
+  name: lot.name || 'Parking Lot',
+  address: lot.address || 'Colombo',
+  distance: '0.4 km',
+  status: lot.availableSpaces > 0 ? 'Available' : 'Full',
+  availableSpaces: Number(lot.availableSpaces || 0),
+  totalSpaces: Number(lot.totalSpaces || 0),
+  isCovered: true,
+  hasEVCharging: Array.isArray(lot.amenities) ? lot.amenities.includes('EV Charging') : false,
+  pricePerHour: Number(lot.pricePerHour || 150),
+  imageUrl: 'https://images.unsplash.com/photo-1506521781263-d8422e82f27a?auto=format&fit=crop&w=600&q=80',
+  mapPosition: { topPercent: 30, leftPercent: 50 },
+  amenities: Array.isArray(lot.amenities) ? lot.amenities : ['CCTV Surveillance'],
+  openingHours: 'Open 24 hours',
+  parkingType: 'Multi-story',
+  maxHeight: '2.2 m',
+  operatorPhone: '+94 11 234 5678',
+});
 
 export default function App() {
   const [currentScreen, setCurrentScreen] = useState<ScreenType>('driver-home');
@@ -77,8 +127,29 @@ export default function App() {
   });
   const [authToken, setAuthToken] = useState<string | null>(null);
   const [spaces, setSpaces] = useState<SpaceItem[]>(initialSpaces);
+  const [selectedSpaceId, setSelectedSpaceId] = useState<string | null>(null);
+  const [driverParkingLots, setDriverParkingLots] = useState<ParkingLotCardItem[]>(SAMPLE_NEARBY_PARKING_LOTS);
   const [bookingSelection, setBookingSelection] = useState<SpaceSelectionResult | null>(null);
   const [bookingDraft, setBookingDraft] = useState<BookingDraft | null>(null);
+
+  useEffect(() => {
+    const fetchDriverLots = async () => {
+      try {
+        const response = await fetch(`${API_BASE_URL}/api/parking-lots`);
+        if (!response.ok) {
+          throw new Error('Unable to load parking lots');
+        }
+        const lots = await response.json();
+        if (Array.isArray(lots) && lots.length > 0) {
+          setDriverParkingLots(lots.map(mapLotToDriverCard));
+        }
+      } catch (error) {
+        console.warn('Failed to load parking lots from backend:', error);
+      }
+    };
+
+    void fetchDriverLots();
+  }, []);
 
   const handleOpenSearch = (
     query: string = '',
@@ -157,8 +228,150 @@ export default function App() {
     setCurrentScreen('dashboard');
   };
 
+  const syncDriverLotWithNewSpace = (newSpace: SpaceItem) => {
+    const lotName = (newSpace.location ?? 'One Galle Face Mall').trim() || 'One Galle Face Mall';
+
+    setDriverParkingLots((prevLots) => {
+      const index = prevLots.findIndex((lot) =>
+        lot.name.toLowerCase().includes(lotName.toLowerCase())
+      );
+
+      if (index >= 0) {
+        const updated = [...prevLots];
+        const current = updated[index];
+        const nextAvailable = newSpace.status === 'Available'
+          ? (current.availableSpaces || 0) + 1
+          : Math.max(0, current.availableSpaces || 0);
+
+        updated[index] = {
+          ...current,
+          availableSpaces: nextAvailable,
+          totalSpaces: Math.max(current.totalSpaces || 1, (current.totalSpaces || 1) + (newSpace.status === 'Available' ? 1 : 0)),
+          status: nextAvailable > 0 ? 'Available' : 'Full',
+        };
+
+        return updated;
+      }
+
+      const createdLot: ParkingLotCardItem = {
+        id: `lot-${Date.now()}`,
+        name: lotName,
+        address: '1A Centre Road, Colombo 02',
+        distance: '0.4 km',
+        status: newSpace.status === 'Available' ? 'Available' : 'Full',
+        availableSpaces: newSpace.status === 'Available' ? 1 : 0,
+        totalSpaces: 1,
+        isCovered: true,
+        hasEVCharging: true,
+        pricePerHour: 150,
+        imageUrl: 'https://images.unsplash.com/photo-1506521781263-d8422e82f27a?auto=format&fit=crop&w=600&q=80',
+        mapPosition: { topPercent: 30, leftPercent: 50 },
+        amenities: ['CCTV Surveillance'],
+        openingHours: 'Open 24 hours',
+        parkingType: 'Multi-story',
+        maxHeight: '2.2 m',
+        operatorPhone: '+94 11 234 5678',
+      };
+
+      return [createdLot, ...prevLots];
+    });
+  };
+
   const handleLogout = () => {
     setCurrentScreen('login');
+  };
+
+  const handleAddSpace = async (newSpace: SpaceItem) => {
+    try {
+      if (!authToken) {
+        throw new Error('Staff must be logged in before adding a parking space.');
+      }
+
+      const lotName = (newSpace.location ?? 'One Galle Face Mall').trim() || 'One Galle Face Mall';
+      const headers = {
+        'Content-Type': 'application/json',
+        Authorization: `Bearer ${authToken}`,
+      };
+
+      const lotResponse = await fetch(`${API_BASE_URL}/api/parking-lots`);
+      const lotList = lotResponse.ok ? await lotResponse.json() : [];
+      let lot = Array.isArray(lotList)
+        ? lotList.find((item: any) => item.name && item.name.toLowerCase().includes(lotName.toLowerCase()))
+        : null;
+
+      if (!lot) {
+        const createLotResponse = await fetch(`${API_BASE_URL}/api/parking-lots`, {
+          method: 'POST',
+          headers,
+          body: JSON.stringify({
+            name: lotName,
+            address: '1A Centre Road, Colombo 02',
+            location: { type: 'Point', coordinates: [79.8612, 6.9271] },
+            totalSpaces: 1,
+            availableSpaces: newSpace.status === 'Available' ? 1 : 0,
+            pricePerHour: 150,
+            openTime: '00:00',
+            closeTime: '23:59',
+            amenities: ['CCTV Surveillance', 'EV Charging'],
+            managedBy: null,
+            isActive: true,
+          }),
+        });
+
+        if (!createLotResponse.ok) {
+          const errText = await createLotResponse.text();
+          throw new Error(errText || 'Unable to create parking lot');
+        }
+
+        lot = await createLotResponse.json();
+      }
+
+      const lotId = lot._id || lot.id;
+      const apiStatus = newSpace.status === 'Available' ? 'available' : newSpace.status === 'Occupied' ? 'occupied' : 'maintenance';
+      const createSpaceResponse = await fetch(`${API_BASE_URL}/api/parking-lots/${lotId}/spaces`, {
+        method: 'POST',
+        headers,
+        body: JSON.stringify({
+          spaceNumber: newSpace.slot,
+          floor: newSpace.level || 'Level 3',
+          status: apiStatus,
+          type: 'standard',
+        }),
+      });
+
+      if (!createSpaceResponse.ok) {
+        const errText = await createSpaceResponse.text();
+        throw new Error(errText || 'Unable to create parking space');
+      }
+
+      const createdSpace = await createSpaceResponse.json();
+      const mappedSpace: SpaceItem = {
+        id: createdSpace._id || createdSpace.id || `${Date.now()}`,
+        slot: createdSpace.spaceNumber || newSpace.slot,
+        status: normalizeSpaceStatus(createdSpace.status),
+        location: lotName,
+        level: createdSpace.floor || newSpace.level || 'Level 3',
+      };
+
+      setSpaces((prev) => [mappedSpace, ...prev]);
+      syncDriverLotWithNewSpace(mappedSpace);
+
+      const refreshedLots = await fetch(`${API_BASE_URL}/api/parking-lots`);
+      if (refreshedLots.ok) {
+        const lots = await refreshedLots.json();
+        if (Array.isArray(lots) && lots.length > 0) {
+          setDriverParkingLots(lots.map(mapLotToDriverCard));
+        }
+      }
+    } catch (error) {
+      console.error('Failed to save new parking space:', error);
+      setSpaces((prev) => [newSpace, ...prev]);
+      syncDriverLotWithNewSpace(newSpace);
+      Alert.alert(
+        'Saved locally',
+        `${newSpace.slot} was added to the app preview, even though the backend sync is temporarily unavailable.`
+      );
+    }
   };
 
   const handleAdmitVehicle = (ref: string, slot: string) => {
@@ -171,6 +384,7 @@ export default function App() {
       <StatusBar style={currentScreen === 'login' ? 'light' : 'dark'} />
       {currentScreen === 'driver-home' && (
         <HomeScreen
+          parkingLots={driverParkingLots}
           userName="Kasun"
           onNavigateToMap={() => handleOpenSearch('', 'map', 'Nearest')}
           onNavigateToLotDetails={(lotId) =>
@@ -246,18 +460,37 @@ export default function App() {
           staffId={loggedStaffId}
           profile={staffProfile}
           onLogout={handleLogout}
-          onNavigateToSpaces={() => setCurrentScreen('spaces')}
+          onNavigateToSpaces={() => setCurrentScreen('spaces-list')}
           onNavigateToReservations={() => setCurrentScreen('reservations')}
           onNavigateToVerifyEntry={() => setCurrentScreen('verify')}
           onNavigateToProfile={() => setCurrentScreen('profile')}
           spaces={spaces}
         />
       )}
+      {currentScreen === 'spaces-list' && (
+        <SpaceListScreen
+          spaces={spaces}
+          onBack={() => setCurrentScreen('dashboard')}
+          onAddSpace={() => setCurrentScreen('add-space')}
+          onSelectSpace={(space) => {
+            setSelectedSpaceId(space.id);
+            setCurrentScreen('spaces');
+          }}
+        />
+      )}
       {currentScreen === 'spaces' && (
         <ManageSpaceScreen 
-          onBack={() => setCurrentScreen('dashboard')} 
+          selectedSpaceId={selectedSpaceId}
+          onBack={() => setCurrentScreen('spaces-list')} 
+          onAddSpace={() => setCurrentScreen('add-space')}
           spaces={spaces}
           setSpaces={setSpaces}
+        />
+      )}
+      {currentScreen === 'add-space' && (
+        <AddSpaceScreen
+          onBack={() => setCurrentScreen('spaces-list')}
+          onSave={handleAddSpace}
         />
       )}
       {currentScreen === 'reservations' && (

@@ -24,6 +24,7 @@ import DriverBottomNav, { DriverTabType } from '../../components/DriverBottomNav
 import ParkingLotCard from '../../components/ParkingLotCard';
 
 interface HomeScreenProps {
+  parkingLots?: ParkingLotCardItem[];
   userName?: string;
   onNavigateToMap?: () => void;
   onNavigateToLotDetails?: (lotId: string) => void;
@@ -46,6 +47,7 @@ const { width: SCREEN_WIDTH } = Dimensions.get('window');
  * price indicators, nearby parking cards list, and driver bottom navigation.
  */
 export default function HomeScreen({
+  parkingLots = SAMPLE_NEARBY_PARKING_LOTS,
   userName = 'Kasun',
   onNavigateToMap,
   onNavigateToLotDetails,
@@ -59,7 +61,6 @@ export default function HomeScreen({
 }: HomeScreenProps) {
   const [searchQuery, setSearchQuery] = useState('');
   const [selectedChip, setSelectedChip] = useState<DriverFilterChip>('Nearest');
-  const [parkingLots] = useState<ParkingLotCardItem[]>(SAMPLE_NEARBY_PARKING_LOTS);
 
   // Handle bottom navigation tab switching
   const handleTabPress = (tab: DriverTabType) => {

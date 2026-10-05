@@ -42,6 +42,7 @@ export default function StaffLoginScreen({ onLoginSuccess, onNavigateToSignup }:
   const [staffIdFocused, setStaffIdFocused] = useState(false);
   const [passwordFocused, setPasswordFocused] = useState(false);
   const [isLoading, setIsLoading] = useState(false);
+  const [loginErrors, setLoginErrors] = useState({ staffId: '', password: '' });
 
   const staffIdInputRef = useRef<TextInput>(null);
   const passwordInputRef = useRef<TextInput>(null);
@@ -63,18 +64,41 @@ export default function StaffLoginScreen({ onLoginSuccess, onNavigateToSignup }:
     }).start();
   };
 
-  const handleLogin = async () => {
-    if (!staffId.trim()) {
-      Alert.alert('Required Field', 'Please enter your Staff ID.');
-      return;
+  const handleNavigateToSignup = () => {
+    if (onNavigateToSignup) {
+      onNavigateToSignup();
     }
-    if (!password.trim()) {
-      Alert.alert('Required Field', 'Please enter your Password.');
+  };
+
+  const validateLogin = () => {
+    const nextErrors = { staffId: '', password: '' };
+    const cleanStaffId = staffId.trim();
+    const cleanPassword = password.trim();
+
+    if (!cleanStaffId) {
+      nextErrors.staffId = 'Please enter your Staff ID.';
+    } else if (cleanStaffId.length < 3) {
+      nextErrors.staffId = 'Staff ID must be at least 3 characters.';
+    }
+
+    if (!cleanPassword) {
+      nextErrors.password = 'Please enter your password.';
+    } else if (cleanPassword.length < 6) {
+      nextErrors.password = 'Password must be at least 6 characters.';
+    }
+
+    setLoginErrors(nextErrors);
+    return !nextErrors.staffId && !nextErrors.password;
+  };
+
+  const handleLogin = async () => {
+    if (!validateLogin()) {
+      Alert.alert('Validation Error', 'Please check the highlighted fields and try again.');
       return;
     }
 
     setIsLoading(true);
-    
+
     try {
       const response = await fetchWithFallback('/api/auth/login', {
         method: 'POST',
@@ -89,9 +113,17 @@ export default function StaffLoginScreen({ onLoginSuccess, onNavigateToSignup }:
       }
 
       setIsLoading(false);
-      if (onLoginSuccess) {
-        onLoginSuccess(data, data.token);
-      }
+      setLoginErrors({ staffId: '', password: '' });
+      Alert.alert('Login Successful', 'You have successfully logged in to the Staff Portal.', [
+        {
+          text: 'Continue',
+          onPress: () => {
+            if (onLoginSuccess) {
+              onLoginSuccess(data, data.token);
+            }
+          },
+        },
+      ]);
     } catch (error: any) {
       setIsLoading(false);
       Alert.alert('Login Failed', error.message || 'Could not connect to server');
@@ -154,6 +186,7 @@ export default function StaffLoginScreen({ onLoginSuccess, onNavigateToSignup }:
                 style={[
                   styles.inputWrapper,
                   staffIdFocused && styles.inputWrapperFocused,
+                  loginErrors.staffId ? styles.inputWrapperError : null,
                 ]}
                 onPress={() => staffIdInputRef.current?.focus()}
               >
@@ -164,7 +197,10 @@ export default function StaffLoginScreen({ onLoginSuccess, onNavigateToSignup }:
                   placeholder="e.g. STF-4091"
                   placeholderTextColor={Colors.placeholder}
                   value={staffId}
-                  onChangeText={setStaffId}
+                  onChangeText={(value) => {
+                    setStaffId(value);
+                    setLoginErrors((prev) => ({ ...prev, staffId: '' }));
+                  }}
                   autoCapitalize="characters"
                   autoCorrect={false}
                   onFocus={() => setStaffIdFocused(true)}
@@ -173,7 +209,7 @@ export default function StaffLoginScreen({ onLoginSuccess, onNavigateToSignup }:
                   onSubmitEditing={() => passwordInputRef.current?.focus()}
                 />
               </Pressable>
-              <Text style={styles.fieldHint}>Issued by your facility administrator</Text>
+              {loginErrors.staffId ? <Text style={styles.errorText}>{loginErrors.staffId}</Text> : <Text style={styles.fieldHint}>Issued by your facility administrator</Text>}
             </View>
 
             {/* Password Field */}
@@ -185,6 +221,7 @@ export default function StaffLoginScreen({ onLoginSuccess, onNavigateToSignup }:
                 style={[
                   styles.inputWrapper,
                   passwordFocused && styles.inputWrapperFocused,
+                  loginErrors.password ? styles.inputWrapperError : null,
                 ]}
                 onPress={() => passwordInputRef.current?.focus()}
               >
@@ -195,7 +232,10 @@ export default function StaffLoginScreen({ onLoginSuccess, onNavigateToSignup }:
                   placeholder="••••••••"
                   placeholderTextColor={Colors.placeholder}
                   value={password}
-                  onChangeText={setPassword}
+                  onChangeText={(value) => {
+                    setPassword(value);
+                    setLoginErrors((prev) => ({ ...prev, password: '' }));
+                  }}
                   secureTextEntry={!showPassword}
                   autoCapitalize="none"
                   autoCorrect={false}
@@ -213,6 +253,7 @@ export default function StaffLoginScreen({ onLoginSuccess, onNavigateToSignup }:
                   <Text style={styles.eyeIcon}>{showPassword ? '🙈' : '👁️'}</Text>
                 </TouchableOpacity>
               </Pressable>
+              {loginErrors.password ? <Text style={styles.errorText}>{loginErrors.password}</Text> : null}
             </View>
 
             {/* CTA Login Button */}
@@ -236,7 +277,7 @@ export default function StaffLoginScreen({ onLoginSuccess, onNavigateToSignup }:
             {/* Create Staff Account Button */}
             <TouchableOpacity
               style={styles.signupButton}
-              onPress={onNavigateToSignup}
+              onPress={handleNavigateToSignup}
               activeOpacity={0.8}
             >
               <Text style={styles.signupButtonText}>✨ Create New Staff Account</Text>
@@ -259,7 +300,7 @@ export default function StaffLoginScreen({ onLoginSuccess, onNavigateToSignup }:
             {/* Staff Signup Link */}
             <View style={styles.footer}>
               <Text style={styles.footerText}>New staff member? </Text>
-              <TouchableOpacity onPress={onNavigateToSignup}>
+              <TouchableOpacity onPress={handleNavigateToSignup}>
                 <Text style={styles.footerLink}>Sign Up Here</Text>
               </TouchableOpacity>
             </View>
@@ -422,6 +463,14 @@ const styles = StyleSheet.create({
     shadowOffset: { width: 0, height: 0 },
     elevation: 2,
   },
+  inputWrapperError: {
+    borderColor: Colors.error,
+    shadowColor: Colors.error,
+    shadowOpacity: 0.15,
+    shadowRadius: 6,
+    shadowOffset: { width: 0, height: 0 },
+    elevation: 2,
+  },
   inputIcon: {
     fontSize: 17,
     marginRight: 10,
@@ -443,6 +492,12 @@ const styles = StyleSheet.create({
     fontSize: 12,
     color: Colors.textMuted,
     marginTop: 5,
+  },
+  errorText: {
+    color: Colors.error,
+    fontSize: 12,
+    marginTop: 6,
+    fontWeight: '600',
   },
 
   /* ── CTA Button ── */

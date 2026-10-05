@@ -49,6 +49,14 @@ export default function StaffSignupScreen({
   const [showPassword, setShowPassword] = useState(false);
   const [showConfirmPassword, setShowConfirmPassword] = useState(false);
   const [isLoading, setIsLoading] = useState(false);
+  const [formErrors, setFormErrors] = useState({
+    name: '',
+    email: '',
+    phone: '',
+    staffId: '',
+    password: '',
+    confirmPassword: '',
+  });
 
   // Focus states
   const [nameFocused, setNameFocused] = useState(false);
@@ -83,30 +91,72 @@ export default function StaffSignupScreen({
     }).start();
   };
 
-  const handleRegister = async () => {
-    if (!name.trim()) {
-      Alert.alert('Required Field', 'Please enter your full name.');
-      return;
+  const validateSignup = () => {
+    const nextErrors = {
+      name: '',
+      email: '',
+      phone: '',
+      staffId: '',
+      password: '',
+      confirmPassword: '',
+    };
+
+    const cleanName = name.trim();
+    const cleanEmail = email.trim();
+    const cleanPhone = phone.trim();
+    const cleanStaffId = staffId.trim();
+
+    if (!cleanName) {
+      nextErrors.name = 'Please enter your full name.';
+    } else if (cleanName.length < 2) {
+      nextErrors.name = 'Name must be at least 2 characters.';
     }
-    if (!email.trim()) {
-      Alert.alert('Required Field', 'Please enter your email address.');
-      return;
+
+    if (!cleanEmail) {
+      nextErrors.email = 'Please enter your email address.';
+    } else {
+      const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+      if (!emailRegex.test(cleanEmail)) {
+        nextErrors.email = 'Please enter a valid email address.';
+      }
     }
-    const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
-    if (!emailRegex.test(email.trim())) {
-      Alert.alert('Invalid Email', 'Please enter a valid email address.');
-      return;
+
+    if (!cleanPhone) {
+      nextErrors.phone = 'Please enter your phone number.';
+    } else {
+      const phoneDigits = cleanPhone.replace(/\D/g, '');
+      if (phoneDigits.length < 9 || phoneDigits.length > 12) {
+        nextErrors.phone = 'Phone number must be 9 to 12 digits.';
+      } else if (!/^(?:\+?94|0)?[0-9\s()+-]{9,20}$/.test(cleanPhone)) {
+        nextErrors.phone = 'Phone number format is invalid.';
+      }
     }
+
+    if (cleanStaffId && !/^[A-Z0-9-]{3,20}$/i.test(cleanStaffId)) {
+      nextErrors.staffId = 'Staff ID can only contain letters, numbers, and hyphens.';
+    }
+
     if (!password) {
-      Alert.alert('Required Field', 'Please enter a password.');
-      return;
+      nextErrors.password = 'Please enter a password.';
+    } else if (password.length < 8) {
+      nextErrors.password = 'Password must be at least 8 characters long.';
+    } else if (!/[A-Z]/.test(password) || !/[0-9]/.test(password)) {
+      nextErrors.password = 'Password must include at least one uppercase letter and one number.';
     }
-    if (password.length < 6) {
-      Alert.alert('Weak Password', 'Password must be at least 6 characters long.');
-      return;
+
+    if (!confirmPassword) {
+      nextErrors.confirmPassword = 'Please confirm your password.';
+    } else if (password !== confirmPassword) {
+      nextErrors.confirmPassword = 'Password and confirm password do not match.';
     }
-    if (password !== confirmPassword) {
-      Alert.alert('Password Mismatch', 'Password and Confirm Password do not match.');
+
+    setFormErrors(nextErrors);
+    return !nextErrors.name && !nextErrors.email && !nextErrors.phone && !nextErrors.staffId && !nextErrors.password && !nextErrors.confirmPassword;
+  };
+
+  const handleRegister = async () => {
+    if (!validateSignup()) {
+      Alert.alert('Validation Error', 'Please review the highlighted fields and try again.');
       return;
     }
 
@@ -132,10 +182,18 @@ export default function StaffSignupScreen({
       }
 
       setIsLoading(false);
+      setFormErrors({
+        name: '',
+        email: '',
+        phone: '',
+        staffId: '',
+        password: '',
+        confirmPassword: '',
+      });
 
       Alert.alert(
-        'Registration Successful 🎉',
-        `Staff account registered successfully!\nYour assigned Staff ID is: ${data.staffId}`,
+        'Account Created Successfully',
+        'Your staff account has been created successfully.',
         [
           {
             text: 'Proceed to Portal',
@@ -206,7 +264,11 @@ export default function StaffSignupScreen({
                 Full Name <Text style={styles.required}>*</Text>
               </Text>
               <Pressable
-                style={[styles.inputWrapper, nameFocused && styles.inputWrapperFocused]}
+                style={[
+                  styles.inputWrapper,
+                  nameFocused && styles.inputWrapperFocused,
+                  formErrors.name ? styles.inputWrapperError : null,
+                ]}
                 onPress={() => nameInputRef.current?.focus()}
               >
                 <Text style={styles.inputIcon}>👤</Text>
@@ -216,7 +278,10 @@ export default function StaffSignupScreen({
                   placeholder="e.g. Kasun Perera"
                   placeholderTextColor={Colors.placeholder}
                   value={name}
-                  onChangeText={setName}
+                  onChangeText={(value) => {
+                    setName(value);
+                    setFormErrors((prev) => ({ ...prev, name: '' }));
+                  }}
                   autoCapitalize="words"
                   autoCorrect={false}
                   onFocus={() => setNameFocused(true)}
@@ -225,6 +290,7 @@ export default function StaffSignupScreen({
                   onSubmitEditing={() => emailInputRef.current?.focus()}
                 />
               </Pressable>
+              {formErrors.name ? <Text style={styles.errorText}>{formErrors.name}</Text> : null}
             </View>
 
             {/* Email Field */}
@@ -233,7 +299,11 @@ export default function StaffSignupScreen({
                 Email Address <Text style={styles.required}>*</Text>
               </Text>
               <Pressable
-                style={[styles.inputWrapper, emailFocused && styles.inputWrapperFocused]}
+                style={[
+                  styles.inputWrapper,
+                  emailFocused && styles.inputWrapperFocused,
+                  formErrors.email ? styles.inputWrapperError : null,
+                ]}
                 onPress={() => emailInputRef.current?.focus()}
               >
                 <Text style={styles.inputIcon}>✉️</Text>
@@ -243,7 +313,10 @@ export default function StaffSignupScreen({
                   placeholder="e.g. kasun@parkme.lk"
                   placeholderTextColor={Colors.placeholder}
                   value={email}
-                  onChangeText={setEmail}
+                  onChangeText={(value) => {
+                    setEmail(value);
+                    setFormErrors((prev) => ({ ...prev, email: '' }));
+                  }}
                   keyboardType="email-address"
                   autoCapitalize="none"
                   autoCorrect={false}
@@ -253,13 +326,18 @@ export default function StaffSignupScreen({
                   onSubmitEditing={() => phoneInputRef.current?.focus()}
                 />
               </Pressable>
+              {formErrors.email ? <Text style={styles.errorText}>{formErrors.email}</Text> : null}
             </View>
 
             {/* Phone Number Field */}
             <View style={styles.fieldGroup}>
               <Text style={styles.label}>Phone Number</Text>
               <Pressable
-                style={[styles.inputWrapper, phoneFocused && styles.inputWrapperFocused]}
+                style={[
+                  styles.inputWrapper,
+                  phoneFocused && styles.inputWrapperFocused,
+                  formErrors.phone ? styles.inputWrapperError : null,
+                ]}
                 onPress={() => phoneInputRef.current?.focus()}
               >
                 <Text style={styles.inputIcon}>📞</Text>
@@ -269,7 +347,10 @@ export default function StaffSignupScreen({
                   placeholder="e.g. 077 123 4567"
                   placeholderTextColor={Colors.placeholder}
                   value={phone}
-                  onChangeText={setPhone}
+                  onChangeText={(value) => {
+                    setPhone(value);
+                    setFormErrors((prev) => ({ ...prev, phone: '' }));
+                  }}
                   keyboardType="phone-pad"
                   onFocus={() => setPhoneFocused(true)}
                   onBlur={() => setPhoneFocused(false)}
@@ -277,6 +358,7 @@ export default function StaffSignupScreen({
                   onSubmitEditing={() => staffIdInputRef.current?.focus()}
                 />
               </Pressable>
+              {formErrors.phone ? <Text style={styles.errorText}>{formErrors.phone}</Text> : null}
             </View>
 
             {/* Staff ID Field (Optional / Custom) */}
@@ -285,7 +367,11 @@ export default function StaffSignupScreen({
                 Staff ID <Text style={styles.optionalHint}>(Optional)</Text>
               </Text>
               <Pressable
-                style={[styles.inputWrapper, staffIdFocused && styles.inputWrapperFocused]}
+                style={[
+                  styles.inputWrapper,
+                  staffIdFocused && styles.inputWrapperFocused,
+                  formErrors.staffId ? styles.inputWrapperError : null,
+                ]}
                 onPress={() => staffIdInputRef.current?.focus()}
               >
                 <Text style={styles.inputIcon}>🛡️</Text>
@@ -295,7 +381,10 @@ export default function StaffSignupScreen({
                   placeholder="e.g. STF-4091 (Or leave blank to auto-generate)"
                   placeholderTextColor={Colors.placeholder}
                   value={staffId}
-                  onChangeText={setStaffId}
+                  onChangeText={(value) => {
+                    setStaffId(value);
+                    setFormErrors((prev) => ({ ...prev, staffId: '' }));
+                  }}
                   autoCapitalize="characters"
                   autoCorrect={false}
                   onFocus={() => setStaffIdFocused(true)}
@@ -304,9 +393,7 @@ export default function StaffSignupScreen({
                   onSubmitEditing={() => passwordInputRef.current?.focus()}
                 />
               </Pressable>
-              <Text style={styles.fieldHint}>
-                If left blank, a unique Staff ID (e.g. STF-8492) will be auto-generated.
-              </Text>
+              {formErrors.staffId ? <Text style={styles.errorText}>{formErrors.staffId}</Text> : <Text style={styles.fieldHint}>If left blank, a unique Staff ID (e.g. STF-8492) will be auto-generated.</Text>}
             </View>
 
             {/* Password Field */}
@@ -315,7 +402,11 @@ export default function StaffSignupScreen({
                 Password <Text style={styles.required}>*</Text>
               </Text>
               <Pressable
-                style={[styles.inputWrapper, passwordFocused && styles.inputWrapperFocused]}
+                style={[
+                  styles.inputWrapper,
+                  passwordFocused && styles.inputWrapperFocused,
+                  formErrors.password ? styles.inputWrapperError : null,
+                ]}
                 onPress={() => passwordInputRef.current?.focus()}
               >
                 <Text style={styles.inputIcon}>🔒</Text>
@@ -325,7 +416,10 @@ export default function StaffSignupScreen({
                   placeholder="•••••••• (Min 6 characters)"
                   placeholderTextColor={Colors.placeholder}
                   value={password}
-                  onChangeText={setPassword}
+                  onChangeText={(value) => {
+                    setPassword(value);
+                    setFormErrors((prev) => ({ ...prev, password: '', confirmPassword: '' }));
+                  }}
                   secureTextEntry={!showPassword}
                   autoCapitalize="none"
                   autoCorrect={false}
@@ -342,6 +436,7 @@ export default function StaffSignupScreen({
                   <Text style={styles.eyeIcon}>{showPassword ? '🙈' : '👁️'}</Text>
                 </TouchableOpacity>
               </Pressable>
+              {formErrors.password ? <Text style={styles.errorText}>{formErrors.password}</Text> : null}
             </View>
 
             {/* Confirm Password Field */}
@@ -353,6 +448,7 @@ export default function StaffSignupScreen({
                 style={[
                   styles.inputWrapper,
                   confirmPasswordFocused && styles.inputWrapperFocused,
+                  formErrors.confirmPassword ? styles.inputWrapperError : null,
                 ]}
                 onPress={() => confirmPasswordInputRef.current?.focus()}
               >
@@ -363,7 +459,10 @@ export default function StaffSignupScreen({
                   placeholder="••••••••"
                   placeholderTextColor={Colors.placeholder}
                   value={confirmPassword}
-                  onChangeText={setConfirmPassword}
+                  onChangeText={(value) => {
+                    setConfirmPassword(value);
+                    setFormErrors((prev) => ({ ...prev, confirmPassword: '' }));
+                  }}
                   secureTextEntry={!showConfirmPassword}
                   autoCapitalize="none"
                   autoCorrect={false}
@@ -380,6 +479,7 @@ export default function StaffSignupScreen({
                   <Text style={styles.eyeIcon}>{showConfirmPassword ? '🙈' : '👁️'}</Text>
                 </TouchableOpacity>
               </Pressable>
+              {formErrors.confirmPassword ? <Text style={styles.errorText}>{formErrors.confirmPassword}</Text> : null}
             </View>
 
             {/* CTA Button */}
@@ -568,6 +668,14 @@ const styles = StyleSheet.create({
     shadowOffset: { width: 0, height: 0 },
     elevation: 2,
   },
+  inputWrapperError: {
+    borderColor: Colors.error,
+    shadowColor: Colors.error,
+    shadowOpacity: 0.15,
+    shadowRadius: 6,
+    shadowOffset: { width: 0, height: 0 },
+    elevation: 2,
+  },
   inputIcon: {
     fontSize: 17,
     marginRight: 10,
@@ -589,6 +697,12 @@ const styles = StyleSheet.create({
     fontSize: 12,
     color: Colors.textMuted,
     marginTop: 5,
+  },
+  errorText: {
+    color: Colors.error,
+    fontSize: 12,
+    marginTop: 6,
+    fontWeight: '600',
   },
 
   /* ── CTA Button ── */
