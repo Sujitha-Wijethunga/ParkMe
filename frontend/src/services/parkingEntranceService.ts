@@ -1,4 +1,9 @@
-import { Linking, Platform, Alert, Share } from 'react-native';
+import {
+  isValidCoordinate,
+  buildGoogleMapsUniversalUrl,
+  shareDirectionsUrl,
+  launchDrivingNavigation,
+} from './navigationLauncher';
 
 export interface ParkingEntranceInfo {
   lotId: string;
@@ -55,13 +60,7 @@ export const VERIFIED_LOT_ENTRANCES: Record<string, {
 /**
  * Validates whether latitude and longitude are valid, non-zero finite numbers.
  */
-export function isValidLatLng(lat: unknown, lng: unknown): boolean {
-  if (typeof lat !== 'number' || typeof lng !== 'number') return false;
-  if (!Number.isFinite(lat) || !Number.isFinite(lng)) return false;
-  if (lat < -90 || lat > 90 || lng < -180 || lng > 180) return false;
-  if (lat === 0 && lng === 0) return false; // uninitialized origin
-  return true;
-}
+export const isValidLatLng = isValidCoordinate;
 
 /**
  * Resolves verified vehicle entrance coordinates for a lot.
@@ -144,47 +143,18 @@ export function getParkingLotEntranceInfo(
     statusMessage: 'Verified vehicle entrance coordinates are missing for this lot.',
   };
 }
+export { isValidCoordinate, buildGoogleMapsUniversalUrl, shareDirectionsUrl, launchDrivingNavigation };
 
-/**
- * Builds the free Google Maps universal navigation URL.
- * Omission of origin allows Google Maps to use the device's current GPS location.
- *
- * Format:
- * https://www.google.com/maps/dir/?api=1&destination=LATITUDE,LONGITUDE&travelmode=driving&dir_action=navigate
- */
-export function buildGoogleMapsUniversalUrl(lat: number, lng: number): string {
-  if (!isValidLatLng(lat, lng)) {
-    throw new Error(`Invalid navigation destination coordinates: lat=${lat}, lng=${lng}`);
-  }
-  return `https://www.google.com/maps/dir/?api=1&destination=${lat},${lng}&travelmode=driving&dir_action=navigate`;
-}
-
-/**
- * Shares or copies the directions URL using the native system share dialog.
- */
-export async function shareDirectionsUrl(url: string, lotName?: string): Promise<boolean> {
-  try {
-    await Share.share({
-      title: `Directions to ${lotName || 'Parking Lot'}`,
-      message: url,
-      url: url,
-    });
-    return true;
-  } catch (err: any) {
-    console.warn('[Navigation] Share link error:', err?.message || err);
-    return false;
-  }
-}
 
 /**
  * Launches Google Maps navigation using React Native Linking.
+ * Delegates to launchDrivingNavigation for unified behavior across ParkMe.
  *
  * Direct approach:
- * 1. Validates verified coordinates before attempting to build or open the URL.
- * 2. Attempts Linking.openURL(universalUrl) directly.
- *    (Avoids Linking.canOpenURL() which causes false negative failures on Android 11+ / API 30+).
- * 3. On failure, logs the exact error, attempts native intent fallback, and shows a user-friendly
- *    dialog with a "Copy / Share Link" option.
+ * 1. Validates destination coordinates before attempting to build or open the URL.
+ * 2. Attempts Linking.openURL(universalUrl) directly without a Linking.canOpenURL() gate.
+ * 3. On actual rejection, attempts native intent fallback and provides a user-facing
+ *    fallback dialog that lets the user copy or share the directions URL.
  *
  * Note: Calling this does NOT mark the user as arrived in ParkMe.
  */
@@ -193,58 +163,9 @@ export async function launchGoogleMapsNavigation(params: {
   destLng: number;
   lotName?: string;
 }): Promise<{ success: boolean; url: string; error?: string }> {
-  const { destLat, destLng, lotName } = params;
-
-  // 1. Strict coordinate validation: never substitute or guess coordinates
-  if (!isValidLatLng(destLat, destLng)) {
-    console.warn('[Navigation] Launch aborted: Destination coordinates are missing or invalid.');
-    Alert.alert(
-      'Navigation Unavailable',
-      'The destination coordinates for this parking lot are invalid or missing.',
-      [{ text: 'OK', style: 'default' }]
-    );
-    return { success: false, url: '', error: 'Invalid destination coordinates' };
-  }
-
-  // 2. Build the universal directions URL
-  const universalUrl = buildGoogleMapsUniversalUrl(destLat, destLng);
-  console.log('[Navigation] Opening Google Maps navigation URL:', universalUrl);
-
-  // 3. Attempt direct Linking.openURL without canOpenURL() gate
-  try {
-    await Linking.openURL(universalUrl);
-    return { success: true, url: universalUrl };
-  } catch (openErr: any) {
-    const errorMsg = openErr?.message || String(openErr);
-    console.error('[Navigation] Linking.openURL failed for universal URL:', errorMsg);
-
-    // On Android, if the universal URL fails to launch directly, attempt the native intent
-    if (Platform.OS === 'android') {
-      const androidAppIntent = `google.navigation:q=${destLat},${destLng}&mode=d`;
-      console.log('[Navigation] Attempting Android native navigation intent fallback:', androidAppIntent);
-      try {
-        await Linking.openURL(androidAppIntent);
-        return { success: true, url: androidAppIntent };
-      } catch (intentErr: any) {
-        console.error('[Navigation] Native navigation intent failed:', intentErr?.message || intentErr);
-      }
-    }
-
-    // 4. Alert with useful error and allow copying/sharing the directions URL
-    Alert.alert(
-      'Navigation Error',
-      `Could not open navigation directions${lotName ? ` to ${lotName}` : ''}.\n\nError: ${errorMsg}`,
-      [
-        {
-          text: 'Copy / Share Link',
-          onPress: () => {
-            void shareDirectionsUrl(universalUrl, lotName);
-          },
-        },
-        { text: 'OK', style: 'default' },
-      ]
-    );
-
-    return { success: false, url: universalUrl, error: errorMsg };
-  }
+  return launchDrivingNavigation({
+    destLat: params.destLat,
+    destLng: params.destLng,
+    lotName: params.lotName,
+  });
 }
