@@ -33,6 +33,7 @@ import ChangePasswordScreen from './src/screens/staff/ChangePasswordScreen';
 import AttendanceScreen from './src/screens/staff/AttendanceScreen';
 import LeaveRequestScreen from './src/screens/staff/LeaveRequestScreen';
 import { StaffProfile, defaultStaffProfile } from './src/constants/profile';
+import { API_BASE_URL } from './src/constants/api';
 import {
   DriverFilterChip,
   ParkingLotCardItem,
@@ -57,16 +58,6 @@ type ScreenType =
   | 'change-password'
   | 'attendance'
   | 'leave-request';
-
-const API_BASE_URL = (() => {
-  if (Platform.OS === 'web' && typeof window !== 'undefined') {
-    const host = window.location.hostname;
-    if (host === 'localhost' || host === '127.0.0.1') {
-      return 'http://localhost:5000';
-    }
-  }
-  return 'http://192.168.1.33:5000';
-})();
 
 const resolveApiImageUrl = (imageUrl?: string) => {
   if (!imageUrl) return undefined;
