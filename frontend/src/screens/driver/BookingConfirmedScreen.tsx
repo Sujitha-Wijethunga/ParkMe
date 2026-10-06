@@ -142,14 +142,6 @@ export default function BookingConfirmedScreen({
           <Text style={styles.small}>Scan at barrier scanner for automatic gate lift</Text>
         </View>
 
-        <TouchableOpacity
-          style={styles.calendarBtn}
-          activeOpacity={0.7}
-          onPress={() => Alert.alert('Calendar', 'Added to your calendar (demo)')}
-        >
-          <Text style={styles.calendarText}>📅  Add to Calendar</Text>
-        </TouchableOpacity>
-
         {/* Actions */}
         <TouchableOpacity style={styles.primaryBtn} activeOpacity={0.88} onPress={onGetDirections}>
           <Text style={styles.primaryText}>➤  Get Directions</Text>
@@ -247,8 +239,6 @@ const styles = StyleSheet.create({
     backgroundColor: '#FFFFFF',
   },
 
-  calendarBtn: { alignItems: 'center', paddingVertical: 4 },
-  calendarText: { color: DriverColors.navyHeading, fontWeight: '700', fontSize: 13 },
 
   primaryBtn: {
     backgroundColor: DriverColors.orangePrimary,
