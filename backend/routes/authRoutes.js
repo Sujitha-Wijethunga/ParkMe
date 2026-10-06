@@ -1,0 +1,35 @@
+const express = require('express');
+const router = express.Router();
+const {
+  register,
+  login,
+  driverRegister,
+  driverLogin,
+  googleAuth,
+  getMe,
+  updateMe,
+  changePassword,
+  registerValidation,
+  loginValidation,
+  driverRegisterValidation,
+  driverLoginValidation,
+  googleAuthValidation,
+} = require('../controllers/authController');
+const { protect } = require('../middleware/auth');
+const { validate } = require('../middleware/validate');
+
+// Staff auth routes (preserved)
+router.post('/register', ...registerValidation, validate, register);
+router.post('/login', ...loginValidation, validate, login);
+
+// Driver auth routes
+router.post('/driver/register', ...driverRegisterValidation, validate, driverRegister);
+router.post('/driver/login', ...driverLoginValidation, validate, driverLogin);
+router.post('/google', ...googleAuthValidation, validate, googleAuth);
+
+// Current user profile routes
+router.get('/me', protect, getMe);
+router.put('/me', protect, updateMe);
+router.put('/change-password', protect, changePassword);
+
+module.exports = router;
