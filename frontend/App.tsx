@@ -2068,7 +2068,8 @@ export default function App() {
               receipt={
                 releaseReceipt
               }
-              onViewBookings={() => {
+              userId={driverUser?._id || 'guest'}
+              onDone={() => {
                 setReleaseReceipt(
                   null
                 );
