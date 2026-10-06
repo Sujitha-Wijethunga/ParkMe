@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useState } from 'react';
+import React, { useEffect, useMemo } from 'react';
 import {
   View,
   Text,
@@ -8,17 +8,18 @@ import {
   StatusBar,
   Platform,
   BackHandler,
-  Alert,
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { DriverColors } from '../../constants/colors';
 import { SAMPLE_NEARBY_PARKING_LOTS } from '../../constants/driverSampleData';
 import { BookingDetails } from '../../constants/bookingTypes';
+import { DriverReservation } from '../../services/reservationApi';
 
 interface BookingConfirmedScreenProps {
   booking: BookingDetails;
+  reservation: DriverReservation;
   onGetDirections: () => void;
-  /** Cancel the booking and return to Home. */
+  onConfirmBooking: () => void;
   onCancel: () => void;
 }
 
@@ -62,7 +63,9 @@ function FakeQR({ seed }: { seed: string }) {
 
 export default function BookingConfirmedScreen({
   booking,
+  reservation,
   onGetDirections,
+  onConfirmBooking,
   onCancel,
 }: BookingConfirmedScreenProps) {
   const insets = useSafeAreaInsets();
@@ -73,19 +76,13 @@ export default function BookingConfirmedScreen({
   const bottomPadding = Math.max(insets.bottom, 16) + 24;
 
   const lot = SAMPLE_NEARBY_PARKING_LOTS.find((l) => l.id === booking.lotId);
-  const [ref] = useState(() => `PE-${Math.floor(10000 + Math.random() * 89999)}`);
+  const ref = reservation.reference || reservation._id;
 
   // Back button on this screen should not return to payment
   useEffect(() => {
     const sub = BackHandler.addEventListener('hardwareBackPress', () => true);
     return () => sub.remove();
   }, []);
-
-  const confirmCancel = () =>
-    Alert.alert('Cancel booking?', 'Your reserved space will be released.', [
-      { text: 'Keep booking', style: 'cancel' },
-      { text: 'Cancel booking', style: 'destructive', onPress: onCancel },
-    ]);
 
   return (
     <View style={[styles.safeArea, { paddingTop: topPadding }]}>
@@ -150,17 +147,12 @@ export default function BookingConfirmedScreen({
         <TouchableOpacity
           style={styles.outlineBtn}
           activeOpacity={0.85}
-          onPress={() =>
-            Alert.alert(
-              'Booking Details',
-              `Ref: ${ref}\nSpace ${booking.spaceId} · Floor ${booking.floor}\n${booking.vehicleType} · ${booking.hours} hrs\nTotal: Rs. ${booking.total}`
-            )
-          }
+          onPress={onConfirmBooking}
         >
-          <Text style={styles.outlineText}>View Booking Details</Text>
+          <Text style={styles.outlineText}>Confirm Booking</Text>
         </TouchableOpacity>
 
-        <TouchableOpacity style={styles.dangerBtn} activeOpacity={0.88} onPress={confirmCancel}>
+        <TouchableOpacity style={styles.dangerBtn} activeOpacity={0.88} onPress={onCancel}>
           <Text style={styles.primaryText}>✕  Cancel</Text>
         </TouchableOpacity>
       </ScrollView>
