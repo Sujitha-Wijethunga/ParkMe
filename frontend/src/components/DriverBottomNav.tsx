@@ -6,6 +6,7 @@ import {
   StyleSheet,
   Platform,
 } from 'react-native';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { DriverColors } from '../constants/colors';
 
 export type DriverTabType = 'home' | 'map' | 'bookings' | 'profile';
@@ -24,6 +25,9 @@ export default function DriverBottomNav({
   activeTab = 'home',
   onTabPress,
 }: DriverBottomNavProps) {
+  const insets = useSafeAreaInsets();
+  const bottomPadding = Math.max(insets.bottom, Platform.OS === 'ios' ? 12 : 8) + (insets.bottom > 0 ? 4 : 2);
+
   const handlePress = (tab: DriverTabType) => {
     if (onTabPress) {
       onTabPress(tab);
@@ -31,7 +35,7 @@ export default function DriverBottomNav({
   };
 
   return (
-    <View style={styles.container}>
+    <View style={[styles.container, { paddingBottom: bottomPadding }]}>
       {/* 1. Home Tab */}
       <TouchableOpacity
         style={styles.navItem}

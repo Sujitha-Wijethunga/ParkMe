@@ -3,7 +3,6 @@ import {
   View,
   Text,
   StyleSheet,
-  SafeAreaView,
   Platform,
   StatusBar,
   TouchableOpacity,
@@ -11,6 +10,7 @@ import {
   Alert,
   ScrollView,
 } from 'react-native';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 interface ChangePasswordScreenProps {
   onBack: () => void;
@@ -18,6 +18,14 @@ interface ChangePasswordScreenProps {
 }
 
 export default function ChangePasswordScreen({ onBack, onUpdatePassword }: ChangePasswordScreenProps) {
+export default function ChangePasswordScreen({ onBack }: ChangePasswordScreenProps) {
+  const insets = useSafeAreaInsets();
+  const topPadding = Math.max(
+    insets.top,
+    Platform.OS === 'android' ? (StatusBar.currentHeight ?? 0) : 0
+  );
+  const bottomPadding = Math.max(insets.bottom, 16) + 24;
+
   const [currentPassword, setCurrentPassword] = useState('');
   const [newPassword, setNewPassword] = useState('');
   const [confirmPassword, setConfirmPassword] = useState('');
@@ -45,7 +53,7 @@ export default function ChangePasswordScreen({ onBack, onUpdatePassword }: Chang
   };
 
   return (
-    <SafeAreaView style={styles.safeArea}>
+    <View style={[styles.safeArea, { paddingTop: topPadding }]}>
       <StatusBar barStyle="dark-content" backgroundColor="#FFFFFF" />
 
       {/* Top Header */}
@@ -63,7 +71,7 @@ export default function ChangePasswordScreen({ onBack, onUpdatePassword }: Chang
 
       <ScrollView
         style={styles.scrollView}
-        contentContainerStyle={styles.scrollContent}
+        contentContainerStyle={[styles.scrollContent, { paddingBottom: bottomPadding }]}
         showsVerticalScrollIndicator={false}
       >
         <View style={styles.formContainer}>
@@ -116,7 +124,7 @@ export default function ChangePasswordScreen({ onBack, onUpdatePassword }: Chang
           <Text style={styles.updateBtnText}>Update Password</Text>
         </TouchableOpacity>
       </ScrollView>
-    </SafeAreaView>
+    </View>
   );
 }
 
@@ -124,7 +132,6 @@ const styles = StyleSheet.create({
   safeArea: {
     flex: 1,
     backgroundColor: '#FFFFFF',
-    paddingTop: Platform.OS === 'android' ? StatusBar.currentHeight : 0,
   },
   header: {
     flexDirection: 'row',
@@ -164,7 +171,6 @@ const styles = StyleSheet.create({
   scrollContent: {
     paddingHorizontal: 16,
     paddingTop: 24,
-    paddingBottom: 32,
   },
   formContainer: {
     backgroundColor: '#FFFFFF',

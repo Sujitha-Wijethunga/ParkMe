@@ -86,5 +86,10 @@ export const DriverColors = {
   mapPulseAura: 'rgba(37, 99, 235, 0.22)',
   mapMarkerBg: '#0A1128',
   mapMarkerDot: '#10B981',
+
+  // Convenience aliases for driver theme components
+  brandPrimary: '#2563EB',
+  border: '#E2E8F0',
+  surfaceLight: '#F8FAFC',
 };
 

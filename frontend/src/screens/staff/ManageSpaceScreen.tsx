@@ -5,7 +5,6 @@ import {
   StyleSheet,
   ScrollView,
   TouchableOpacity,
-  SafeAreaView,
   Platform,
   StatusBar,
   TextInput,
@@ -13,6 +12,8 @@ import {
   Pressable,
   Alert,
 } from 'react-native';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
+
 export type SpaceStatus = 'Available' | 'Reserved' | 'Occupied';
 
 export interface SpaceItem {
@@ -71,6 +72,14 @@ interface ManageSpaceProps {
 }
 
 export default function ManageSpaceScreen({ onBack, onUpdateSpaceStatus, spaces, selectedSpaceId }: ManageSpaceProps) {
+export default function ManageSpaceScreen({ onBack, spaces, setSpaces }: ManageSpaceProps) {
+  const insets = useSafeAreaInsets();
+  const topPadding = Math.max(
+    insets.top,
+    Platform.OS === 'android' ? (StatusBar.currentHeight ?? 0) : 0
+  );
+  const bottomPadding = Math.max(insets.bottom, 16) + 16;
+
   const [searchQuery, setSearchQuery] = useState('');
   const [activeFilter, setActiveFilter] = useState<'All' | 'Available' | 'Reserved' | 'Occupied'>('All');
 
@@ -112,7 +121,7 @@ export default function ManageSpaceScreen({ onBack, onUpdateSpaceStatus, spaces,
   };
 
   return (
-    <SafeAreaView style={styles.safeArea}>
+    <View style={[styles.safeArea, { paddingTop: topPadding }]}>
       <StatusBar barStyle="dark-content" backgroundColor="#FFFFFF" />
 
       {/* Top Header */}
@@ -234,7 +243,7 @@ export default function ManageSpaceScreen({ onBack, onUpdateSpaceStatus, spaces,
       {/* 4-Column Spaces Grid */}
       <ScrollView
         style={styles.gridScroll}
-        contentContainerStyle={styles.gridContainer}
+        contentContainerStyle={[styles.gridContainer, { paddingBottom: bottomPadding }]}
         showsVerticalScrollIndicator={false}
       >
         <View style={styles.tilesRow}>
@@ -294,7 +303,13 @@ export default function ManageSpaceScreen({ onBack, onUpdateSpaceStatus, spaces,
           style={styles.modalOverlay}
           onPress={() => setIsModalVisible(false)}
         >
-          <Pressable style={styles.bottomSheet} onPress={(e) => e.stopPropagation()}>
+          <Pressable
+            style={[
+              styles.bottomSheet,
+              { paddingBottom: Math.max(insets.bottom, 16) + 16 },
+            ]}
+            onPress={(e) => e.stopPropagation()}
+          >
             {/* Sheet Header */}
             <View style={styles.sheetHeader}>
               <View>
@@ -394,7 +409,7 @@ export default function ManageSpaceScreen({ onBack, onUpdateSpaceStatus, spaces,
           </Pressable>
         </Pressable>
       </Modal>
-    </SafeAreaView>
+    </View>
   );
 }
 
@@ -402,7 +417,6 @@ const styles = StyleSheet.create({
   safeArea: {
     flex: 1,
     backgroundColor: '#FFFFFF',
-    paddingTop: Platform.OS === 'android' ? StatusBar.currentHeight : 0,
   },
   header: {
     flexDirection: 'row',
@@ -543,7 +557,6 @@ const styles = StyleSheet.create({
   },
   gridContainer: {
     paddingHorizontal: 16,
-    paddingBottom: 32,
   },
   tilesRow: {
     flexDirection: 'row',
@@ -623,7 +636,6 @@ const styles = StyleSheet.create({
     borderTopRightRadius: 24,
     paddingHorizontal: 20,
     paddingTop: 20,
-    paddingBottom: Platform.OS === 'ios' ? 36 : 24,
     shadowColor: '#000',
     shadowOpacity: 0.15,
     shadowRadius: 16,

@@ -5,7 +5,6 @@ import {
   StyleSheet,
   ScrollView,
   TouchableOpacity,
-  SafeAreaView,
   Platform,
   StatusBar,
   Switch,
@@ -15,6 +14,7 @@ import {
   Pressable,
   Image,
 } from 'react-native';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import * as ImagePicker from 'expo-image-picker';
 import { StaffProfile } from '../../constants/profile';
 
@@ -39,6 +39,14 @@ export default function StaffProfileScreen({
   onChangePassword,
   onAttendance,
 }: StaffProfileScreenProps) {
+  const insets = useSafeAreaInsets();
+  const topPadding = Math.max(
+    insets.top,
+    Platform.OS === 'android' ? (StatusBar.currentHeight ?? 0) : 0
+  );
+  const bottomPadding =
+    Math.max(insets.bottom, Platform.OS === 'ios' ? 12 : 8) + (insets.bottom > 0 ? 4 : 2);
+
   const [shiftAlerts, setShiftAlerts] = useState(true);
 
   // Edit Modal State
@@ -116,7 +124,7 @@ export default function StaffProfileScreen({
   };
 
   return (
-    <SafeAreaView style={styles.safeArea}>
+    <View style={[styles.safeArea, { paddingTop: topPadding }]}>
       <StatusBar barStyle="dark-content" backgroundColor="#FFFFFF" />
 
       {/* Top Header */}
@@ -317,7 +325,13 @@ export default function StaffProfileScreen({
           style={styles.modalOverlay}
           onPress={() => setIsEditModalVisible(false)}
         >
-          <Pressable style={styles.modalContent} onPress={(e) => e.stopPropagation()}>
+          <Pressable
+            style={[
+              styles.modalContent,
+              { paddingBottom: Math.max(insets.bottom, 16) + 16 },
+            ]}
+            onPress={(e) => e.stopPropagation()}
+          >
             <ScrollView showsVerticalScrollIndicator={false}>
               {/* Modal Header */}
               <View style={styles.modalHeader}>
@@ -432,7 +446,7 @@ export default function StaffProfileScreen({
       </Modal>
 
       {/* Bottom Navigation Bar */}
-      <View style={styles.bottomNav}>
+      <View style={[styles.bottomNav, { paddingBottom: bottomPadding }]}>
         <TouchableOpacity
           style={styles.navItem}
           onPress={() => onNavigateTab('dashboard')}
@@ -465,7 +479,7 @@ export default function StaffProfileScreen({
           <Text style={[styles.navLabel, styles.navLabelActive]}>Profile</Text>
         </TouchableOpacity>
       </View>
-    </SafeAreaView>
+    </View>
   );
 }
 
@@ -473,7 +487,6 @@ const styles = StyleSheet.create({
   safeArea: {
     flex: 1,
     backgroundColor: '#FFFFFF',
-    paddingTop: Platform.OS === 'android' ? StatusBar.currentHeight : 0,
   },
   header: {
     flexDirection: 'row',
@@ -694,8 +707,7 @@ const styles = StyleSheet.create({
     backgroundColor: '#FFFFFF',
     borderTopWidth: 1,
     borderTopColor: '#F1F5F9',
-    paddingVertical: 8,
-    paddingBottom: Platform.OS === 'ios' ? 24 : 10,
+    paddingTop: 8,
   },
   navItem: {
     flex: 1,
@@ -732,7 +744,6 @@ const styles = StyleSheet.create({
     borderTopRightRadius: 24,
     paddingHorizontal: 20,
     paddingTop: 20,
-    paddingBottom: Platform.OS === 'ios' ? 36 : 24,
     maxHeight: '90%',
   },
   modalHeader: {

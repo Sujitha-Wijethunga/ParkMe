@@ -5,11 +5,11 @@ import {
   StyleSheet,
   ScrollView,
   TouchableOpacity,
-  SafeAreaView,
   StatusBar,
   Platform,
   BackHandler,
 } from 'react-native';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { DriverColors } from '../../constants/colors';
 import { SAMPLE_NEARBY_PARKING_LOTS } from '../../constants/driverSampleData';
 import {
@@ -105,6 +105,9 @@ export default function SelectSpaceScreen({
   onBack,
   onContinue,
 }: SelectSpaceScreenProps) {
+  const insets = useSafeAreaInsets();
+  const [continueBarHeight, setContinueBarHeight] = useState<number>(0);
+
   /* Lot metadata */
   const lot = SAMPLE_NEARBY_PARKING_LOTS.find((l) => l.id === lotId);
   const layout = getSpaceLayoutForLot(lotId);
@@ -176,10 +179,20 @@ export default function SelectSpaceScreen({
     });
   }, [selectedSpace, activeFloor, lot, lotId, vehicleType, currentTariff, onContinue]);
 
+  const topPadding = Math.max(
+    insets.top,
+    Platform.OS === 'android' ? (StatusBar.currentHeight ?? 0) : 0
+  );
+
   /* ── Guard: missing lot ──────────────────────────────────────────────── */
   if (!lot) {
     return (
-      <SafeAreaView style={styles.errorContainer}>
+      <View
+        style={[
+          styles.errorContainer,
+          { paddingTop: topPadding, paddingBottom: insets.bottom },
+        ]}
+      >
         <StatusBar barStyle="dark-content" backgroundColor="#FFFFFF" />
         <View style={styles.errorInner}>
           <Text style={styles.errorEmoji}>🚧</Text>
@@ -191,14 +204,19 @@ export default function SelectSpaceScreen({
             <Text style={styles.errorBackText}>← Back to Details</Text>
           </TouchableOpacity>
         </View>
-      </SafeAreaView>
+      </View>
     );
   }
 
   /* ── Guard: no space layout for this lot ─────────────────────────────── */
   if (!layout || !activeFloor) {
     return (
-      <SafeAreaView style={styles.errorContainer}>
+      <View
+        style={[
+          styles.errorContainer,
+          { paddingTop: topPadding, paddingBottom: insets.bottom },
+        ]}
+      >
         <StatusBar barStyle="dark-content" backgroundColor="#FFFFFF" />
         <View style={styles.errorInner}>
           <Text style={styles.errorEmoji}>🗺️</Text>
@@ -210,14 +228,21 @@ export default function SelectSpaceScreen({
             <Text style={styles.errorBackText}>← Back to Details</Text>
           </TouchableOpacity>
         </View>
-      </SafeAreaView>
+      </View>
     );
   }
 
   const canContinue = selectedSpace !== null;
 
+  // Dynamic safe-area padding ensuring Continue button sits cleanly above
+  // Android system navigation (3-button navigation, gesture navigation) and iOS home indicator
+  const bottomBarPaddingBottom = Math.max(
+    insets.bottom,
+    Platform.OS === 'android' ? 14 : 12
+  ) + (insets.bottom > 0 ? 8 : 4);
+
   return (
-    <SafeAreaView style={styles.safeArea}>
+    <View style={[styles.safeArea, { paddingTop: topPadding }]}>
       <StatusBar barStyle="dark-content" backgroundColor="#FFFFFF" />
 
       {/* ── Header ──────────────────────────────────────────────────────── */}
@@ -268,7 +293,12 @@ export default function SelectSpaceScreen({
       {/* ── Main scrollable content ──────────────────────────────────────── */}
       <ScrollView
         style={styles.scrollView}
-        contentContainerStyle={styles.scrollContent}
+        contentContainerStyle={[
+          styles.scrollContent,
+          {
+            paddingBottom: (continueBarHeight > 0 ? continueBarHeight : 120 + insets.bottom) + 16,
+          },
+        ]}
         showsVerticalScrollIndicator={false}
       >
         {/* Legend */}
@@ -419,13 +449,18 @@ export default function SelectSpaceScreen({
             <Text style={styles.noteBold}>15 minutes</Text> after booking.
           </Text>
         </View>
-
-        {/* Bottom spacer so sticky bar doesn't hide content */}
-        <View style={styles.bottomSpacer} />
       </ScrollView>
 
       {/* ── Sticky Continue Bar ──────────────────────────────────────────── */}
-      <View style={styles.continueBar}>
+      <View
+        style={[styles.continueBar, { paddingBottom: bottomBarPaddingBottom }]}
+        onLayout={(e) => {
+          const h = e.nativeEvent.layout.height;
+          if (h > 0 && h !== continueBarHeight) {
+            setContinueBarHeight(h);
+          }
+        }}
+      >
         <TouchableOpacity
           style={[styles.continueBtn, !canContinue && styles.continueBtnDisabled]}
           activeOpacity={canContinue ? 0.88 : 1}
@@ -446,7 +481,7 @@ export default function SelectSpaceScreen({
           </Text>
         </TouchableOpacity>
       </View>
-    </SafeAreaView>
+    </View>
   );
 }
 
@@ -483,7 +518,6 @@ const styles = StyleSheet.create({
   errorContainer: {
     flex: 1,
     backgroundColor: '#FFFFFF',
-    paddingTop: Platform.OS === 'android' ? StatusBar.currentHeight : 0,
   },
   errorInner: {
     flex: 1, alignItems: 'center', justifyContent: 'center', paddingHorizontal: 32,
@@ -507,7 +541,6 @@ const styles = StyleSheet.create({
   safeArea: {
     flex: 1,
     backgroundColor: '#FFFFFF',
-    paddingTop: Platform.OS === 'android' ? StatusBar.currentHeight : 0,
   },
 
   // Header
@@ -835,8 +868,8 @@ const styles = StyleSheet.create({
   noteText: { flex: 1, fontSize: 12, color: '#92400E', lineHeight: 18 },
   noteBold: { fontWeight: '800' },
 
-  // Bottom spacer
-  bottomSpacer: { height: 100 },
+  // Bottom spacer (handled dynamically by scrollContent paddingBottom)
+  bottomSpacer: { height: 0 },
 
   // Sticky continue bar
   continueBar: {
@@ -849,7 +882,6 @@ const styles = StyleSheet.create({
     borderTopColor: DriverColors.borderLight,
     paddingHorizontal: 16,
     paddingTop: 12,
-    paddingBottom: Platform.OS === 'android' ? 16 : 28,
     shadowColor: '#000',
     shadowOffset: { width: 0, height: -2 },
     shadowOpacity: 0.06,

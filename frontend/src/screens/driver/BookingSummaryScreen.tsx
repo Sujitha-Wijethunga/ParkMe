@@ -5,7 +5,6 @@ import {
   StyleSheet,
   ScrollView,
   TouchableOpacity,
-  SafeAreaView,
   StatusBar,
   Platform,
   TextInput,
@@ -13,6 +12,7 @@ import {
   Image,
   BackHandler,
 } from 'react-native';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { DriverColors } from '../../constants/colors';
 import { SAMPLE_NEARBY_PARKING_LOTS } from '../../constants/driverSampleData';
 import { getSpaceLayoutForLot } from '../../constants/parkingSpaceData';
@@ -129,6 +129,16 @@ export default function BookingSummaryScreen({
   onBack,
   onProceed,
 }: BookingSummaryScreenProps) {
+  const insets = useSafeAreaInsets();
+  const [bottomBarHeight, setBottomBarHeight] = useState(0);
+
+  const topPadding = Math.max(
+    insets.top,
+    Platform.OS === 'android' ? (StatusBar.currentHeight ?? 0) : 0
+  );
+  const bottomBarPaddingBottom =
+    Math.max(insets.bottom, Platform.OS === 'ios' ? 14 : 8) + (insets.bottom > 0 ? 4 : 2);
+
   const { lotId, spaceId, floor, vehicleType, tariffPerHour } = selection;
 
   /* Lot and space data */
@@ -244,7 +254,12 @@ export default function BookingSummaryScreen({
   /* ── Guard: missing lot ─────────────────────────────────────────────── */
   if (!lot) {
     return (
-      <SafeAreaView style={styles.errorContainer}>
+      <View
+        style={[
+          styles.errorContainer,
+          { paddingTop: topPadding, paddingBottom: insets.bottom },
+        ]}
+      >
         <StatusBar barStyle="dark-content" backgroundColor="#FFFFFF" />
         <View style={styles.errorInner}>
           <Text style={styles.errorEmoji}>🚧</Text>
@@ -256,14 +271,19 @@ export default function BookingSummaryScreen({
             <Text style={styles.errorBackText}>← Back</Text>
           </TouchableOpacity>
         </View>
-      </SafeAreaView>
+      </View>
     );
   }
 
   /* ── Guard: space not found in sample data ───────────────────────────── */
   if (!space) {
     return (
-      <SafeAreaView style={styles.errorContainer}>
+      <View
+        style={[
+          styles.errorContainer,
+          { paddingTop: topPadding, paddingBottom: insets.bottom },
+        ]}
+      >
         <StatusBar barStyle="dark-content" backgroundColor="#FFFFFF" />
         <View style={styles.errorInner}>
           <Text style={styles.errorEmoji}>🗺️</Text>
@@ -276,7 +296,7 @@ export default function BookingSummaryScreen({
             <Text style={styles.errorBackText}>← Back to Space Selection</Text>
           </TouchableOpacity>
         </View>
-      </SafeAreaView>
+      </View>
     );
   }
 
@@ -290,7 +310,7 @@ export default function BookingSummaryScreen({
   const canProceed = validation.isValid;
 
   return (
-    <SafeAreaView style={styles.safeArea}>
+    <View style={[styles.safeArea, { paddingTop: topPadding }]}>
       <StatusBar barStyle="dark-content" backgroundColor="#FFFFFF" />
 
       <KeyboardAvoidingView
@@ -313,7 +333,13 @@ export default function BookingSummaryScreen({
 
         <ScrollView
           style={styles.scroll}
-          contentContainerStyle={styles.scrollContent}
+          contentContainerStyle={[
+            styles.scrollContent,
+            {
+              paddingBottom:
+                (bottomBarHeight > 0 ? bottomBarHeight : 110 + insets.bottom) + 16,
+            },
+          ]}
           showsVerticalScrollIndicator={false}
           keyboardShouldPersistTaps="handled"
         >
@@ -562,7 +588,10 @@ export default function BookingSummaryScreen({
         </ScrollView>
 
         {/* ── Sticky Bottom Bar ─────────────────────────────────────────── */}
-        <View style={styles.bottomBar}>
+        <View
+          style={[styles.bottomBar, { paddingBottom: bottomBarPaddingBottom }]}
+          onLayout={(e) => setBottomBarHeight(e.nativeEvent.layout.height)}
+        >
           <View style={styles.bottomBarTopRow}>
             <View style={styles.bottomBarPayableCol}>
               <Text style={styles.totalPayableLabel}>TOTAL PAYABLE</Text>
@@ -587,7 +616,7 @@ export default function BookingSummaryScreen({
           </TouchableOpacity>
         </View>
       </KeyboardAvoidingView>
-    </SafeAreaView>
+    </View>
   );
 }
 
@@ -601,7 +630,6 @@ const styles = StyleSheet.create({
   errorContainer: {
     flex: 1,
     backgroundColor: '#FFFFFF',
-    paddingTop: Platform.OS === 'android' ? StatusBar.currentHeight : 0,
   },
   errorInner: {
     flex: 1,
@@ -636,7 +664,6 @@ const styles = StyleSheet.create({
   safeArea: {
     flex: 1,
     backgroundColor: DriverColors.background,
-    paddingTop: Platform.OS === 'android' ? StatusBar.currentHeight : 0,
   },
 
   // Header
@@ -1049,7 +1076,7 @@ const styles = StyleSheet.create({
   cancelBannerTitle: { fontSize: 12.5, fontWeight: '700', color: '#065F46', lineHeight: 17 },
   cancelBannerSubtitle: { fontSize: 11, color: '#047857', marginTop: 2 },
 
-  bottomSpacer: { height: 110 },
+  bottomSpacer: { height: 0 },
 
   // Sticky Bottom Bar
   bottomBar: {
@@ -1058,7 +1085,6 @@ const styles = StyleSheet.create({
     borderTopColor: DriverColors.borderLight,
     paddingHorizontal: 16,
     paddingTop: 12,
-    paddingBottom: Platform.OS === 'android' ? 16 : 28,
     shadowColor: '#000',
     shadowOffset: { width: 0, height: -2 },
     shadowOpacity: 0.06,
