@@ -52,6 +52,11 @@ const reservationSchema = new mongoose.Schema(
       type: String,
       trim: true,
     },
+    cancellationNote: {
+      type: String,
+      trim: true,
+      maxlength: [500, 'Cancellation details cannot exceed 500 characters'],
+    },
     cancelledAt: {
       type: Date,
     },
