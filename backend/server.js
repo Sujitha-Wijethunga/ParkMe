@@ -6,8 +6,6 @@ const mongoose = require('mongoose');
 const connectDB = require('./config/db');
 const errorHandler = require('./middleware/errorHandler');
 
-
-
 // Load environment variables reliably regardless of working directory
 dotenv.config({ path: path.join(__dirname, '.env') });
 

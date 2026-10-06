@@ -1,0 +1,23 @@
+{
+	"version": "2.0.0",
+	"tasks": [
+		{
+			"label": "Start ParkMe Expo on LAN port 8082",
+			"type": "shell",
+			"command": "npm.cmd",
+			"args": [
+				"--prefix",
+				"frontend",
+				"run",
+				"start",
+				"--",
+				"--dev-client",
+				"--lan",
+				"--port",
+				"8082"
+			],
+			"isBackground": true,
+			"problemMatcher": []
+		}
+	]
+}
