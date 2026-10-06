@@ -35,7 +35,6 @@ interface AttendanceScreenProps {
 }
 
 export default function AttendanceScreen({ onBack, onRequestLeave, apiBaseUrl, authToken }: AttendanceScreenProps) {
-export default function AttendanceScreen({ onBack, onRequestLeave }: AttendanceScreenProps) {
   const insets = useSafeAreaInsets();
   const topPadding = Math.max(
     insets.top,
