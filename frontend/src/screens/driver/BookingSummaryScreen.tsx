@@ -1,4 +1,4 @@
-import React, { useState, useMemo, useCallback, useEffect } from 'react';
+import React, { useState, useMemo, useCallback, useEffect, useRef } from 'react';
 import {
   View,
   Text,
@@ -52,6 +52,16 @@ const MIN_ARRIVAL_LEAD_MIN = 15;
 const MAX_ADVANCE_DAYS = 60;
 /** Quick-pick duration chips (filtered by min/max constants). */
 const DURATION_CHIPS = [1, 2, 3, 4, 6, 8, 12];
+
+const VEHICLE_DETAILS: Record<
+  SpaceSelectionResult['vehicleType'],
+  { icon: string; plateExample: string; modelExample: string }
+> = {
+  Car: { icon: '🚗', plateExample: 'PB 9036', modelExample: 'Toyota Prius' },
+  Bike: { icon: '🏍️', plateExample: 'BBW 3616', modelExample: 'Honda CB Hornet' },
+  SUV: { icon: '🚙', plateExample: 'SUV 1234', modelExample: 'Toyota Fortuner' },
+  EV: { icon: '⚡', plateExample: 'EV 1234', modelExample: 'Tesla Model 3' },
+};
 
 const MONTHS = [
   'January', 'February', 'March', 'April', 'May', 'June',
@@ -297,12 +307,15 @@ export default function BookingSummaryScreen({
   /* Booking draft state (preserves edits from initialDraft if available) */
   const [draft, setDraft] = useState<BookingDraft>(() => {
     if (initialDraft && initialDraft.lotId === lotId) {
+      const vehicleChanged = initialDraft.vehicleType !== vehicleType;
       return {
         ...initialDraft,
         spaceId,
         floor,
         vehicleType,
         tariffPerHour,
+        vehiclePlate: vehicleChanged ? '' : initialDraft.vehiclePlate,
+        vehicleModel: vehicleChanged ? '' : initialDraft.vehicleModel,
       };
     }
     return {
@@ -313,12 +326,12 @@ export default function BookingSummaryScreen({
       tariffPerHour,
       arrivalTime: defaultArrivalTime(),
       durationHours: 2,
-      vehiclePlate: 'WP CAB-7829',
-      vehicleModel: 'Toyota Prius',
+      vehiclePlate: '',
+      vehicleModel: '',
     };
   });
 
-  const [showVehicleForm, setShowVehicleForm] = useState(false);
+  const vehicleDetails = VEHICLE_DETAILS[vehicleType];
   const [showCalendar, setShowCalendar] = useState(false);
   const [touched, setTouched] = useState<Partial<Record<keyof BookingDraft, boolean>>>({});
 
@@ -326,17 +339,20 @@ export default function BookingSummaryScreen({
   const [hourText, setHourText] = useState(() => String(get12Hour(draft.arrivalTime)));
   const [minText, setMinText] = useState(() => pad2(draft.arrivalTime.getMinutes()));
   const [timeError, setTimeError] = useState<string | undefined>(undefined);
+  const previousDraftRef = useRef(draft);
 
   const updateDraft = useCallback(
     (updater: (prev: BookingDraft) => BookingDraft) => {
-      setDraft((prev) => {
-        const next = updater(prev);
-        onDraftChange?.(next);
-        return next;
-      });
+      setDraft(updater);
     },
-    [onDraftChange]
+    []
   );
+
+  useEffect(() => {
+    if (previousDraftRef.current === draft) return;
+    previousDraftRef.current = draft;
+    onDraftChange?.(draft);
+  }, [draft, onDraftChange]);
 
   // Keep the typed fields in sync whenever the arrival time changes
   const arrivalMs = draft.arrivalTime.getTime();
@@ -655,7 +671,7 @@ export default function BookingSummaryScreen({
               </View>
 
               {/* Date (opens calendar) */}
-              <Text style={styles.fieldLabel}>Date</Text>
+              <Text style={styles.fieldLabel}>Select the date</Text>
               <TouchableOpacity
                 style={styles.dateButton}
                 activeOpacity={0.8}
@@ -674,7 +690,7 @@ export default function BookingSummaryScreen({
               </TouchableOpacity>
 
               {/* Time: hour : minute + AM/PM */}
-              <Text style={[styles.fieldLabel, { marginTop: 12 }]}>Time</Text>
+              <Text style={[styles.fieldLabel, { marginTop: 12 }]}>Select / nter the time</Text>
               <View style={styles.timeRow}>
                 <TouchableOpacity
                   style={styles.timeStepBtn}
@@ -770,7 +786,7 @@ export default function BookingSummaryScreen({
             <View style={[styles.sectionBox, { marginTop: 10 }]}>
               <View style={styles.boxHeaderRow}>
                 <Text style={styles.boxHeaderIcon}>⏱️</Text>
-                <Text style={styles.boxHeaderLabel}>DURATION</Text>
+                <Text style={styles.boxHeaderLabel}>ADD DURATION</Text>
               </View>
 
               <View style={styles.durationRow}>
@@ -824,7 +840,67 @@ export default function BookingSummaryScreen({
             </View>
           </View>
 
-          {/* ── 3. Booking Time Summary Card ──────────────────────────── */}
+          {/* ── 3. Vehicle Card ───────────────────────────────────────── */}
+          <View style={styles.card}>
+            <Text style={styles.cardSectionLabel}>VEHICLE</Text>
+
+            <View style={styles.vehiclePill}>
+              <Text style={styles.vehiclePillIcon}>{vehicleDetails.icon}</Text>
+              <View style={styles.vehiclePillInfo}>
+                <Text style={styles.vehiclePlateText}>
+                  {draft.vehiclePlate.trim() || `Enter ${vehicleType.toLowerCase()} number`}
+                  {draft.vehicleModel.trim() ? (
+                    <Text style={styles.vehicleModelText}> ({draft.vehicleModel.trim()})</Text>
+                  ) : null}
+                </Text>
+              </View>
+            </View>
+
+            <View style={styles.vehicleForm}>
+              <View style={styles.vehicleFormField}>
+                <Text style={styles.vehicleFormLabel}>{vehicleType} Number *</Text>
+                <TextInput
+                  style={[
+                    styles.vehicleFormInput,
+                    fieldError('vehiclePlate') ? styles.inputError : null,
+                  ]}
+                  value={draft.vehiclePlate}
+                  onChangeText={(v) => updateDraft((prev) => ({ ...prev, vehiclePlate: v }))}
+                  onBlur={() => touch('vehiclePlate')}
+                  placeholder={`e.g. ${vehicleDetails.plateExample}`}
+                  placeholderTextColor={DriverColors.textMuted}
+                  autoCapitalize="characters"
+                  maxLength={14}
+                  accessibilityLabel={`${vehicleType} number`}
+                />
+                {fieldError('vehiclePlate') ? (
+                  <Text style={styles.fieldError}>{fieldError('vehiclePlate')}</Text>
+                ) : null}
+              </View>
+              <View style={styles.vehicleFormField}>
+                <Text style={styles.vehicleFormLabel}>{vehicleType} Model *</Text>
+                <TextInput
+                  style={[
+                    styles.vehicleFormInput,
+                    fieldError('vehicleModel') ? styles.inputError : null,
+                  ]}
+                  value={draft.vehicleModel}
+                  onChangeText={(v) => updateDraft((prev) => ({ ...prev, vehicleModel: v }))}
+                  onBlur={() => touch('vehicleModel')}
+                  placeholder={`e.g. ${vehicleDetails.modelExample}`}
+                  placeholderTextColor={DriverColors.textMuted}
+                  autoCapitalize="words"
+                  maxLength={40}
+                  accessibilityLabel={`${vehicleType} model`}
+                />
+                {fieldError('vehicleModel') ? (
+                  <Text style={styles.fieldError}>{fieldError('vehicleModel')}</Text>
+                ) : null}
+              </View>
+            </View>
+          </View>
+
+          {/* ── 4. Booking Time Summary Card ──────────────────────────── */}
           <View style={styles.card}>
             <Text style={styles.cardSectionLabel}>BOOKING TIME SUMMARY</Text>
 
@@ -861,75 +937,14 @@ export default function BookingSummaryScreen({
               <Text style={styles.summaryLabel}>Duration</Text>
               <Text style={styles.summaryValue}>{durationLabel}</Text>
             </View>
-          </View>
+            <View style={styles.summaryDivider} />
 
-          {/* ── 4. Vehicle Card ───────────────────────────────────────── */}
-          <View style={styles.card}>
-            <Text style={styles.cardSectionLabel}>VEHICLE</Text>
-
-            <TouchableOpacity
-              style={styles.vehiclePill}
-              onPress={() => setShowVehicleForm((v) => !v)}
-              activeOpacity={0.8}
-              accessibilityRole="button"
-              accessibilityLabel="Change vehicle information"
-            >
-              <Text style={styles.vehiclePillIcon}>🚗</Text>
-              <View style={styles.vehiclePillInfo}>
-                <Text style={styles.vehiclePlateText}>
-                  {draft.vehiclePlate.trim() || 'Enter plate'}
-                  {draft.vehicleModel.trim() ? (
-                    <Text style={styles.vehicleModelText}> ({draft.vehicleModel.trim()})</Text>
-                  ) : null}
-                </Text>
-              </View>
-              <Text style={styles.vehicleChangeLink}>{showVehicleForm ? 'Done' : 'Change'}</Text>
-            </TouchableOpacity>
-
-            {showVehicleForm && (
-              <View style={styles.vehicleForm}>
-                <View style={styles.vehicleFormField}>
-                  <Text style={styles.vehicleFormLabel}>Registration Plate *</Text>
-                  <TextInput
-                    style={[
-                      styles.vehicleFormInput,
-                      fieldError('vehiclePlate') ? styles.inputError : null,
-                    ]}
-                    value={draft.vehiclePlate}
-                    onChangeText={(v) => updateDraft((prev) => ({ ...prev, vehiclePlate: v }))}
-                    onBlur={() => touch('vehiclePlate')}
-                    placeholder="e.g. WP CAB-7829"
-                    placeholderTextColor={DriverColors.textMuted}
-                    autoCapitalize="characters"
-                    maxLength={14}
-                    accessibilityLabel="Vehicle registration plate"
-                  />
-                  {fieldError('vehiclePlate') ? (
-                    <Text style={styles.fieldError}>{fieldError('vehiclePlate')}</Text>
-                  ) : null}
-                </View>
-                <View style={styles.vehicleFormField}>
-                  <Text style={styles.vehicleFormLabel}>Vehicle Model *</Text>
-                  <TextInput
-                    style={[
-                      styles.vehicleFormInput,
-                      fieldError('vehicleModel') ? styles.inputError : null,
-                    ]}
-                    value={draft.vehicleModel}
-                    onChangeText={(v) => updateDraft((prev) => ({ ...prev, vehicleModel: v }))}
-                    onBlur={() => touch('vehicleModel')}
-                    placeholder="e.g. Toyota Prius"
-                    placeholderTextColor={DriverColors.textMuted}
-                    autoCapitalize="words"
-                    maxLength={40}
-                    accessibilityLabel="Vehicle model"
-                  />
-                  {fieldError('vehicleModel') ? (
-                    <Text style={styles.fieldError}>{fieldError('vehicleModel')}</Text>
-                  ) : null}
-                </View>
-              </View>
-            )}
+            <View style={styles.summaryRow}>
+              <Text style={styles.summaryLabel}>Vehicle Number</Text>
+              <Text style={styles.summaryValue}>
+                {draft.vehiclePlate.trim() || 'Not entered'}
+              </Text>
+            </View>
           </View>
 
           {/* ── 5. Price Details Card ─────────────────────────────────── */}
@@ -1536,12 +1551,6 @@ const styles = StyleSheet.create({
   vehiclePillInfo: { flex: 1 },
   vehiclePlateText: { fontSize: 13.5, fontWeight: '700', color: DriverColors.navyHeading },
   vehicleModelText: { fontWeight: '400', color: DriverColors.textSecondary },
-  vehicleChangeLink: {
-    fontSize: 13,
-    fontWeight: '700',
-    color: DriverColors.orangePrimary,
-    paddingHorizontal: 4,
-  },
 
   // Vehicle form
   vehicleForm: {
