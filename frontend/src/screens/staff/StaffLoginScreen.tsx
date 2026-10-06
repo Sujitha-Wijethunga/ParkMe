@@ -37,7 +37,6 @@ const fetchWithFallback = async (endpoint: string, options: RequestInit) => {
 };
 
 export default function StaffLoginScreen({ onLoginSuccess, onNavigateToSignup }: StaffLoginScreenProps) {
-export default function StaffLoginScreen({ onLoginSuccess }: StaffLoginScreenProps) {
   const insets = useSafeAreaInsets();
   const topPadding =
     Math.max(insets.top, Platform.OS === 'android' ? (StatusBar.currentHeight ?? 0) : 0) + 16;
