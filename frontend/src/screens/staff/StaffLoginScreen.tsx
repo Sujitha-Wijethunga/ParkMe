@@ -13,6 +13,7 @@ import {
   StatusBar,
   Alert,
 } from 'react-native';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Colors } from '../../constants/colors';
 import { API_BASE_URL, getApiConnectionError } from '../../constants/api';
 
@@ -22,6 +23,12 @@ interface StaffLoginScreenProps {
 }
 
 export default function StaffLoginScreen({ onLoginSuccess, onNavigateToSignup }: StaffLoginScreenProps) {
+export default function StaffLoginScreen({ onLoginSuccess }: StaffLoginScreenProps) {
+  const insets = useSafeAreaInsets();
+  const topPadding =
+    Math.max(insets.top, Platform.OS === 'android' ? (StatusBar.currentHeight ?? 0) : 0) + 16;
+  const bottomPadding = Math.max(insets.bottom, 16) + 24;
+
   const [staffId, setStaffId] = useState('');
   const [password, setPassword] = useState('');
   const [showPassword, setShowPassword] = useState(false);
@@ -136,7 +143,7 @@ export default function StaffLoginScreen({ onLoginSuccess, onNavigateToSignup }:
         showsVerticalScrollIndicator={false}
       >
         {/* ────── Dark Teal Header ────── */}
-        <View style={styles.header}>
+        <View style={[styles.header, { paddingTop: topPadding }]}>
           {/* Logo row */}
           <View style={styles.logoRow}>
             <View style={styles.logoIcon}>
@@ -161,7 +168,7 @@ export default function StaffLoginScreen({ onLoginSuccess, onNavigateToSignup }:
         </View>
 
         {/* ────── Form Card ────── */}
-        <View style={styles.cardContainer}>
+        <View style={[styles.cardContainer, { paddingBottom: bottomPadding }]}>
           <View style={styles.formCard}>
             <Text style={styles.formTitle}>Attendant Sign In</Text>
             <Text style={styles.formSubtitle}>Enter your assigned staff credentials</Text>
@@ -330,7 +337,6 @@ const styles = StyleSheet.create({
   /* ── Header ── */
   header: {
     backgroundColor: Colors.primary,
-    paddingTop: Platform.OS === 'android' ? 44 : 56,
     paddingBottom: 28,
     paddingHorizontal: 24,
     alignItems: 'center',
@@ -396,7 +402,6 @@ const styles = StyleSheet.create({
   cardContainer: {
     paddingHorizontal: 16,
     paddingTop: 16,
-    paddingBottom: 40,
   },
   formCard: {
     backgroundColor: Colors.surface,

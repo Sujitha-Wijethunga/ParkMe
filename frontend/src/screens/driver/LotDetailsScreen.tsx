@@ -1,20 +1,25 @@
-import React from 'react';
+import React, { useState } from 'react';
 import {
   View,
   Text,
   StyleSheet,
   ScrollView,
   TouchableOpacity,
-  SafeAreaView,
   StatusBar,
   Platform,
-  Image,
+  ActivityIndicator,
+  Alert,
 } from 'react-native';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { DriverColors } from '../../constants/colors';
 import {
   ParkingLotCardItem,
   SAMPLE_NEARBY_PARKING_LOTS,
 } from '../../constants/driverSampleData';
+import ParkingLotImage from '../../components/ParkingLotImage';
+import { checkLotAvailability } from '../../services/parkingService';
+import { launchDrivingNavigation, isValidCoordinate } from '../../services/navigationLauncher';
+import { VERIFIED_LOT_ENTRANCES } from '../../services/parkingEntranceService';
 
 interface LotDetailsScreenProps {
   /** Stable lot ID passed from the card that was tapped. */
@@ -27,6 +32,13 @@ interface LotDetailsScreenProps {
    */
   onSelectSpace: (lotId: string) => void;
 }
+
+const LOT_SAMPLE_COORDINATES: Record<string, { lat: number; lng: number }> = {
+  'lot-1': { lat: 6.9271, lng: 79.8456 }, // One Galle Face
+  'lot-2': { lat: 6.9065, lng: 79.8519 }, // Liberty Plaza
+  'lot-3': { lat: 6.9175, lng: 79.8492 }, // Crescat Boulevard
+  'lot-4': { lat: 6.8940, lng: 79.8548 }, // Majestic City
+};
 
 const AMENITY_ICONS: Record<string, string> = {
   'CCTV Surveillance': '📷',
@@ -53,6 +65,17 @@ const AMENITY_ICONS: Record<string, string> = {
  * Select Space milestone in the next sprint.
  */
 export default function LotDetailsScreen({ lotId, onBack, onSelectSpace }: LotDetailsScreenProps) {
+  const insets = useSafeAreaInsets();
+  const [isNavigating, setIsNavigating] = useState(false);
+  const [bottomBarHeight, setBottomBarHeight] = useState(0);
+
+  // Dynamic safe-area paddings
+  const bottomBarPaddingBottom =
+    Math.max(insets.bottom, Platform.OS === 'ios' ? 14 : 8) + (insets.bottom > 0 ? 4 : 2);
+  const topBarPaddingTop =
+    Math.max(insets.top, Platform.OS === 'android' ? (StatusBar.currentHeight ?? 0) : 0) + 8;
+  const heroHeight = 260 + (insets.top > 24 ? insets.top - 24 : 0);
+
   // Resolve the lot from the shared sample data by stable ID
   const lot: ParkingLotCardItem | undefined = SAMPLE_NEARBY_PARKING_LOTS.find(
     (l) => l.id === lotId
@@ -61,7 +84,18 @@ export default function LotDetailsScreen({ lotId, onBack, onSelectSpace }: LotDe
   // ── Guard: unknown or missing lot ──────────────────────────────────────────
   if (!lot) {
     return (
-      <SafeAreaView style={styles.errorContainer}>
+      <View
+        style={[
+          styles.errorContainer,
+          {
+            paddingTop: Math.max(
+              insets.top,
+              Platform.OS === 'android' ? (StatusBar.currentHeight ?? 0) : 0
+            ),
+            paddingBottom: insets.bottom,
+          },
+        ]}
+      >
         <StatusBar barStyle="dark-content" backgroundColor="#FFFFFF" />
         <View style={styles.errorInner}>
           <Text style={styles.errorEmoji}>🚧</Text>
@@ -73,7 +107,7 @@ export default function LotDetailsScreen({ lotId, onBack, onSelectSpace }: LotDe
             <Text style={styles.errorBackText}>← Back</Text>
           </TouchableOpacity>
         </View>
-      </SafeAreaView>
+      </View>
     );
   }
 
@@ -83,26 +117,96 @@ export default function LotDetailsScreen({ lotId, onBack, onSelectSpace }: LotDe
     : 0;
   const dailyRateEstimate = lot.pricePerHour * 6; // display-only estimate (6 hr cap convention)
 
+  // Documented verified entrance registry check
+  const verifiedRegistryEntry = lot.id ? VERIFIED_LOT_ENTRANCES[lot.id] : undefined;
+
+  // Prioritize documented entrance coordinates from lot or registry
+  const entranceCoords =
+    lot.entranceCoordinates ||
+    (verifiedRegistryEntry
+      ? { lat: verifiedRegistryEntry.latitude, lng: verifiedRegistryEntry.longitude }
+      : undefined);
+
+  // Verification label is ONLY true if documented in data (verified registry or lot.entranceCoordinates)
+  const isEntranceVerified = Boolean(
+    verifiedRegistryEntry ||
+    (lot.entranceCoordinates && isValidCoordinate(lot.entranceCoordinates.lat, lot.entranceCoordinates.lng))
+  );
+
+  const lotCoords = entranceCoords || LOT_SAMPLE_COORDINATES[lot.id];
+
   const handleReserve = () => {
     onSelectSpace(lot.id);
   };
 
+  const handleNavigate = async () => {
+    setIsNavigating(true);
+    try {
+      // 1. Verify availability
+      const check = await checkLotAvailability(lot.id).catch(() => null);
+      if (check && (!check.isAvailable || check.availableSpaces <= 0)) {
+        Alert.alert(
+          'Parking Lot Full',
+          `Unfortunately, ${lot.name} currently has no reported available spaces. Please select another parking lot.`,
+          [{ text: 'OK' }]
+        );
+        setIsNavigating(false);
+        return;
+      }
+
+      // 2. Resolve destination coordinates prioritizing documented entrance coordinates
+      const destCoords =
+        entranceCoords ||
+        check?.navigationCoordinates ||
+        LOT_SAMPLE_COORDINATES[lot.id];
+
+      // 3. Strict coordinate validation before attempting to build or open navigation URL
+      if (!destCoords || !isValidCoordinate(destCoords.lat, destCoords.lng)) {
+        Alert.alert(
+          'Navigation Unavailable',
+          'Valid entrance coordinates are not available for this parking lot.',
+          [{ text: 'OK' }]
+        );
+        setIsNavigating(false);
+        return;
+      }
+
+      // 4. Launch driving navigation directly to destination coordinates
+      await launchDrivingNavigation({
+        destLat: destCoords.lat,
+        destLng: destCoords.lng,
+        lotName: lot.name,
+        hasEntranceCoordinates: isEntranceVerified,
+      });
+    } catch (err: any) {
+      Alert.alert('Navigation Error', err?.message || 'Could not launch turn-by-turn navigation.');
+    } finally {
+      setIsNavigating(false);
+    }
+  };
+
   return (
-    <SafeAreaView style={styles.safeArea}>
+    <View style={styles.safeArea}>
       <StatusBar barStyle="light-content" backgroundColor="transparent" translucent />
 
       {/* ── Scrollable body ─────────────────────────────────────────────────── */}
       <ScrollView
         style={styles.scrollView}
-        contentContainerStyle={styles.scrollContent}
+        contentContainerStyle={[
+          styles.scrollContent,
+          {
+            paddingBottom:
+              (bottomBarHeight > 0 ? bottomBarHeight : 100 + insets.bottom) + 16,
+          },
+        ]}
         showsVerticalScrollIndicator={false}
       >
         {/* 1. Hero Image + Gradient Overlay ──────────────────────────────── */}
-        <View style={styles.heroContainer}>
-          <Image
-            source={{ uri: lot.imageUrl }}
-            style={styles.heroImage}
-            resizeMode="cover"
+        <View style={[styles.heroContainer, { height: heroHeight }]}>
+          <ParkingLotImage
+            uri={lot.imageUrl}
+            style={[styles.heroImage, { height: heroHeight }]}
+            altName={lot.name}
           />
           {/* Dark gradient overlay */}
           <View style={styles.heroOverlay} />
@@ -111,7 +215,7 @@ export default function LotDetailsScreen({ lotId, onBack, onSelectSpace }: LotDe
           <View
             style={[
               styles.heroTopBar,
-              { paddingTop: Platform.OS === 'android' ? (StatusBar.currentHeight ?? 24) + 8 : 54 },
+              { paddingTop: topBarPaddingTop },
             ]}
           >
             <TouchableOpacity
@@ -293,41 +397,57 @@ export default function LotDetailsScreen({ lotId, onBack, onSelectSpace }: LotDe
           </View>
         )}
 
-        {/* 6. Location (Illustrative static map) ─────────────────────────── */}
+        {/* 6. Location & Verified Entrance Card ─────────────────────────── */}
         <View style={styles.section}>
           <View style={styles.locationHeaderRow}>
-            <Text style={styles.sectionLabel}>LOCATION</Text>
-            <TouchableOpacity activeOpacity={0.7}>
+            <Text style={styles.sectionLabel}>
+              {isEntranceVerified ? 'LOCATION & VERIFIED ENTRANCE' : 'LOCATION & ENTRANCE'}
+            </Text>
+            <TouchableOpacity activeOpacity={0.7} onPress={handleNavigate} disabled={isNavigating}>
               <Text style={styles.openMapsLink}>Open in Maps &gt;</Text>
             </TouchableOpacity>
           </View>
 
-          {/* Static illustrative map matching app design language */}
-          <View style={styles.mapContainer}>
-            {/* Road grid */}
-            <View style={styles.mapBg}>
-              <View style={styles.mapRoadH} />
-              <View style={styles.mapRoadV} />
-              <View style={styles.mapRoadH2} />
-            </View>
-
-            {/* Parking block */}
-            <View style={styles.mapParkingBlock}>
-              <Text style={styles.mapParkingLabel}>PARKING</Text>
-            </View>
-
-            {/* Pin */}
-            <View style={styles.mapPinWrapper}>
-              <View style={styles.mapPinCircle}>
-                <Text style={styles.mapPinLetter}>P</Text>
+          <View style={styles.locationCard}>
+            <View style={styles.locationCardHeader}>
+              <View style={styles.locationIconCircle}>
+                <Text style={styles.locationPinIcon}>📍</Text>
               </View>
-              <View style={styles.mapPinTail} />
+              <View style={styles.locationTextContainer}>
+                <Text style={styles.locationCardTitle}>{lot.name}</Text>
+                <Text style={styles.locationCardAddress}>{lot.address}, Sri Lanka</Text>
+                {lot.entranceName ? (
+                  <Text style={styles.locationEntranceName}>
+                    {isEntranceVerified ? `Verified Entrance: ${lot.entranceName}` : `Vehicle Entrance: ${lot.entranceName}`}
+                  </Text>
+                ) : null}
+                {lotCoords ? (
+                  <Text style={styles.locationCoords}>
+                    {isEntranceVerified
+                      ? `Verified Entrance GPS: ${lotCoords.lat.toFixed(4)}° N, ${lotCoords.lng.toFixed(4)}° E`
+                      : `GPS Coordinates: ${lotCoords.lat.toFixed(4)}° N, ${lotCoords.lng.toFixed(4)}° E`}
+                  </Text>
+                ) : null}
+              </View>
             </View>
 
-            {/* Street label */}
-            <View style={styles.mapStreetLabelWrapper}>
-              <Text style={styles.mapStreetLabel}>Marine Dr.</Text>
-            </View>
+            <TouchableOpacity
+              style={styles.openMapsBtn}
+              activeOpacity={0.85}
+              onPress={handleNavigate}
+              disabled={isNavigating}
+              accessibilityRole="button"
+              accessibilityLabel="Start navigation in Google Maps"
+            >
+              {isNavigating ? (
+                <ActivityIndicator size="small" color="#FFFFFF" />
+              ) : (
+                <>
+                  <Text style={styles.openMapsBtnIcon}>🧭</Text>
+                  <Text style={styles.openMapsBtnText}>Start Navigation in Google Maps</Text>
+                </>
+              )}
+            </TouchableOpacity>
           </View>
         </View>
 
@@ -342,12 +462,15 @@ export default function LotDetailsScreen({ lotId, onBack, onSelectSpace }: LotDe
           </View>
         )}
 
-        {/* Spacer so bottom bar doesn't cover last section */}
+        {/* Spacer not needed with dynamic scrollContent paddingBottom */}
         <View style={styles.bottomSpacer} />
       </ScrollView>
 
       {/* ── Sticky Bottom Bar ─────────────────────────────────────────────── */}
-      <View style={styles.bottomBar}>
+      <View
+        style={[styles.bottomBar, { paddingBottom: bottomBarPaddingBottom }]}
+        onLayout={(e) => setBottomBarHeight(e.nativeEvent.layout.height)}
+      >
         <View style={styles.bottomPriceBlock}>
           <Text style={styles.bottomStartingLabel}>Starting from</Text>
           <Text style={styles.bottomPriceMain}>
@@ -357,18 +480,38 @@ export default function LotDetailsScreen({ lotId, onBack, onSelectSpace }: LotDe
           <Text style={styles.bottomPriceDay}>Rs. {dailyRateEstimate} / day max</Text>
         </View>
 
-        <TouchableOpacity
-          style={styles.reserveBtn}
-          activeOpacity={0.88}
-          onPress={handleReserve}
-          accessibilityRole="button"
-          accessibilityLabel={`Reserve a space at ${lot.name}`}
-        >
-          <Text style={styles.reserveBtnIcon}>✓</Text>
-          <Text style={styles.reserveBtnText}>Reserve a Space</Text>
-        </TouchableOpacity>
+        <View style={styles.bottomButtonsRow}>
+          <TouchableOpacity
+            style={styles.navigateBtn}
+            activeOpacity={0.85}
+            onPress={handleNavigate}
+            disabled={isNavigating}
+            accessibilityRole="button"
+            accessibilityLabel={`Navigate to ${lot.name}`}
+          >
+            {isNavigating ? (
+              <ActivityIndicator size="small" color="#FFFFFF" />
+            ) : (
+              <>
+                <Text style={styles.navigateBtnIcon}>🧭</Text>
+                <Text style={styles.navigateBtnText}>Navigate</Text>
+              </>
+            )}
+          </TouchableOpacity>
+
+          <TouchableOpacity
+            style={styles.reserveBtn}
+            activeOpacity={0.88}
+            onPress={handleReserve}
+            accessibilityRole="button"
+            accessibilityLabel={`Reserve a space at ${lot.name}`}
+          >
+            <Text style={styles.reserveBtnIcon}>✓</Text>
+            <Text style={styles.reserveBtnText}>Reserve</Text>
+          </TouchableOpacity>
+        </View>
       </View>
-    </SafeAreaView>
+    </View>
   );
 }
 
@@ -711,112 +854,75 @@ const styles = StyleSheet.create({
     fontWeight: '700',
     color: DriverColors.navyDark,
   },
-  mapContainer: {
-    height: 140,
+  locationCard: {
+    backgroundColor: '#F8FAFC',
     borderRadius: 14,
-    overflow: 'hidden',
-    backgroundColor: '#E9F0F8',
     borderWidth: 1,
-    borderColor: DriverColors.cardBorder,
-    position: 'relative',
+    borderColor: '#E2E8F0',
+    padding: 14,
+    marginTop: 4,
   },
-  mapBg: {
-    ...StyleSheet.absoluteFill,
+  locationCardHeader: {
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+    marginBottom: 12,
   },
-  mapRoadH: {
-    position: 'absolute',
-    top: '40%',
-    left: 0,
-    right: 0,
-    height: 22,
-    backgroundColor: '#FFFFFF',
-    opacity: 0.85,
-  },
-  mapRoadH2: {
-    position: 'absolute',
-    top: '70%',
-    left: 0,
-    right: 0,
-    height: 14,
-    backgroundColor: '#D7E5F2',
-  },
-  mapRoadV: {
-    position: 'absolute',
-    top: 0,
-    bottom: 0,
-    left: '45%',
-    width: 18,
-    backgroundColor: '#FFFFFF',
-    opacity: 0.7,
-  },
-  mapParkingBlock: {
-    position: 'absolute',
-    top: '10%',
-    left: '55%',
-    right: 12,
-    height: '35%',
-    borderRadius: 6,
-    backgroundColor: '#D0DFEE',
+  locationIconCircle: {
+    width: 38,
+    height: 38,
+    borderRadius: 19,
+    backgroundColor: '#EFF6FF',
+    borderWidth: 1,
+    borderColor: '#BFDBFE',
     alignItems: 'center',
     justifyContent: 'center',
-    borderWidth: 1,
-    borderColor: '#B8CEE0',
+    marginRight: 12,
   },
-  mapParkingLabel: {
-    fontSize: 9,
-    fontWeight: '800',
-    color: '#5B7A94',
-    letterSpacing: 0.8,
+  locationPinIcon: {
+    fontSize: 18,
   },
-  mapPinWrapper: {
-    position: 'absolute',
-    top: '28%',
-    left: '42%',
-    alignItems: 'center',
+  locationTextContainer: {
+    flex: 1,
   },
-  mapPinCircle: {
-    width: 34,
-    height: 34,
-    borderRadius: 17,
-    backgroundColor: DriverColors.navyDark,
-    alignItems: 'center',
-    justifyContent: 'center',
-    borderWidth: 2.5,
-    borderColor: '#FFFFFF',
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.3,
-    shadowRadius: 4,
-    elevation: 6,
+  locationCardTitle: {
+    fontSize: 14.5,
+    fontWeight: '700',
+    color: DriverColors.navyHeading,
   },
-  mapPinLetter: {
-    color: '#FFFFFF',
-    fontSize: 15,
-    fontWeight: '800',
+  locationCardAddress: {
+    fontSize: 12.5,
+    color: DriverColors.textSecondary,
+    marginTop: 2,
   },
-  mapPinTail: {
-    width: 0,
-    height: 0,
-    borderLeftWidth: 5,
-    borderRightWidth: 5,
-    borderTopWidth: 8,
-    borderLeftColor: 'transparent',
-    borderRightColor: 'transparent',
-    borderTopColor: DriverColors.navyDark,
-    marginTop: -1,
-  },
-  mapStreetLabelWrapper: {
-    position: 'absolute',
-    left: 8,
-    top: '36%',
-    transform: [{ rotate: '-90deg' }],
-    transformOrigin: 'left center',
-  },
-  mapStreetLabel: {
-    fontSize: 9,
+  locationEntranceName: {
+    fontSize: 12,
     fontWeight: '600',
-    color: '#8BA5BE',
-    letterSpacing: 0.5,
+    color: '#2563EB',
+    marginTop: 4,
+  },
+  locationCoords: {
+    fontSize: 11,
+    color: '#64748B',
+    marginTop: 3,
+    fontStyle: 'italic',
+  },
+  openMapsBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: DriverColors.brandPrimary,
+    paddingVertical: 11,
+    paddingHorizontal: 16,
+    borderRadius: 10,
+    gap: 8,
+  },
+  openMapsBtnIcon: {
+    fontSize: 16,
+  },
+  openMapsBtnText: {
+    color: '#FFFFFF',
+    fontSize: 13.5,
+    fontWeight: '700',
   },
 
   // ── 7. Contact ──
@@ -833,7 +939,7 @@ const styles = StyleSheet.create({
   },
 
   // ── Bottom spacer ──
-  bottomSpacer: { height: 100 },
+  bottomSpacer: { height: 0 },
 
   // ── Sticky bottom bar ──
   bottomBar: {
@@ -849,7 +955,6 @@ const styles = StyleSheet.create({
     justifyContent: 'space-between',
     paddingHorizontal: 18,
     paddingTop: 12,
-    paddingBottom: Platform.OS === 'android' ? 16 : 28,
     shadowColor: '#000',
     shadowOffset: { width: 0, height: -2 },
     shadowOpacity: 0.06,
@@ -883,14 +988,41 @@ const styles = StyleSheet.create({
     color: DriverColors.textSecondary,
     marginTop: 2,
   },
+  bottomButtonsRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+  },
+  navigateBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: '#1E3A8A',
+    paddingHorizontal: 16,
+    paddingVertical: 14,
+    borderRadius: 28,
+    gap: 6,
+    shadowColor: '#1E3A8A',
+    shadowOffset: { width: 0, height: 3 },
+    shadowOpacity: 0.25,
+    shadowRadius: 6,
+    elevation: 5,
+  },
+  navigateBtnIcon: {
+    fontSize: 15,
+  },
+  navigateBtnText: {
+    color: '#FFFFFF',
+    fontSize: 14,
+    fontWeight: '800',
+  },
   reserveBtn: {
     flexDirection: 'row',
     alignItems: 'center',
     backgroundColor: DriverColors.orangePrimary,
-    paddingHorizontal: 22,
-    paddingVertical: 15,
+    paddingHorizontal: 18,
+    paddingVertical: 14,
     borderRadius: 28,
-    gap: 8,
+    gap: 6,
     shadowColor: DriverColors.orangePrimary,
     shadowOffset: { width: 0, height: 4 },
     shadowOpacity: 0.35,
@@ -899,12 +1031,12 @@ const styles = StyleSheet.create({
   },
   reserveBtnIcon: {
     color: '#FFFFFF',
-    fontSize: 16,
+    fontSize: 15,
     fontWeight: '800',
   },
   reserveBtnText: {
     color: '#FFFFFF',
-    fontSize: 15,
+    fontSize: 14,
     fontWeight: '800',
     letterSpacing: 0.1,
   },

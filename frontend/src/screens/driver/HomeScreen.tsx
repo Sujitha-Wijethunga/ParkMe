@@ -6,22 +6,20 @@ import {
   ScrollView,
   TextInput,
   TouchableOpacity,
-  SafeAreaView,
   StatusBar,
   Platform,
-  Image,
-  Dimensions,
 } from 'react-native';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { DriverColors } from '../../constants/colors';
 import {
   SAMPLE_NEARBY_PARKING_LOTS,
   DRIVER_FILTER_CHIPS,
-  STATIC_MAP_MARKERS,
   ParkingLotCardItem,
   DriverFilterChip,
 } from '../../constants/driverSampleData';
 import DriverBottomNav, { DriverTabType } from '../../components/DriverBottomNav';
 import ParkingLotCard from '../../components/ParkingLotCard';
+import DriverNotificationsModal from '../../components/DriverNotificationsModal';
 
 interface HomeScreenProps {
   parkingLots?: ParkingLotCardItem[];
@@ -35,9 +33,8 @@ interface HomeScreenProps {
   onSeeAllPress?: (query?: string, chip?: DriverFilterChip) => void;
   onSearchSubmit?: (query: string, chip?: DriverFilterChip) => void;
   onBottomTabPress?: (tab: DriverTabType) => void;
+  onOpenNearbyFiveMin?: () => void;
 }
-
-const { width: SCREEN_WIDTH } = Dimensions.get('window');
 
 /**
  * Driver Parking Finder / Home Screen
@@ -58,9 +55,18 @@ export default function HomeScreen({
   onSeeAllPress,
   onSearchSubmit,
   onBottomTabPress,
+  onOpenNearbyFiveMin,
 }: HomeScreenProps) {
+  const insets = useSafeAreaInsets();
+  const topPadding = Math.max(
+    insets.top,
+    Platform.OS === 'android' ? (StatusBar.currentHeight ?? 0) : 0
+  );
+
   const [searchQuery, setSearchQuery] = useState('');
   const [selectedChip, setSelectedChip] = useState<DriverFilterChip>('Nearest');
+  const [parkingLots] = useState<ParkingLotCardItem[]>(SAMPLE_NEARBY_PARKING_LOTS);
+  const [notificationsVisible, setNotificationsVisible] = useState(false);
 
   // Handle bottom navigation tab switching
   const handleTabPress = (tab: DriverTabType) => {
@@ -76,7 +82,7 @@ export default function HomeScreen({
   };
 
   return (
-    <SafeAreaView style={styles.safeArea}>
+    <View style={[styles.safeArea, { paddingTop: topPadding }]}>
       <StatusBar barStyle="dark-content" backgroundColor="#FFFFFF" />
 
       {/* Main Scrollable Content */}
@@ -93,14 +99,19 @@ export default function HomeScreen({
               <Text style={styles.greetingTitle}>Hi, {userName}</Text>
               <Text style={styles.waveEmoji}>👋</Text>
             </View>
-            <Text style={styles.greetingSubtitle}>Find your spot in Colombo</Text>
+            <Text style={styles.greetingSubtitle}>Find available parking in Sri Lanka</Text>
           </View>
 
           {/* Notification Bell Button */}
           <TouchableOpacity
             style={styles.notificationBtn}
             activeOpacity={0.7}
-            onPress={onNavigateToNotifications}
+            onPress={() => {
+              if (onNavigateToNotifications) {
+                onNavigateToNotifications();
+              }
+              setNotificationsVisible(true);
+            }}
             accessibilityLabel="Notifications"
           >
             <NotificationBellIcon />
@@ -184,16 +195,52 @@ export default function HomeScreen({
           })}
         </ScrollView>
 
-        {/* 4. Static Map Graphic Preview (Documented Non-Functional Milestone Preview) */}
+        {/* 3b. Prominent "Find Fastest Available Parking" Feature Button */}
+        <TouchableOpacity
+          style={styles.nearbyFiveMinBtn}
+          activeOpacity={0.88}
+          onPress={() => {
+            if (onOpenNearbyFiveMin) {
+              onOpenNearbyFiveMin();
+            } else if (onNavigateToMap) {
+              onNavigateToMap();
+            }
+          }}
+          accessibilityRole="button"
+          accessibilityLabel="Find Fastest Available Parking"
+        >
+          <View style={styles.nearbyFiveMinGlowIcon}>
+            <Text style={styles.nearbyFiveMinIconText}>⚡</Text>
+          </View>
+          <View style={styles.nearbyFiveMinBody}>
+            <View style={styles.nearbyFiveMinTitleRow}>
+              <Text style={styles.nearbyFiveMinTitle}>Find Fastest Available Parking</Text>
+              <View style={styles.nearbyFiveMinLiveBadge}>
+                <Text style={styles.nearbyFiveMinLiveBadgeText}>LIVE GPS</Text>
+              </View>
+            </View>
+            <Text style={styles.nearbyFiveMinSubtitle}>
+              Reachable spots ranked by live travel time & availability
+            </Text>
+          </View>
+          <View style={styles.nearbyFiveMinChevron}>
+            <Text style={styles.nearbyFiveMinChevronText}>›</Text>
+          </View>
+        </TouchableOpacity>
+
+        {/* 4. GPS Spatial Radar Preview Card */}
         <View style={styles.mapPreviewCard}>
-          {/* Stylized vector map background representation */}
           <View style={styles.mapBackgroundLayer}>
-            {/* Primary slanted avenue road */}
-            <View style={styles.mapAvenueRoad} />
-            {/* Secondary cross streets */}
-            <View style={styles.mapCrossStreet1} />
-            <View style={styles.mapCrossStreet2} />
-            <View style={styles.mapCurvedRoad} />
+            {/* Compass / Directional North Indicator */}
+            <View style={styles.compassContainer}>
+              <Text style={styles.compassLabel}>🧭 N</Text>
+            </View>
+
+            {/* Radar / Distance rings */}
+            <View style={styles.radarRingOuter} />
+            <View style={styles.radarRingInner} />
+            <View style={styles.radarCrosshairH} />
+            <View style={styles.radarCrosshairV} />
 
             {/* Current User Location Blue Indicator with Pulse Aura */}
             <View style={styles.userLocationPulseWrapper}>
@@ -201,32 +248,40 @@ export default function HomeScreen({
               <View style={styles.userLocationDot} />
             </View>
 
-            {/* Price Markers Placed on Map */}
-            {STATIC_MAP_MARKERS.map((marker) => (
-              <View
-                key={marker.id}
-                style={[
-                  styles.mapPricePill,
-                  {
-                    top: `${marker.topPercent}%`,
-                    left: `${marker.leftPercent}%`,
-                  },
-                ]}
-              >
-                <View style={styles.mapPriceDot} />
-                <Text style={styles.mapPriceText}>{marker.price}</Text>
-              </View>
-            ))}
+            {/* Real Nearby Lot Price Markers */}
+            {parkingLots.slice(0, 3).map((lot, idx) => {
+              const offsets = [
+                { topPercent: 22, leftPercent: 18 },
+                { topPercent: 32, leftPercent: 54 },
+                { topPercent: 58, leftPercent: 68 },
+              ];
+              const pos = offsets[idx] || { topPercent: 40, leftPercent: 40 };
+              return (
+                <View
+                  key={lot.id}
+                  style={[
+                    styles.mapPricePill,
+                    {
+                      top: `${pos.topPercent}%`,
+                      left: `${pos.leftPercent}%`,
+                    },
+                  ]}
+                >
+                  <View style={styles.mapPriceDot} />
+                  <Text style={styles.mapPriceText}>Rs.{lot.pricePerHour}</Text>
+                </View>
+              );
+            })}
           </View>
 
-          {/* "View Full Map" Action Button */}
+          {/* "View Interactive Map" Action Button */}
           <TouchableOpacity
             style={styles.viewFullMapBtn}
             activeOpacity={0.85}
             onPress={onNavigateToMap}
           >
-            <Text style={styles.compassEmoji}>🧭</Text>
-            <Text style={styles.viewFullMapText}>View Full Map</Text>
+            <Text style={styles.compassEmoji}>📍</Text>
+            <Text style={styles.viewFullMapText}>Open Interactive Map</Text>
             <Text style={styles.chevronRightText}>›</Text>
           </TouchableOpacity>
         </View>
@@ -235,7 +290,7 @@ export default function HomeScreen({
         <View style={styles.sectionHeaderRow}>
           <View>
             <Text style={styles.sectionTitle}>Nearby Parking</Text>
-            <Text style={styles.sectionSubtitle}>Real-time available spaces in Colombo</Text>
+            <Text style={styles.sectionSubtitle}>Real-time available spaces</Text>
           </View>
           <TouchableOpacity
             activeOpacity={0.7}
@@ -247,7 +302,7 @@ export default function HomeScreen({
               }
             }}
           >
-            <Text style={styles.seeAllText}>See All (14)</Text>
+            <Text style={styles.seeAllText}>See All ({parkingLots.length})</Text>
           </TouchableOpacity>
         </View>
 
@@ -265,7 +320,13 @@ export default function HomeScreen({
 
       {/* 7. Driver Bottom Navigation */}
       <DriverBottomNav activeTab="home" onTabPress={handleTabPress} />
-    </SafeAreaView>
+
+      {/* 8. Driver Notifications Modal */}
+      <DriverNotificationsModal
+        visible={notificationsVisible}
+        onClose={() => setNotificationsVisible(false)}
+      />
+    </View>
   );
 }
 
@@ -357,7 +418,6 @@ const styles = StyleSheet.create({
   safeArea: {
     flex: 1,
     backgroundColor: '#FFFFFF',
-    paddingTop: Platform.OS === 'android' ? StatusBar.currentHeight : 0,
   },
   scrollView: {
     flex: 1,
@@ -535,41 +595,59 @@ const styles = StyleSheet.create({
   mapBackgroundLayer: {
     ...StyleSheet.absoluteFill,
   },
-  mapAvenueRoad: {
+  compassContainer: {
+    position: 'absolute',
+    top: 10,
+    right: 12,
+    backgroundColor: 'rgba(255, 255, 255, 0.92)',
+    paddingHorizontal: 7,
+    paddingVertical: 3,
+    borderRadius: 8,
+    borderWidth: 1,
+    borderColor: '#CBD5E1',
+    zIndex: 5,
+  },
+  compassLabel: {
+    fontSize: 11,
+    fontWeight: '700',
+    color: DriverColors.navyHeading,
+  },
+  radarRingOuter: {
+    position: 'absolute',
+    top: 15,
+    left: 45,
+    width: 140,
+    height: 140,
+    borderRadius: 70,
+    borderWidth: 1,
+    borderColor: 'rgba(30, 58, 138, 0.15)',
+    borderStyle: 'dashed',
+  },
+  radarRingInner: {
     position: 'absolute',
     top: 45,
-    left: -20,
-    width: SCREEN_WIDTH + 60,
-    height: 22,
-    backgroundColor: DriverColors.mapRoadMain,
-    transform: [{ rotate: '-12deg' }],
+    left: 75,
+    width: 80,
+    height: 80,
+    borderRadius: 40,
+    borderWidth: 1,
+    borderColor: 'rgba(30, 58, 138, 0.22)',
   },
-  mapCrossStreet1: {
+  radarCrosshairH: {
     position: 'absolute',
-    top: -10,
-    left: 80,
-    width: 16,
-    height: 190,
-    backgroundColor: DriverColors.mapRoad,
-    transform: [{ rotate: '25deg' }],
+    top: 85,
+    left: 20,
+    right: 20,
+    height: 1,
+    backgroundColor: 'rgba(30, 58, 138, 0.1)',
   },
-  mapCrossStreet2: {
+  radarCrosshairV: {
     position: 'absolute',
-    top: -10,
-    right: 90,
-    width: 18,
-    height: 190,
-    backgroundColor: DriverColors.mapRoad,
-    transform: [{ rotate: '-35deg' }],
-  },
-  mapCurvedRoad: {
-    position: 'absolute',
-    bottom: -15,
-    left: 30,
-    width: SCREEN_WIDTH - 80,
-    height: 20,
-    backgroundColor: DriverColors.mapRoadMain,
-    transform: [{ rotate: '5deg' }],
+    top: 10,
+    bottom: 10,
+    left: 115,
+    width: 1,
+    backgroundColor: 'rgba(30, 58, 138, 0.1)',
   },
   // User Location Dot
   userLocationPulseWrapper: {
@@ -685,6 +763,85 @@ const styles = StyleSheet.create({
   // Cards List
   cardsListContainer: {
     gap: 12,
+  },
+
+  // 3b. Nearby 5-Min Feature Button
+  nearbyFiveMinBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: '#0F172A',
+    borderRadius: 16,
+    paddingHorizontal: 16,
+    paddingVertical: 14,
+    marginVertical: 14,
+    borderWidth: 1.5,
+    borderColor: '#3B82F6',
+    shadowColor: '#2563EB',
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.28,
+    shadowRadius: 8,
+    elevation: 6,
+  },
+  nearbyFiveMinGlowIcon: {
+    width: 42,
+    height: 42,
+    borderRadius: 21,
+    backgroundColor: '#1E293B',
+    borderWidth: 1,
+    borderColor: '#38BDF8',
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginRight: 12,
+  },
+  nearbyFiveMinIconText: {
+    fontSize: 20,
+  },
+  nearbyFiveMinBody: {
+    flex: 1,
+  },
+  nearbyFiveMinTitleRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    marginBottom: 3,
+  },
+  nearbyFiveMinTitle: {
+    fontSize: 15,
+    fontWeight: '800',
+    color: '#FFFFFF',
+    letterSpacing: -0.2,
+  },
+  nearbyFiveMinLiveBadge: {
+    backgroundColor: '#10B981',
+    paddingHorizontal: 6,
+    paddingVertical: 2,
+    borderRadius: 6,
+  },
+  nearbyFiveMinLiveBadgeText: {
+    color: '#FFFFFF',
+    fontSize: 9,
+    fontWeight: '800',
+    letterSpacing: 0.5,
+  },
+  nearbyFiveMinSubtitle: {
+    fontSize: 12,
+    color: '#94A3B8',
+    fontWeight: '500',
+  },
+  nearbyFiveMinChevron: {
+    width: 28,
+    height: 28,
+    borderRadius: 14,
+    backgroundColor: '#1E293B',
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginLeft: 8,
+  },
+  nearbyFiveMinChevronText: {
+    color: '#38BDF8',
+    fontSize: 18,
+    fontWeight: '700',
+    lineHeight: 20,
   },
 });
 

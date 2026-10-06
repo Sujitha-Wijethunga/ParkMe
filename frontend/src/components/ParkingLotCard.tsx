@@ -4,10 +4,10 @@ import {
   Text,
   StyleSheet,
   TouchableOpacity,
-  Image,
 } from 'react-native';
 import { DriverColors } from '../constants/colors';
 import { ParkingLotCardItem } from '../constants/driverSampleData';
+import ParkingLotImage from './ParkingLotImage';
 
 interface ParkingLotCardProps {
   lot: ParkingLotCardItem;
@@ -38,10 +38,13 @@ export default function ParkingLotCard({
       <View style={styles.contentRow}>
         {/* Left Thumbnail Image with EV Badge */}
         <View style={styles.imageContainer}>
-          <Image
+          <ParkingLotImage
             source={{ uri: lot.imageUrl }}
             style={styles.image}
             resizeMode="cover"
+            parkingType={lot.parkingType}
+            isCovered={lot.isCovered}
+            accessibilityLabel={`${lot.name} photo`}
           />
           {lot.hasEVCharging && (
             <View style={styles.evBadge}>

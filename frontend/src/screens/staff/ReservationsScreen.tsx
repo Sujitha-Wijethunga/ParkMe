@@ -5,12 +5,13 @@ import {
   StyleSheet,
   ScrollView,
   TouchableOpacity,
-  SafeAreaView,
   Platform,
   StatusBar,
   TextInput,
   Alert,
 } from 'react-native';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
+
 export interface ReservationItem {
   id: string;
   parkingLotId: string;
@@ -42,6 +43,14 @@ export default function ReservationsScreen({
   authToken,
 }: ReservationsScreenProps) {
   const [reservations, setReservations] = useState<ReservationItem[]>([]);
+  const insets = useSafeAreaInsets();
+  const topPadding = Math.max(
+    insets.top,
+    Platform.OS === 'android' ? (StatusBar.currentHeight ?? 0) : 0
+  );
+  const bottomPadding = Math.max(insets.bottom, 16) + 24;
+
+  const [reservations] = useState<ReservationItem[]>(initialReservations);
   const [searchQuery, setSearchQuery] = useState('');
   const [activeTab, setActiveTab] = useState<'Upcoming' | 'Active' | 'Completed' | 'Cancelled'>('Upcoming');
   const [expandedId, setExpandedId] = useState<string | null>(null);
@@ -172,7 +181,7 @@ export default function ReservationsScreen({
   };
 
   return (
-    <SafeAreaView style={styles.safeArea}>
+    <View style={[styles.safeArea, { paddingTop: topPadding }]}>
       <StatusBar barStyle="dark-content" backgroundColor="#FFFFFF" />
 
       {/* Header */}
@@ -287,7 +296,7 @@ export default function ReservationsScreen({
       {/* Reservations List */}
       <ScrollView
         style={styles.scrollList}
-        contentContainerStyle={styles.scrollContent}
+        contentContainerStyle={[styles.scrollContent, { paddingBottom: bottomPadding }]}
         showsVerticalScrollIndicator={false}
       >
         {!isLoading && filteredReservations.length === 0 && (
@@ -420,7 +429,7 @@ export default function ReservationsScreen({
           );
         })}
       </ScrollView>
-    </SafeAreaView>
+    </View>
   );
 }
 
@@ -428,7 +437,6 @@ const styles = StyleSheet.create({
   safeArea: {
     flex: 1,
     backgroundColor: '#FFFFFF',
-    paddingTop: Platform.OS === 'android' ? StatusBar.currentHeight : 0,
   },
   header: {
     flexDirection: 'row',
@@ -570,7 +578,6 @@ const styles = StyleSheet.create({
   scrollContent: {
     paddingHorizontal: 16,
     paddingTop: 8,
-    paddingBottom: 32,
     gap: 12,
   },
   emptyText: {
