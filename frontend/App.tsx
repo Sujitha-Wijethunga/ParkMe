@@ -20,6 +20,7 @@ import WelcomeScreen from './src/screens/driver/WelcomeScreen';
 import DriverLoginScreen from './src/screens/driver/DriverLoginScreen';
 import DriverSignUpScreen from './src/screens/driver/DriverSignUpScreen';
 import HomeScreen from './src/screens/driver/HomeScreen';
+import DriverProfileScreen from './src/screens/driver/DriverProfileScreen';
 import SearchResultsScreen, { SearchResultsViewMode } from './src/screens/driver/SearchResultsScreen';
 import LotDetailsScreen from './src/screens/driver/LotDetailsScreen';
 import SelectSpaceScreen, { SpaceSelectionResult } from './src/screens/driver/SelectSpaceScreen';
@@ -73,6 +74,7 @@ type ScreenType =
   | 'driver-login'
   | 'driver-signup'
   | 'driver-home'
+  | 'driver-profile'
   | 'driver-search'
   | 'driver-lot-details'
   | 'driver-space-selection'
@@ -149,6 +151,7 @@ const mapLotToDriverCard = (lot: any): ParkingLotCardItem => ({
 export default function App() {
   const [appIsReady, setAppIsReady] = useState(false);
   const [currentScreen, setCurrentScreen] = useState<ScreenType>('driver-welcome');
+  const [profileReturnScreen, setProfileReturnScreen] = useState<ScreenType>('driver-home');
   const [driverUser, setDriverUser] = useState<DriverUser | null>(null);
   const [driverToken, setDriverToken] = useState<string | null>(null);
 
@@ -511,16 +514,8 @@ export default function App() {
   };
 
   const handleDriverProfilePress = () => {
-    const displayName = driverUser?.name || 'Driver';
-    const displayEmail = driverUser?.email || '';
-    Alert.alert(
-      displayName,
-      `Email: ${displayEmail}\nRole: Driver`,
-      [
-        { text: 'Cancel', style: 'cancel' },
-        { text: 'Log Out', style: 'destructive', onPress: handleDriverLogout },
-      ]
-    );
+    setProfileReturnScreen(currentScreen);
+    setCurrentScreen('driver-profile');
   };
 
   const handleLoginSuccess = (user: any, token: string) => {
@@ -917,6 +912,19 @@ export default function App() {
               handleOpenBookings();
             }
           }}
+        />
+      )}
+      {currentScreen === 'driver-profile' && driverUser && driverToken && (
+        <DriverProfileScreen
+          token={driverToken}
+          userId={driverUser._id}
+          initialUser={driverUser}
+          onBack={() => setCurrentScreen(profileReturnScreen)}
+          onNavigateHome={() => setCurrentScreen('driver-home')}
+          onNavigateMap={() => handleOpenSearch('', 'map', 'Nearest')}
+          onNavigateBookings={handleOpenBookings}
+          onLogout={() => void handleDriverLogout()}
+          onSessionExpired={() => void handleDriverLogout()}
         />
       )}
       {currentScreen === 'driver-search' && (
