@@ -154,6 +154,10 @@ export default function App() {
   const [appIsReady, setAppIsReady] = useState(false);
   const [currentScreen, setCurrentScreen] = useState<ScreenType>('driver-welcome');
   const [profileReturnScreen, setProfileReturnScreen] = useState<ScreenType>('driver-home');
+  const [bookingDetailsReturnScreen, setBookingDetailsReturnScreen] =
+    useState<ScreenType>('driver-bookings');
+  const [cancellationReturnScreen, setCancellationReturnScreen] =
+    useState<ScreenType>('driver-bookings');
   const [driverUser, setDriverUser] = useState<DriverUser | null>(null);
   const [driverToken, setDriverToken] = useState<string | null>(null);
 
@@ -242,6 +246,7 @@ export default function App() {
   const [bookingDraft, setBookingDraft] = useState<BookingDraft | null>(null);
   /** NEW: booking used by Payment, Booking Confirmed and Navigation screens. */
   const [confirmedBooking, setConfirmedBooking] = useState<BookingDetails | null>(null);
+  const [confirmedReservation, setConfirmedReservation] = useState<DriverReservation | null>(null);
   const [selectedReservationId, setSelectedReservationId] = useState<string | null>(null);
   const [reservationToCancel, setReservationToCancel] = useState<DriverReservation | null>(null);
   const [reservationToRelease, setReservationToRelease] = useState<DriverReservation | null>(null);
@@ -393,6 +398,7 @@ export default function App() {
 
   const handleSelectReservation = (reservation: DriverReservation) => {
     setSelectedReservationId(reservation._id);
+    setBookingDetailsReturnScreen(currentScreen);
     setCurrentScreen(
       reservation.status === 'active' || isWithinScheduledWindow(reservation)
         ? 'driver-active-parking'
@@ -461,11 +467,12 @@ export default function App() {
       throw new Error('Your booking details are incomplete. Please go back and try again.');
     }
 
-    await saveConfirmedBooking({
+    const savedReservation = await saveConfirmedBooking({
       userId: driverUser?._id || 'guest',
       booking: paid,
       startTime: bookingDraft.arrivalTime,
     });
+    setConfirmedReservation(savedReservation);
     setConfirmedBooking(paid);
     setCurrentScreen('driver-booking-confirmed');
   };
@@ -473,6 +480,7 @@ export default function App() {
   /** NEW: Cancel / finish: clear the booking and go Home */
   const resetBookingFlow = () => {
     setConfirmedBooking(null);
+    setConfirmedReservation(null);
     setBookingSelection(null);
     setBookingDraft(null);
     setCurrentScreen('driver-home');
@@ -954,6 +962,7 @@ export default function App() {
           onSelectBooking={handleSelectReservation}
           onCancelBooking={(reservation) => {
             setReservationToCancel(reservation);
+            setCancellationReturnScreen('driver-bookings');
             setCurrentScreen('driver-cancel-booking');
           }}
           onViewActiveParking={() => {
@@ -970,7 +979,7 @@ export default function App() {
           token={driverToken}
           userId={driverUser?._id || 'guest'}
           reservation={reservationToCancel}
-          onBack={() => setCurrentScreen('driver-bookings')}
+          onBack={() => setCurrentScreen(bookingDetailsReturnScreen)}
           onDone={() => {
             setReservationToCancel(null);
             setCurrentScreen('driver-bookings');
@@ -982,7 +991,7 @@ export default function App() {
           token={driverToken}
           userId={driverUser?._id || 'guest'}
           reservationId={selectedReservationId}
-          onBack={() => setCurrentScreen('driver-bookings')}
+          onBack={() => setCurrentScreen(cancellationReturnScreen)}
           onNavigateHome={() => setCurrentScreen('driver-home')}
           onNavigateMap={() => handleOpenSearch('', 'map', 'Nearest')}
           onNavigateProfile={handleDriverProfilePress}
@@ -1058,11 +1067,17 @@ export default function App() {
           onPay={handlePaid}
         />
       )}
-      {currentScreen === 'driver-booking-confirmed' && confirmedBooking && (
+      {currentScreen === 'driver-booking-confirmed' && confirmedBooking && confirmedReservation && (
         <BookingConfirmedScreen
           booking={confirmedBooking}
+          reservation={confirmedReservation}
           onGetDirections={() => setCurrentScreen('driver-navigation')}
-          onCancel={resetBookingFlow}
+          onConfirmBooking={resetBookingFlow}
+          onCancel={() => {
+            setReservationToCancel(confirmedReservation);
+            setCancellationReturnScreen('driver-booking-confirmed');
+            setCurrentScreen('driver-cancel-booking');
+          }}
         />
       )}
       {currentScreen === 'driver-navigation' && confirmedBooking && (
