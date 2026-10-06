@@ -11,6 +11,7 @@ import {
   KeyboardAvoidingView,
   Image,
   BackHandler,
+  Modal,
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { DriverColors } from '../../constants/colors';
@@ -23,7 +24,6 @@ import {
   BOOKING_MIN_DURATION_HRS,
   computeBreakdown,
   defaultArrivalTime,
-  formatArrivalDate,
   formatTime12,
   validateDraft,
 } from '../../constants/bookingDraft';
@@ -40,33 +40,192 @@ interface BookingSummaryScreenProps {
   onDraftChange?: (draft: BookingDraft) => void;
   /** Returns to SelectSpaceScreen with selection intact. */
   onBack: () => void;
-  /**
-   * Called when the driver confirms the booking summary.
-   * Payment and reservation creation are the next milestone.
-   * The caller should show a clear placeholder message.
-   */
+  /** Called when the driver confirms the booking summary. */
   onProceed: (payload: ConfirmedBookingPayload) => void;
 }
 
-/* ── Arrival time stepper helpers ──────────────────────────────────────── */
+/* ── Constants & date helpers ──────────────────────────────────────────── */
 
-function clampArrival(date: Date): Date {
-  const now = new Date();
-  const minArrival = new Date(now.getTime() + 30 * 60 * 1000);
-  if (date <= minArrival) {
-    const next = new Date(minArrival);
-    next.setHours(next.getHours() + 1, 0, 0, 0);
-    return next;
-  }
-  return date;
+/** Earliest allowed arrival, in minutes from now. */
+const MIN_ARRIVAL_LEAD_MIN = 15;
+/** How many days ahead a driver may book. */
+const MAX_ADVANCE_DAYS = 60;
+/** Quick-pick duration chips (filtered by min/max constants). */
+const DURATION_CHIPS = [1, 2, 3, 4, 6, 8, 12];
+
+const MONTHS = [
+  'January', 'February', 'March', 'April', 'May', 'June',
+  'July', 'August', 'September', 'October', 'November', 'December',
+];
+const MONTHS_SHORT = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+const DAYS_SHORT = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
+const WEEKDAY_HEADERS = ['S', 'M', 'T', 'W', 'T', 'F', 'S'];
+
+function startOfDay(d: Date): Date {
+  const n = new Date(d);
+  n.setHours(0, 0, 0, 0);
+  return n;
 }
 
-function stepHour(date: Date, delta: number): Date {
-  const next = new Date(date.getTime() + delta * 60 * 60 * 1000);
-  return clampArrival(next);
+function sameDay(a: Date, b: Date): boolean {
+  return (
+    a.getFullYear() === b.getFullYear() &&
+    a.getMonth() === b.getMonth() &&
+    a.getDate() === b.getDate()
+  );
 }
 
-/* ── Mini Map Thumbnail Graphic (matches ParkMe-08-BookingSummary reference) ── */
+/** e.g. "Fri, 18 Sep 2026" */
+function formatLongDate(d: Date): string {
+  return `${DAYS_SHORT[d.getDay()]}, ${d.getDate()} ${MONTHS_SHORT[d.getMonth()]} ${d.getFullYear()}`;
+}
+
+/** e.g. "Fri, 18 Sep" */
+function formatShortDate(d: Date): string {
+  return `${DAYS_SHORT[d.getDay()]}, ${d.getDate()} ${MONTHS_SHORT[d.getMonth()]}`;
+}
+
+/** "Today" / "Tomorrow" / "" */
+function relativeDayLabel(d: Date): string {
+  const today = startOfDay(new Date());
+  const diff = Math.round((startOfDay(d).getTime() - today.getTime()) / 86400000);
+  if (diff === 0) return 'Today';
+  if (diff === 1) return 'Tomorrow';
+  return '';
+}
+
+function get12Hour(d: Date): number {
+  return d.getHours() % 12 || 12;
+}
+
+function pad2(n: number): string {
+  return n < 10 ? `0${n}` : String(n);
+}
+
+/* ── Calendar Modal ────────────────────────────────────────────────────── */
+
+interface CalendarModalProps {
+  visible: boolean;
+  selected: Date;
+  onSelect: (day: Date) => void;
+  onClose: () => void;
+}
+
+function CalendarModal({ visible, selected, onSelect, onClose }: CalendarModalProps) {
+  const today = startOfDay(new Date());
+  const maxDate = new Date(today);
+  maxDate.setDate(maxDate.getDate() + MAX_ADVANCE_DAYS);
+
+  const [month, setMonth] = useState(
+    () => new Date(selected.getFullYear(), selected.getMonth(), 1)
+  );
+
+  // Jump to the selected month each time the calendar opens
+  useEffect(() => {
+    if (visible) setMonth(new Date(selected.getFullYear(), selected.getMonth(), 1));
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [visible]);
+
+  const year = month.getFullYear();
+  const mon = month.getMonth();
+  const firstWeekday = new Date(year, mon, 1).getDay();
+  const daysInMonth = new Date(year, mon + 1, 0).getDate();
+
+  const cells: (Date | null)[] = [];
+  for (let i = 0; i < firstWeekday; i++) cells.push(null);
+  for (let d = 1; d <= daysInMonth; d++) cells.push(new Date(year, mon, d));
+  while (cells.length % 7 !== 0) cells.push(null);
+
+  const canGoPrev = year > today.getFullYear() || (year === today.getFullYear() && mon > today.getMonth());
+  const canGoNext = new Date(year, mon + 1, 1) <= maxDate;
+
+  return (
+    <Modal visible={visible} transparent animationType="fade" onRequestClose={onClose}>
+      <View style={styles.calOverlay}>
+        <TouchableOpacity
+          style={StyleSheet.absoluteFill}
+          activeOpacity={1}
+          onPress={onClose}
+          accessibilityLabel="Close calendar"
+        />
+        <View style={styles.calCard}>
+          <View style={styles.calHeader}>
+            <TouchableOpacity
+              style={[styles.calNavBtn, !canGoPrev && styles.calNavBtnDisabled]}
+              disabled={!canGoPrev}
+              onPress={() => setMonth(new Date(year, mon - 1, 1))}
+              accessibilityLabel="Previous month"
+            >
+              <Text style={styles.calNavText}>‹</Text>
+            </TouchableOpacity>
+            <Text style={styles.calMonthTitle}>
+              {MONTHS[mon]} {year}
+            </Text>
+            <TouchableOpacity
+              style={[styles.calNavBtn, !canGoNext && styles.calNavBtnDisabled]}
+              disabled={!canGoNext}
+              onPress={() => setMonth(new Date(year, mon + 1, 1))}
+              accessibilityLabel="Next month"
+            >
+              <Text style={styles.calNavText}>›</Text>
+            </TouchableOpacity>
+          </View>
+
+          <View style={styles.calWeekRow}>
+            {WEEKDAY_HEADERS.map((w, i) => (
+              <Text key={`${w}${i}`} style={styles.calWeekday}>
+                {w}
+              </Text>
+            ))}
+          </View>
+
+          <View style={styles.calGrid}>
+            {cells.map((day, idx) => {
+              if (!day) return <View key={`e${idx}`} style={styles.calCell} />;
+              const disabled = day < today || day > maxDate;
+              const isSelected = sameDay(day, selected);
+              const isToday = sameDay(day, today);
+              return (
+                <View key={day.getTime()} style={styles.calCell}>
+                  <TouchableOpacity
+                    disabled={disabled}
+                    activeOpacity={0.7}
+                    onPress={() => {
+                      onSelect(day);
+                      onClose();
+                    }}
+                    style={[
+                      styles.calDay,
+                      isToday && !isSelected && styles.calDayToday,
+                      isSelected && styles.calDaySelected,
+                    ]}
+                    accessibilityLabel={formatLongDate(day)}
+                  >
+                    <Text
+                      style={[
+                        styles.calDayText,
+                        disabled && styles.calDayTextDisabled,
+                        isSelected && styles.calDayTextSelected,
+                      ]}
+                    >
+                      {day.getDate()}
+                    </Text>
+                  </TouchableOpacity>
+                </View>
+              );
+            })}
+          </View>
+
+          <TouchableOpacity style={styles.calCloseBtn} onPress={onClose} activeOpacity={0.8}>
+            <Text style={styles.calCloseText}>Close</Text>
+          </TouchableOpacity>
+        </View>
+      </View>
+    </Modal>
+  );
+}
+
+/* ── Mini Map Thumbnail Graphic ────────────────────────────────────────── */
 
 function MiniMapGraphic({ distance, imageUrl }: { distance: string; imageUrl?: string }) {
   if (imageUrl) {
@@ -83,19 +242,15 @@ function MiniMapGraphic({ distance, imageUrl }: { distance: string; imageUrl?: s
   return (
     <View style={styles.miniMapWrapper}>
       <View style={styles.miniMapRoadsBg}>
-        {/* Subtle stylized road grid */}
         <View style={styles.miniMapRoadH} />
         <View style={styles.miniMapRoadV} />
-        {/* Orange route origin dot */}
         <View style={styles.miniMapOriginDot}>
           <View style={styles.miniMapOriginInner} />
         </View>
-        {/* White P badge */}
         <View style={styles.miniMapBadgeP}>
           <Text style={styles.miniMapBadgePText}>P</Text>
         </View>
       </View>
-      {/* Dark bottom bar with distance */}
       <View style={styles.miniMapBottomBar}>
         <Text style={styles.miniMapDistanceText}>{distance}</Text>
       </View>
@@ -106,21 +261,13 @@ function MiniMapGraphic({ distance, imageUrl }: { distance: string; imageUrl?: s
 /**
  * Driver Booking Summary Screen (ParkMe-08-BookingSummary)
  *
- * Displays the booking summary after space selection:
- *   - Selected lot and space information with visual badge and guaranteed spot tag.
- *   - Stylized mini-map thumbnail matching the design reference.
- *   - Parking schedule: Arrival date and time, duration steppers (1–12 hrs).
- *   - Vehicle info row with expandable inline plate/model editor.
- *   - Price breakdown: Parking Fee (pro-rata estimate) + Service Fee (UI estimate) = Total.
- *   - Free cancellation banner.
- *   - Sticky bottom action bar with total payable and "Proceed to Payment" CTA.
- *
- * Backend alignment:
- *   - Parking fee matches backend reservationController.js formula:
- *     (endTime - startTime) / 3600000 * pricePerHour.
- *   - Service Fee (Rs. 20) is clearly labelled as a UI display estimate
- *     not yet stored in backend models.
- *   - Space is not held or reserved until POST /api/reservations succeeds.
+ *   1. Space selected card.
+ *   2. Parking schedule:
+ *        - ARRIVAL: date (calendar picker) + time (hour : minute + AM/PM).
+ *        - DURATION: stepper + quick-pick chips.
+ *   3. Booking time summary: date, start time, end time, duration.
+ *   4. Vehicle details.
+ *   5. Price details + free cancellation banner + sticky bottom bar.
  */
 export default function BookingSummaryScreen({
   selection,
@@ -172,7 +319,13 @@ export default function BookingSummaryScreen({
   });
 
   const [showVehicleForm, setShowVehicleForm] = useState(false);
+  const [showCalendar, setShowCalendar] = useState(false);
   const [touched, setTouched] = useState<Partial<Record<keyof BookingDraft, boolean>>>({});
+
+  /* Typed time fields (hour 1–12, minute 00–59) */
+  const [hourText, setHourText] = useState(() => String(get12Hour(draft.arrivalTime)));
+  const [minText, setMinText] = useState(() => pad2(draft.arrivalTime.getMinutes()));
+  const [timeError, setTimeError] = useState<string | undefined>(undefined);
 
   const updateDraft = useCallback(
     (updater: (prev: BookingDraft) => BookingDraft) => {
@@ -184,6 +337,14 @@ export default function BookingSummaryScreen({
     },
     [onDraftChange]
   );
+
+  // Keep the typed fields in sync whenever the arrival time changes
+  const arrivalMs = draft.arrivalTime.getTime();
+  useEffect(() => {
+    setHourText(String(get12Hour(draft.arrivalTime)));
+    setMinText(pad2(draft.arrivalTime.getMinutes()));
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [arrivalMs]);
 
   // Android hardware back handling
   useEffect(() => {
@@ -198,6 +359,9 @@ export default function BookingSummaryScreen({
   const price = useMemo(() => computeBreakdown(draft), [draft]);
   const validation = useMemo(() => validateDraft(draft), [draft]);
 
+  const arrivalTooSoon =
+    draft.arrivalTime.getTime() < Date.now() + MIN_ARRIVAL_LEAD_MIN * 60 * 1000;
+
   const fieldError = useCallback(
     (field: keyof BookingDraft) =>
       touched[field] ? validation.errors[field] : undefined,
@@ -208,16 +372,90 @@ export default function BookingSummaryScreen({
     setTouched((prev) => ({ ...prev, [field]: true }));
   }, []);
 
-  /* Arrival time steppers */
-  const handleArrivalUp = useCallback(() => {
-    updateDraft((prev) => ({ ...prev, arrivalTime: stepHour(prev.arrivalTime, +1) }));
-  }, [updateDraft]);
+  /* ── Arrival: date ─────────────────────────────────────────────────── */
+  const handlePickDate = useCallback(
+    (day: Date) => {
+      setTimeError(undefined);
+      touch('arrivalTime');
+      updateDraft((prev) => {
+        const d = new Date(prev.arrivalTime);
+        d.setFullYear(day.getFullYear(), day.getMonth(), day.getDate());
+        return { ...prev, arrivalTime: d };
+      });
+    },
+    [updateDraft, touch]
+  );
 
-  const handleArrivalDown = useCallback(() => {
-    updateDraft((prev) => ({ ...prev, arrivalTime: stepHour(prev.arrivalTime, -1) }));
-  }, [updateDraft]);
+  /* ── Arrival: time ─────────────────────────────────────────────────── */
+  const isPm = draft.arrivalTime.getHours() >= 12;
 
-  /* Duration steppers */
+  const stepArrival = useCallback(
+    (deltaHours: number) => {
+      setTimeError(undefined);
+      touch('arrivalTime');
+      updateDraft((prev) => ({
+        ...prev,
+        arrivalTime: new Date(prev.arrivalTime.getTime() + deltaHours * 60 * 60 * 1000),
+      }));
+    },
+    [updateDraft, touch]
+  );
+
+  const setMeridiem = useCallback(
+    (pm: boolean) => {
+      setTimeError(undefined);
+      touch('arrivalTime');
+      updateDraft((prev) => {
+        const d = new Date(prev.arrivalTime);
+        const h = d.getHours();
+        if (pm && h < 12) d.setHours(h + 12);
+        if (!pm && h >= 12) d.setHours(h - 12);
+        return { ...prev, arrivalTime: d };
+      });
+    },
+    [updateDraft, touch]
+  );
+
+  const commitTime = useCallback(() => {
+    touch('arrivalTime');
+    const h = parseInt(hourText, 10);
+    const m = minText.trim() === '' ? 0 : parseInt(minText, 10);
+
+    if (isNaN(h) || h < 0 || h > 23 || isNaN(m) || m < 0 || m > 59) {
+      setTimeError('Enter a valid time (hour 1–12, minutes 00–59)');
+      // revert the text boxes to the last good value
+      setHourText(String(get12Hour(draft.arrivalTime)));
+      setMinText(pad2(draft.arrivalTime.getMinutes()));
+      return;
+    }
+
+    setTimeError(undefined);
+    updateDraft((prev) => {
+      const d = new Date(prev.arrivalTime);
+      const currentlyPm = prev.arrivalTime.getHours() >= 12;
+      let h24: number;
+      if (h > 12) h24 = h; // typed in 24-hour form, e.g. 14
+      else if (h === 0) h24 = 0;
+      else h24 = (h % 12) + (currentlyPm ? 12 : 0);
+      d.setHours(h24, m, 0, 0);
+      return { ...prev, arrivalTime: d };
+    });
+  }, [hourText, minText, draft.arrivalTime, updateDraft, touch]);
+
+  /* ── Duration ──────────────────────────────────────────────────────── */
+  const setDuration = useCallback(
+    (hrs: number) => {
+      updateDraft((prev) => ({
+        ...prev,
+        durationHours: Math.max(
+          BOOKING_MIN_DURATION_HRS,
+          Math.min(hrs, BOOKING_MAX_DURATION_HRS)
+        ),
+      }));
+    },
+    [updateDraft]
+  );
+
   const handleDurationUp = useCallback(() => {
     updateDraft((prev) => ({
       ...prev,
@@ -232,7 +470,9 @@ export default function BookingSummaryScreen({
     }));
   }, [updateDraft]);
 
-  /* Proceed */
+  /* ── Proceed ───────────────────────────────────────────────────────── */
+  const canProceed = validation.isValid && !arrivalTooSoon && !timeError;
+
   const handleProceed = useCallback(() => {
     setTouched({
       lotId: true,
@@ -242,14 +482,14 @@ export default function BookingSummaryScreen({
       vehiclePlate: true,
       vehicleModel: true,
     });
-    if (!validation.isValid) return;
+    if (!canProceed) return;
     onProceed({
       draft,
       price,
       startTimeISO: draft.arrivalTime.toISOString(),
       endTimeISO: price.endTime.toISOString(),
     });
-  }, [draft, price, validation, onProceed]);
+  }, [draft, price, canProceed, onProceed]);
 
   /* ── Guard: missing lot ─────────────────────────────────────────────── */
   if (!lot) {
@@ -307,11 +547,32 @@ export default function BookingSummaryScreen({
       ? 'Accessible Spot'
       : 'Standard Spot';
   const floorName = floorLayout?.name ?? `Floor ${floor}`;
-  const canProceed = validation.isValid;
+
+  const arrivalErrorText =
+    timeError ??
+    (arrivalTooSoon
+      ? `Arrival must be at least ${MIN_ARRIVAL_LEAD_MIN} minutes from now`
+      : fieldError('arrivalTime'));
+
+  const startDate = draft.arrivalTime;
+  const endDate = price.endTime;
+  const endsOnDifferentDay = !sameDay(startDate, endDate);
+  const dayTag = relativeDayLabel(startDate);
+  const durationLabel = `${draft.durationHours} ${draft.durationHours === 1 ? 'hour' : 'hours'}`;
+  const visibleChips = DURATION_CHIPS.filter(
+    (c) => c >= BOOKING_MIN_DURATION_HRS && c <= BOOKING_MAX_DURATION_HRS
+  );
 
   return (
     <View style={[styles.safeArea, { paddingTop: topPadding }]}>
       <StatusBar barStyle="dark-content" backgroundColor="#FFFFFF" />
+
+      <CalendarModal
+        visible={showCalendar}
+        selected={draft.arrivalTime}
+        onSelect={handlePickDate}
+        onClose={() => setShowCalendar(false)}
+      />
 
       <KeyboardAvoidingView
         style={styles.flex1}
@@ -345,7 +606,6 @@ export default function BookingSummaryScreen({
         >
           {/* ── 1. Space Selected Card ───────────────────────────────── */}
           <View style={styles.card}>
-            {/* Top row: badge & mini map */}
             <View style={styles.cardTopRow}>
               <View style={styles.lotMetaCol}>
                 <View style={styles.spaceSelectedBadge}>
@@ -364,7 +624,6 @@ export default function BookingSummaryScreen({
               <MiniMapGraphic distance={lot.distance} imageUrl={lot.imageUrl} />
             </View>
 
-            {/* Inset Space Card (matches ParkMe-08-BookingSummary) */}
             <View style={styles.spaceInsetCard}>
               <View style={styles.spaceIdBadge}>
                 <Text style={styles.spaceIdBadgeText}>{spaceId}</Text>
@@ -381,87 +640,233 @@ export default function BookingSummaryScreen({
             </View>
           </View>
 
-          {/* ── 2. Parking Schedule Card ─────────────────────────────── */}
+          {/* ── 2. Parking Schedule Card (Arrival + Duration) ─────────── */}
           <View style={styles.card}>
             <View style={styles.scheduleHeaderRow}>
               <Text style={styles.cardSectionLabel}>PARKING SCHEDULE</Text>
               <Text style={styles.rateText}>Rate: Rs. {tariffPerHour}/hr</Text>
             </View>
 
-            {/* Side-by-side rounded boxes */}
-            <View style={styles.scheduleRow}>
-              {/* Arrival Box */}
-              <View style={styles.scheduleBox}>
-                <View style={styles.boxHeaderRow}>
-                  <Text style={styles.boxHeaderIcon}>📅</Text>
-                  <Text style={styles.boxHeaderLabel}>ARRIVAL</Text>
-                </View>
-                <Text style={styles.boxDateText}>{formatArrivalDate(draft.arrivalTime)}</Text>
-                <View style={styles.arrivalTimeRow}>
-                  <TouchableOpacity
-                    style={styles.timeStepBtn}
-                    onPress={handleArrivalDown}
-                    activeOpacity={0.7}
-                    accessibilityLabel="Decrease arrival hour"
-                  >
-                    <Text style={styles.timeStepBtnText}>−</Text>
-                  </TouchableOpacity>
-                  <View style={styles.timeDisplayPill}>
-                    <Text style={styles.clockIcon}>🕐</Text>
-                    <Text style={styles.timeDisplayText}>{formatTime12(draft.arrivalTime)}</Text>
-                  </View>
-                  <TouchableOpacity
-                    style={styles.timeStepBtn}
-                    onPress={handleArrivalUp}
-                    activeOpacity={0.7}
-                    accessibilityLabel="Increase arrival hour"
-                  >
-                    <Text style={styles.timeStepBtnText}>+</Text>
-                  </TouchableOpacity>
-                </View>
-                {fieldError('arrivalTime') ? (
-                  <Text style={styles.fieldError}>{fieldError('arrivalTime')}</Text>
-                ) : null}
+            {/* ARRIVAL section */}
+            <View style={styles.sectionBox}>
+              <View style={styles.boxHeaderRow}>
+                <Text style={styles.boxHeaderIcon}>📅</Text>
+                <Text style={styles.boxHeaderLabel}>ARRIVAL</Text>
               </View>
 
-              {/* Duration Box */}
-              <View style={[styles.scheduleBox, styles.scheduleBoxRight]}>
-                <Text style={styles.boxHeaderLabel}>DURATION</Text>
-                <View style={styles.durationRow}>
+              {/* Date (opens calendar) */}
+              <Text style={styles.fieldLabel}>Date</Text>
+              <TouchableOpacity
+                style={styles.dateButton}
+                activeOpacity={0.8}
+                onPress={() => setShowCalendar(true)}
+                accessibilityRole="button"
+                accessibilityLabel={`Arrival date ${formatLongDate(draft.arrivalTime)}. Tap to open calendar`}
+              >
+                <View style={styles.dateButtonLeft}>
+                  <Text style={styles.dateButtonIcon}>🗓️</Text>
+                  <View>
+                    <Text style={styles.dateButtonText}>{formatLongDate(draft.arrivalTime)}</Text>
+                    {dayTag ? <Text style={styles.dateButtonTag}>{dayTag}</Text> : null}
+                  </View>
+                </View>
+                <Text style={styles.dateButtonChange}>Change ▾</Text>
+              </TouchableOpacity>
+
+              {/* Time: hour : minute + AM/PM */}
+              <Text style={[styles.fieldLabel, { marginTop: 12 }]}>Time</Text>
+              <View style={styles.timeRow}>
+                <TouchableOpacity
+                  style={styles.timeStepBtn}
+                  onPress={() => stepArrival(-1)}
+                  activeOpacity={0.7}
+                  accessibilityLabel="Decrease arrival time by one hour"
+                >
+                  <Text style={styles.timeStepBtnText}>−</Text>
+                </TouchableOpacity>
+
+                <View
+                  style={[
+                    styles.timeInputsWrap,
+                    arrivalErrorText ? styles.timeInputsWrapError : null,
+                  ]}
+                >
+                  <TextInput
+                    style={styles.timeBox}
+                    value={hourText}
+                    onChangeText={(v) => {
+                      setHourText(v.replace(/[^0-9]/g, ''));
+                      setTimeError(undefined);
+                    }}
+                    onBlur={commitTime}
+                    onSubmitEditing={commitTime}
+                    keyboardType="number-pad"
+                    maxLength={2}
+                    selectTextOnFocus
+                    placeholder="hh"
+                    placeholderTextColor={DriverColors.textMuted}
+                    accessibilityLabel="Arrival hour"
+                  />
+                  <Text style={styles.timeColon}>:</Text>
+                  <TextInput
+                    style={styles.timeBox}
+                    value={minText}
+                    onChangeText={(v) => {
+                      setMinText(v.replace(/[^0-9]/g, ''));
+                      setTimeError(undefined);
+                    }}
+                    onBlur={commitTime}
+                    onSubmitEditing={commitTime}
+                    keyboardType="number-pad"
+                    maxLength={2}
+                    selectTextOnFocus
+                    placeholder="mm"
+                    placeholderTextColor={DriverColors.textMuted}
+                    accessibilityLabel="Arrival minutes"
+                  />
+                </View>
+
+                <View style={styles.meridiemWrap}>
                   <TouchableOpacity
-                    style={[
-                      styles.durationStepBtn,
-                      draft.durationHours <= BOOKING_MIN_DURATION_HRS && styles.durationStepBtnDisabled,
-                    ]}
-                    onPress={handleDurationDown}
-                    disabled={draft.durationHours <= BOOKING_MIN_DURATION_HRS}
-                    activeOpacity={0.7}
-                    accessibilityLabel="Decrease duration by 1 hour"
+                    style={[styles.meridiemBtn, !isPm && styles.meridiemBtnOn]}
+                    onPress={() => setMeridiem(false)}
+                    activeOpacity={0.8}
+                    accessibilityRole="button"
+                    accessibilityState={{ selected: !isPm }}
+                    accessibilityLabel="AM"
                   >
-                    <Text style={styles.durationStepBtnText}>−</Text>
+                    <Text style={[styles.meridiemText, !isPm && styles.meridiemTextOn]}>AM</Text>
                   </TouchableOpacity>
-                  <Text style={styles.durationValueText}>{draft.durationHours} hrs</Text>
                   <TouchableOpacity
-                    style={[
-                      styles.durationStepBtn,
-                      draft.durationHours >= BOOKING_MAX_DURATION_HRS && styles.durationStepBtnDisabled,
-                    ]}
-                    onPress={handleDurationUp}
-                    disabled={draft.durationHours >= BOOKING_MAX_DURATION_HRS}
-                    activeOpacity={0.7}
-                    accessibilityLabel="Increase duration by 1 hour"
+                    style={[styles.meridiemBtn, isPm && styles.meridiemBtnOn]}
+                    onPress={() => setMeridiem(true)}
+                    activeOpacity={0.8}
+                    accessibilityRole="button"
+                    accessibilityState={{ selected: isPm }}
+                    accessibilityLabel="PM"
                   >
-                    <Text style={styles.durationStepBtnText}>+</Text>
+                    <Text style={[styles.meridiemText, isPm && styles.meridiemTextOn]}>PM</Text>
                   </TouchableOpacity>
                 </View>
-                <Text style={styles.endTimeHintText}>Until {formatTime12(price.endTime)}</Text>
-                {fieldError('durationHours') ? (
-                  <Text style={styles.fieldError}>{fieldError('durationHours')}</Text>
+
+                <TouchableOpacity
+                  style={styles.timeStepBtn}
+                  onPress={() => stepArrival(+1)}
+                  activeOpacity={0.7}
+                  accessibilityLabel="Increase arrival time by one hour"
+                >
+                  <Text style={styles.timeStepBtnText}>+</Text>
+                </TouchableOpacity>
+              </View>
+
+              {arrivalErrorText ? (
+                <Text style={styles.fieldError}>{arrivalErrorText}</Text>
+              ) : (
+                <Text style={styles.timeHintText}>Type the time, or use − / + to change by 1 hour</Text>
+              )}
+            </View>
+
+            {/* DURATION section */}
+            <View style={[styles.sectionBox, { marginTop: 10 }]}>
+              <View style={styles.boxHeaderRow}>
+                <Text style={styles.boxHeaderIcon}>⏱️</Text>
+                <Text style={styles.boxHeaderLabel}>DURATION</Text>
+              </View>
+
+              <View style={styles.durationRow}>
+                <TouchableOpacity
+                  style={[
+                    styles.durationStepBtn,
+                    draft.durationHours <= BOOKING_MIN_DURATION_HRS && styles.durationStepBtnDisabled,
+                  ]}
+                  onPress={handleDurationDown}
+                  disabled={draft.durationHours <= BOOKING_MIN_DURATION_HRS}
+                  activeOpacity={0.7}
+                  accessibilityLabel="Decrease duration by 1 hour"
+                >
+                  <Text style={styles.durationStepBtnText}>−</Text>
+                </TouchableOpacity>
+                <Text style={styles.durationValueText}>{durationLabel}</Text>
+                <TouchableOpacity
+                  style={[
+                    styles.durationStepBtn,
+                    draft.durationHours >= BOOKING_MAX_DURATION_HRS && styles.durationStepBtnDisabled,
+                  ]}
+                  onPress={handleDurationUp}
+                  disabled={draft.durationHours >= BOOKING_MAX_DURATION_HRS}
+                  activeOpacity={0.7}
+                  accessibilityLabel="Increase duration by 1 hour"
+                >
+                  <Text style={styles.durationStepBtnText}>+</Text>
+                </TouchableOpacity>
+              </View>
+
+              <View style={styles.chipRow}>
+                {visibleChips.map((c) => {
+                  const on = draft.durationHours === c;
+                  return (
+                    <TouchableOpacity
+                      key={c}
+                      style={[styles.chip, on && styles.chipOn]}
+                      onPress={() => setDuration(c)}
+                      activeOpacity={0.8}
+                      accessibilityLabel={`${c} hours`}
+                    >
+                      <Text style={[styles.chipText, on && styles.chipTextOn]}>{c} hr</Text>
+                    </TouchableOpacity>
+                  );
+                })}
+              </View>
+
+              {fieldError('durationHours') ? (
+                <Text style={styles.fieldError}>{fieldError('durationHours')}</Text>
+              ) : null}
+            </View>
+          </View>
+
+          {/* ── 3. Booking Time Summary Card ──────────────────────────── */}
+          <View style={styles.card}>
+            <Text style={styles.cardSectionLabel}>BOOKING TIME SUMMARY</Text>
+
+            <View style={styles.summaryRow}>
+              <Text style={styles.summaryLabel}>Date</Text>
+              <View style={styles.summaryValueCol}>
+                <Text style={styles.summaryValue}>{formatLongDate(startDate)}</Text>
+                {dayTag ? <Text style={styles.summarySub}>{dayTag}</Text> : null}
+              </View>
+            </View>
+
+            <View style={styles.summaryDivider} />
+
+            <View style={styles.summaryRow}>
+              <Text style={styles.summaryLabel}>Start Time</Text>
+              <Text style={styles.summaryValue}>{formatTime12(startDate)}</Text>
+            </View>
+
+            <View style={styles.summaryDivider} />
+
+            <View style={styles.summaryRow}>
+              <Text style={styles.summaryLabel}>End Time</Text>
+              <View style={styles.summaryValueCol}>
+                <Text style={styles.summaryValue}>{formatTime12(endDate)}</Text>
+                {endsOnDifferentDay ? (
+                  <Text style={styles.summarySub}>{formatShortDate(endDate)} (next day)</Text>
                 ) : null}
               </View>
             </View>
 
-            {/* Vehicle Row Pill */}
+            <View style={styles.summaryDivider} />
+
+            <View style={styles.summaryRow}>
+              <Text style={styles.summaryLabel}>Duration</Text>
+              <Text style={styles.summaryValue}>{durationLabel}</Text>
+            </View>
+          </View>
+
+          {/* ── 4. Vehicle Card ───────────────────────────────────────── */}
+          <View style={styles.card}>
+            <Text style={styles.cardSectionLabel}>VEHICLE</Text>
+
             <TouchableOpacity
               style={styles.vehiclePill}
               onPress={() => setShowVehicleForm((v) => !v)}
@@ -481,7 +886,6 @@ export default function BookingSummaryScreen({
               <Text style={styles.vehicleChangeLink}>{showVehicleForm ? 'Done' : 'Change'}</Text>
             </TouchableOpacity>
 
-            {/* Expandable vehicle editor */}
             {showVehicleForm && (
               <View style={styles.vehicleForm}>
                 <View style={styles.vehicleFormField}>
@@ -528,7 +932,7 @@ export default function BookingSummaryScreen({
             )}
           </View>
 
-          {/* ── 3. Price Details Card ─────────────────────────────────── */}
+          {/* ── 5. Price Details Card ─────────────────────────────────── */}
           <View style={styles.card}>
             <Text style={styles.cardSectionLabel}>PRICE DETAILS</Text>
 
@@ -538,7 +942,6 @@ export default function BookingSummaryScreen({
               </Text>
             </View>
 
-            {/* Parking Fee */}
             <View style={styles.priceRow}>
               <View style={styles.priceRowLeft}>
                 <Text style={styles.priceRowTitle}>Parking Fee ({draft.durationHours} hrs)</Text>
@@ -549,7 +952,6 @@ export default function BookingSummaryScreen({
               <Text style={styles.priceRowAmount}>Rs. {price.parkingFeeRs}</Text>
             </View>
 
-            {/* Service Fee */}
             <View style={styles.priceRow}>
               <View style={styles.priceRowLeft}>
                 <Text style={styles.priceRowTitle}>Service Fee</Text>
@@ -560,7 +962,6 @@ export default function BookingSummaryScreen({
 
             <View style={styles.priceDivider} />
 
-            {/* Total */}
             <View style={styles.totalRow}>
               <Text style={styles.totalLabel}>Total</Text>
               <Text style={styles.totalAmount}>Rs. {price.totalRs}</Text>
@@ -571,7 +972,7 @@ export default function BookingSummaryScreen({
             </Text>
           </View>
 
-          {/* ── 4. Free Cancellation Banner ───────────────────────────── */}
+          {/* ── 6. Free Cancellation Banner ───────────────────────────── */}
           <View style={styles.cancelBanner}>
             <Text style={styles.cancelBannerIcon}>🛡️</Text>
             <View style={styles.cancelBannerContent}>
@@ -627,10 +1028,7 @@ const styles = StyleSheet.create({
   flex1: { flex: 1 },
 
   // Guard states
-  errorContainer: {
-    flex: 1,
-    backgroundColor: '#FFFFFF',
-  },
+  errorContainer: { flex: 1, backgroundColor: '#FFFFFF' },
   errorInner: {
     flex: 1,
     alignItems: 'center',
@@ -661,10 +1059,7 @@ const styles = StyleSheet.create({
   errorBackText: { color: '#FFFFFF', fontSize: 14, fontWeight: '700' },
 
   // Main layout
-  safeArea: {
-    flex: 1,
-    backgroundColor: DriverColors.background,
-  },
+  safeArea: { flex: 1, backgroundColor: DriverColors.background },
 
   // Header
   header: {
@@ -880,70 +1275,119 @@ const styles = StyleSheet.create({
   },
   rateText: { fontSize: 12.5, fontWeight: '700', color: DriverColors.navyHeading },
 
-  scheduleRow: { flexDirection: 'row', alignItems: 'stretch' },
-  scheduleBox: {
-    flex: 1,
+  sectionBox: {
     borderRadius: 12,
     borderWidth: 1,
     borderColor: DriverColors.cardBorder,
     backgroundColor: '#FFFFFF',
-    padding: 10,
-    justifyContent: 'space-between',
+    padding: 12,
   },
-  scheduleBoxRight: { marginLeft: 10 },
-
-  boxHeaderRow: { flexDirection: 'row', alignItems: 'center', gap: 4, marginBottom: 4 },
-  boxHeaderIcon: { fontSize: 12 },
+  boxHeaderRow: { flexDirection: 'row', alignItems: 'center', gap: 5, marginBottom: 10 },
+  boxHeaderIcon: { fontSize: 13 },
   boxHeaderLabel: {
-    fontSize: 10.5,
+    fontSize: 11,
     fontWeight: '700',
     color: DriverColors.textSecondary,
-    letterSpacing: 0.5,
+    letterSpacing: 0.6,
   },
-  boxDateText: {
-    fontSize: 14.5,
-    fontWeight: '800',
-    color: DriverColors.navyHeading,
+  fieldLabel: {
+    fontSize: 11.5,
+    fontWeight: '700',
+    color: DriverColors.textSecondary,
     marginBottom: 6,
   },
 
-  arrivalTimeRow: { flexDirection: 'row', alignItems: 'center', gap: 4 },
+  // Date button
+  dateButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    backgroundColor: '#F8FAFC',
+    borderRadius: 12,
+    borderWidth: 1,
+    borderColor: DriverColors.cardBorder,
+    paddingHorizontal: 12,
+    paddingVertical: 10,
+  },
+  dateButtonLeft: { flexDirection: 'row', alignItems: 'center', gap: 10, flex: 1 },
+  dateButtonIcon: { fontSize: 18 },
+  dateButtonText: { fontSize: 14.5, fontWeight: '800', color: DriverColors.navyHeading },
+  dateButtonTag: {
+    fontSize: 11,
+    fontWeight: '700',
+    color: DriverColors.orangePrimary,
+    marginTop: 1,
+  },
+  dateButtonChange: { fontSize: 12.5, fontWeight: '700', color: DriverColors.orangePrimary },
+
+  // Time row
+  timeRow: { flexDirection: 'row', alignItems: 'center', gap: 8 },
   timeStepBtn: {
-    width: 22,
-    height: 22,
-    borderRadius: 6,
+    width: 30,
+    height: 36,
+    borderRadius: 8,
     backgroundColor: '#F1F5F9',
     alignItems: 'center',
     justifyContent: 'center',
   },
   timeStepBtnText: {
-    fontSize: 14,
+    fontSize: 18,
     fontWeight: '700',
     color: DriverColors.navyHeading,
-    lineHeight: 18,
+    lineHeight: 22,
   },
-  timeDisplayPill: {
+  timeInputsWrap: {
+    flex: 1,
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 3,
+    justifyContent: 'center',
     backgroundColor: '#F8FAFC',
-    paddingHorizontal: 6,
-    paddingVertical: 4,
-    borderRadius: 8,
+    borderRadius: 10,
+    borderWidth: 1.5,
+    borderColor: DriverColors.cardBorder,
+    height: 40,
   },
-  clockIcon: { fontSize: 11 },
-  timeDisplayText: { fontSize: 12, fontWeight: '700', color: DriverColors.navyHeading },
+  timeInputsWrapError: { borderColor: '#EF4444' },
+  timeBox: {
+    width: 34,
+    padding: 0,
+    margin: 0,
+    fontSize: 17,
+    fontWeight: '800',
+    color: DriverColors.navyHeading,
+    textAlign: 'center',
+  },
+  timeColon: { fontSize: 17, fontWeight: '800', color: DriverColors.navyHeading },
+  meridiemWrap: {
+    flexDirection: 'row',
+    borderRadius: 10,
+    borderWidth: 1,
+    borderColor: DriverColors.cardBorder,
+    overflow: 'hidden',
+    height: 40,
+  },
+  meridiemBtn: {
+    paddingHorizontal: 11,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: '#FFFFFF',
+  },
+  meridiemBtnOn: { backgroundColor: DriverColors.navyDark },
+  meridiemText: { fontSize: 13, fontWeight: '800', color: DriverColors.textSecondary },
+  meridiemTextOn: { color: '#FFFFFF' },
+  timeHintText: { fontSize: 10.5, color: DriverColors.textMuted, marginTop: 6 },
 
+  // Duration
   durationRow: {
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
-    marginVertical: 6,
+    marginBottom: 12,
   },
   durationStepBtn: {
-    width: 30,
-    height: 30,
-    borderRadius: 8,
+    width: 40,
+    height: 40,
+    borderRadius: 10,
     backgroundColor: '#F8FAFC',
     borderWidth: 1,
     borderColor: DriverColors.cardBorder,
@@ -952,23 +1396,128 @@ const styles = StyleSheet.create({
   },
   durationStepBtnDisabled: { opacity: 0.35 },
   durationStepBtnText: {
-    fontSize: 16,
+    fontSize: 20,
     fontWeight: '700',
     color: DriverColors.navyHeading,
-    lineHeight: 20,
+    lineHeight: 24,
   },
   durationValueText: {
-    fontSize: 15,
+    fontSize: 18,
     fontWeight: '800',
     color: DriverColors.navyHeading,
     textAlign: 'center',
   },
-  endTimeHintText: {
-    fontSize: 10.5,
-    color: DriverColors.textMuted,
-    textAlign: 'center',
-    marginTop: 2,
+  chipRow: { flexDirection: 'row', flexWrap: 'wrap', gap: 8 },
+  chip: {
+    paddingHorizontal: 12,
+    paddingVertical: 6,
+    borderRadius: 16,
+    backgroundColor: '#F8FAFC',
+    borderWidth: 1,
+    borderColor: DriverColors.cardBorder,
   },
+  chipOn: {
+    backgroundColor: DriverColors.navyDark,
+    borderColor: DriverColors.navyDark,
+  },
+  chipText: { fontSize: 12.5, fontWeight: '700', color: DriverColors.navyHeading },
+  chipTextOn: { color: '#FFFFFF' },
+
+  // Summary card
+  summaryRow: {
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+    justifyContent: 'space-between',
+    paddingVertical: 4,
+  },
+  summaryLabel: {
+    fontSize: 13,
+    color: DriverColors.textSecondary,
+    fontWeight: '600',
+    marginTop: 8,
+  },
+  summaryValueCol: { alignItems: 'flex-end', marginTop: 8 },
+  summaryValue: {
+    fontSize: 14.5,
+    fontWeight: '800',
+    color: DriverColors.navyHeading,
+    marginTop: 8,
+  },
+  summarySub: {
+    fontSize: 11,
+    fontWeight: '700',
+    color: DriverColors.orangePrimary,
+    marginTop: 1,
+  },
+  summaryDivider: { height: 1, backgroundColor: DriverColors.borderLight },
+
+  // Calendar modal
+  calOverlay: {
+    flex: 1,
+    backgroundColor: 'rgba(15, 23, 42, 0.5)',
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingHorizontal: 20,
+  },
+  calCard: {
+    width: '100%',
+    maxWidth: 360,
+    backgroundColor: '#FFFFFF',
+    borderRadius: 20,
+    padding: 16,
+  },
+  calHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    marginBottom: 12,
+  },
+  calNavBtn: {
+    width: 36,
+    height: 36,
+    borderRadius: 10,
+    backgroundColor: '#F1F5F9',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  calNavBtnDisabled: { opacity: 0.3 },
+  calNavText: { fontSize: 24, lineHeight: 26, color: DriverColors.navyHeading, fontWeight: '700' },
+  calMonthTitle: { fontSize: 16, fontWeight: '800', color: DriverColors.navyHeading },
+  calWeekRow: { flexDirection: 'row', marginBottom: 6 },
+  calWeekday: {
+    width: `${100 / 7}%`,
+    textAlign: 'center',
+    fontSize: 11.5,
+    fontWeight: '700',
+    color: DriverColors.textMuted,
+  },
+  calGrid: { flexDirection: 'row', flexWrap: 'wrap' },
+  calCell: {
+    width: `${100 / 7}%`,
+    height: 42,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  calDay: {
+    width: 36,
+    height: 36,
+    borderRadius: 18,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  calDayToday: { borderWidth: 1.5, borderColor: DriverColors.orangePrimary },
+  calDaySelected: { backgroundColor: DriverColors.orangePrimary },
+  calDayText: { fontSize: 14, fontWeight: '600', color: DriverColors.navyHeading },
+  calDayTextDisabled: { color: '#CBD5E1' },
+  calDayTextSelected: { color: '#FFFFFF', fontWeight: '800' },
+  calCloseBtn: {
+    marginTop: 12,
+    alignItems: 'center',
+    paddingVertical: 11,
+    borderRadius: 14,
+    backgroundColor: '#F1F5F9',
+  },
+  calCloseText: { fontSize: 14, fontWeight: '700', color: DriverColors.navyHeading },
 
   // Vehicle Row Pill
   vehiclePill: {
@@ -980,7 +1529,7 @@ const styles = StyleSheet.create({
     borderColor: DriverColors.cardBorder,
     paddingHorizontal: 12,
     paddingVertical: 10,
-    marginTop: 12,
+    marginTop: 10,
     gap: 8,
   },
   vehiclePillIcon: { fontSize: 16 },
@@ -1019,7 +1568,7 @@ const styles = StyleSheet.create({
   inputError: { borderColor: '#EF4444' },
 
   // Validation
-  fieldError: { fontSize: 11, color: '#EF4444', marginTop: 3, fontWeight: '600' },
+  fieldError: { fontSize: 11, color: '#EF4444', marginTop: 6, fontWeight: '600' },
 
   // Price Card
   priceEstimateNotice: {
