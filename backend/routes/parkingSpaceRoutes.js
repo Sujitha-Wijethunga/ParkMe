@@ -9,11 +9,12 @@ const {
 } = require('../controllers/parkingSpaceController');
 const { protect } = require('../middleware/auth');
 const { authorize } = require('../middleware/authorize');
+const uploadParkingSpaceImage = require('../middleware/parkingSpaceUpload');
 
 router.get('/', getSpaces);
 router.get('/:id', getSpaceById);
-router.post('/', protect, authorize('admin', 'staff'), createSpace);
+router.post('/', protect, authorize('admin', 'staff'), uploadParkingSpaceImage.single('image'), createSpace);
 router.put('/:id', protect, authorize('admin', 'staff'), updateSpace);
-router.delete('/:id', protect, authorize('admin'), deleteSpace);
+router.delete('/:id', protect, authorize('admin', 'staff'), deleteSpace);
 
 module.exports = router;

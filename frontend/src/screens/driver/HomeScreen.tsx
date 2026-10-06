@@ -22,6 +22,7 @@ import ParkingLotCard from '../../components/ParkingLotCard';
 import DriverNotificationsModal from '../../components/DriverNotificationsModal';
 
 interface HomeScreenProps {
+  parkingLots?: ParkingLotCardItem[];
   userName?: string;
   onNavigateToMap?: () => void;
   onNavigateToLotDetails?: (lotId: string) => void;
@@ -43,6 +44,7 @@ interface HomeScreenProps {
  * price indicators, nearby parking cards list, and driver bottom navigation.
  */
 export default function HomeScreen({
+  parkingLots = SAMPLE_NEARBY_PARKING_LOTS,
   userName = 'Kasun',
   onNavigateToMap,
   onNavigateToLotDetails,

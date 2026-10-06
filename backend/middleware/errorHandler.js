@@ -1,6 +1,13 @@
 const errorHandler = (err, req, res, next) => {
-  let statusCode = err.statusCode || res.statusCode === 200 ? 500 : res.statusCode;
+  let statusCode = err.statusCode || (res.statusCode === 200 ? 500 : res.statusCode);
   let message = err.message || 'Internal Server Error';
+
+  if (err.name === 'MulterError') {
+    statusCode = err.code === 'LIMIT_FILE_SIZE' ? 413 : 400;
+    message = err.code === 'LIMIT_FILE_SIZE'
+      ? 'Image must be 5 MB or smaller.'
+      : 'Invalid image upload.';
+  }
 
   // Mongoose bad ObjectId
   if (err.name === 'CastError') {

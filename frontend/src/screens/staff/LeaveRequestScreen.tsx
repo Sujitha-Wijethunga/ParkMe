@@ -16,8 +16,15 @@ const LEAVE_TYPES = ['Annual Leave', 'Sick Leave', 'Casual Leave', 'Emergency Le
 
 interface LeaveRequestScreenProps {
   onBack: () => void;
+  onSubmitRequest: (request: {
+    type: string;
+    startDate: string;
+    endDate: string;
+    reason: string;
+  }) => Promise<void>;
 }
 
+export default function LeaveRequestScreen({ onBack, onSubmitRequest }: LeaveRequestScreenProps) {
 export default function LeaveRequestScreen({ onBack }: LeaveRequestScreenProps) {
   const insets = useSafeAreaInsets();
   const topPadding = Math.max(
@@ -31,7 +38,7 @@ export default function LeaveRequestScreen({ onBack }: LeaveRequestScreenProps) 
   const [endDate, setEndDate] = useState('');
   const [reason, setReason] = useState('');
 
-  const handleSubmit = () => {
+  const handleSubmit = async () => {
     if (!selectedType) {
       Alert.alert('Required', 'Please select a leave type.');
       return;
@@ -49,11 +56,36 @@ export default function LeaveRequestScreen({ onBack }: LeaveRequestScreenProps) 
       return;
     }
 
-    Alert.alert(
-      'Leave Request Submitted',
-      'Your leave request has been submitted successfully and is pending approval.',
-      [{ text: 'OK', onPress: onBack }]
-    );
+    const normalizedStart = startDate.trim();
+    const normalizedEnd = endDate.trim();
+    const start = new Date(`${normalizedStart}T00:00:00Z`);
+    const end = new Date(`${normalizedEnd}T00:00:00Z`);
+    if (
+      !/^\d{4}-\d{2}-\d{2}$/.test(normalizedStart)
+      || !/^\d{4}-\d{2}-\d{2}$/.test(normalizedEnd)
+      || Number.isNaN(start.getTime())
+      || Number.isNaN(end.getTime())
+      || start.toISOString().slice(0, 10) !== normalizedStart
+      || end.toISOString().slice(0, 10) !== normalizedEnd
+      || end < start
+    ) {
+      Alert.alert('Invalid dates', 'Enter dates as YYYY-MM-DD and make sure the end date is not before the start date.');
+      return;
+    }
+
+    try {
+      await onSubmitRequest({
+        type: selectedType,
+        startDate: normalizedStart,
+        endDate: normalizedEnd,
+        reason: reason.trim(),
+      });
+      Alert.alert('Leave Request Submitted', 'Your leave request has been submitted and is pending approval.', [
+        { text: 'OK', onPress: onBack },
+      ]);
+    } catch (error) {
+      Alert.alert('Unable to submit leave request', error instanceof Error ? error.message : 'Please try again.');
+    }
   };
 
   return (
@@ -142,7 +174,7 @@ export default function LeaveRequestScreen({ onBack }: LeaveRequestScreenProps) 
                 style={styles.textInput}
                 value={startDate}
                 onChangeText={setStartDate}
-                placeholder="DD/MM/YYYY"
+                placeholder="YYYY-MM-DD"
                 placeholderTextColor="#94A3B8"
               />
             </View>
@@ -152,7 +184,7 @@ export default function LeaveRequestScreen({ onBack }: LeaveRequestScreenProps) 
                 style={styles.textInput}
                 value={endDate}
                 onChangeText={setEndDate}
-                placeholder="DD/MM/YYYY"
+                placeholder="YYYY-MM-DD"
                 placeholderTextColor="#94A3B8"
               />
             </View>

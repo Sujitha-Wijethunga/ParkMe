@@ -1,4 +1,5 @@
 const jwt = require('jsonwebtoken');
+const Staff = require('../models/Staff');
 const User = require('../models/User');
 
 const protect = async (req, res, next) => {
@@ -17,7 +18,9 @@ const protect = async (req, res, next) => {
 
   try {
     const decoded = jwt.verify(token, process.env.JWT_SECRET);
-    req.user = await User.findById(decoded.id).select('-password');
+    
+    // Search in Staff table first, then User table
+    req.user = (await Staff.findById(decoded.id).select('-password')) || (await User.findById(decoded.id).select('-password'));
 
     if (!req.user || !req.user.isActive) {
       return res.status(401).json({ message: 'Not authorized, user not found or deactivated' });

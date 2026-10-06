@@ -1,5 +1,6 @@
 const jwt = require('jsonwebtoken');
 const { body } = require('express-validator');
+const Staff = require('../models/Staff');
 const User = require('../models/User');
 const { verifyGoogleIdToken } = require('../services/googleAuthService');
 
@@ -8,41 +9,62 @@ const generateToken = (id) => {
   return jwt.sign({ id }, process.env.JWT_SECRET, { expiresIn: '7d' });
 };
 
-// @desc    Register a new user
+// @desc    Register a new staff member into the 'staff' table / collection
 // @route   POST /api/auth/register
 // @access  Public
 const register = async (req, res, next) => {
   try {
-    const { name, email, password, phone, staffId } = req.body;
+    let { name, email, password, phone, staffId } = req.body;
 
-    const existingUser = await User.findOne({ email });
-    if (existingUser) {
-      return res.status(409).json({ message: 'Email already registered' });
+    // Check if email already registered in Staff table
+    const existingStaffEmail = await Staff.findOne({ email: email.toLowerCase().trim() });
+    if (existingStaffEmail) {
+      return res.status(409).json({ message: 'Email is already registered' });
     }
 
-    if (staffId) {
-      const existingStaffId = await User.findOne({ staffId: staffId.toUpperCase() });
+    if (staffId && staffId.trim()) {
+      staffId = staffId.trim().toUpperCase();
+      const existingStaffId = await Staff.findOne({ staffId });
       if (existingStaffId) {
         return res.status(409).json({ message: 'Staff ID already in use' });
       }
+    } else {
+      // Auto-generate staffId if not provided (e.g., STF-8492)
+      let unique = false;
+      while (!unique) {
+        const randomNum = Math.floor(1000 + Math.random() * 9000);
+        staffId = `STF-${randomNum}`;
+        const existingStaffId = await Staff.findOne({ staffId });
+        if (!existingStaffId) {
+          unique = true;
+        }
+      }
     }
 
-    const user = await User.create({ name, email, password, phone, staffId, role: 'staff' });
+    // Save into the dedicated 'staff' table (Staff model)
+    const staff = await Staff.create({
+      name: name.trim(),
+      email: email.toLowerCase().trim(),
+      password,
+      phone: phone ? phone.trim() : '',
+      staffId,
+      role: 'Parking Staff',
+    });
 
     res.status(201).json({
-      _id: user._id,
-      name: user.name,
-      email: user.email,
-      role: user.role,
-      staffId: user.staffId,
-      token: generateToken(user._id),
+      _id: staff._id,
+      name: staff.name,
+      email: staff.email,
+      role: staff.role,
+      staffId: staff.staffId,
+      token: generateToken(staff._id),
     });
   } catch (error) {
     next(error);
   }
 };
 
-// @desc    Login user
+// @desc    Login staff user from 'staff' table
 // @route   POST /api/auth/login
 // @access  Public
 const login = async (req, res, next) => {
@@ -53,8 +75,16 @@ const login = async (req, res, next) => {
       return res.status(400).json({ message: 'Staff ID and password are required' });
     }
 
-    // Find user by staffId
-    const user = await User.findOne({ staffId: staffId.toUpperCase() }).select('+password');
+    const formattedStaffId = staffId.trim().toUpperCase();
+
+    // Look up in Staff table first
+    let user = await Staff.findOne({ staffId: formattedStaffId }).select('+password');
+
+    // Fallback to User table if not found in Staff table
+    if (!user) {
+      user = await User.findOne({ staffId: formattedStaffId }).select('+password');
+    }
+
     if (!user || !(await user.matchPassword(password))) {
       return res.status(401).json({ message: 'Invalid Staff ID or password' });
     }
@@ -88,12 +118,38 @@ const getMe = async (req, res) => {
 // @access  Private
 const updateMe = async (req, res, next) => {
   try {
-    const { name, phone } = req.body;
-    const user = await User.findByIdAndUpdate(
+    const { name, email, phone } = req.body;
+    const updates = {};
+    if (name !== undefined) updates.name = name.trim();
+    if (phone !== undefined) updates.phone = phone.trim();
+    if (email !== undefined) updates.email = email.trim().toLowerCase();
+
+    if (updates.email) {
+      const duplicateStaff = await Staff.findOne({
+        email: updates.email,
+        _id: { $ne: req.user._id },
+      });
+      const duplicateUser = await User.findOne({
+        email: updates.email,
+        _id: { $ne: req.user._id },
+      });
+      if (duplicateStaff || duplicateUser) {
+        return res.status(409).json({ message: 'Email is already in use' });
+      }
+    }
+
+    let user = await Staff.findByIdAndUpdate(
       req.user._id,
-      { name, phone },
+      updates,
       { new: true, runValidators: true }
     );
+    if (!user) {
+      user = await User.findByIdAndUpdate(
+        req.user._id,
+        updates,
+        { new: true, runValidators: true }
+      );
+    }
     res.json(user);
   } catch (error) {
     next(error);
@@ -107,8 +163,12 @@ const changePassword = async (req, res, next) => {
   try {
     const { currentPassword, newPassword } = req.body;
 
-    const user = await User.findById(req.user._id).select('+password');
-    if (!(await user.matchPassword(currentPassword))) {
+    let user = await Staff.findById(req.user._id).select('+password');
+    if (!user) {
+      user = await User.findById(req.user._id).select('+password');
+    }
+
+    if (!user || !(await user.matchPassword(currentPassword))) {
       return res.status(401).json({ message: 'Current password is incorrect' });
     }
 

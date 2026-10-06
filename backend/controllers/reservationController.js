@@ -2,6 +2,7 @@ const Reservation = require('../models/Reservation');
 const Payment = require('../models/Payment');
 const ParkingSpace = require('../models/ParkingSpace');
 const ParkingLot = require('../models/ParkingLot');
+const crypto = require('crypto');
 
 // Helper: check for overlapping reservations
 const hasOverlap = async (parkingSpaceId, startTime, endTime, excludeId = null) => {
@@ -47,6 +48,7 @@ const createReservation = async (req, res, next) => {
     const totalAmount = parseFloat((hours * lot.pricePerHour).toFixed(2));
 
     const reservation = await Reservation.create({
+      reference: `PM-${crypto.randomBytes(4).toString('hex').toUpperCase()}`,
       driver: req.user._id,
       parkingSpace: parkingSpaceId,
       parkingLot: space.parkingLot,

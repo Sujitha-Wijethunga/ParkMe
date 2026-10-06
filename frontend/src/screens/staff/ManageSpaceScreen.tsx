@@ -10,6 +10,7 @@ import {
   TextInput,
   Modal,
   Pressable,
+  Alert,
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
@@ -19,6 +20,13 @@ export interface SpaceItem {
   id: string;
   slot: string;
   status: SpaceStatus;
+  location?: string;
+  level?: string;
+  parkingLotId?: string;
+  imageUrl?: string;
+  imageUri?: string;
+  imageMimeType?: string;
+  spaceNumbers?: string[];
 }
 
 export const initialSpaces: SpaceItem[] = [
@@ -58,10 +66,12 @@ export const initialSpaces: SpaceItem[] = [
 
 interface ManageSpaceProps {
   onBack: () => void;
+  onUpdateSpaceStatus: (space: SpaceItem, status: SpaceStatus) => Promise<void>;
   spaces: SpaceItem[];
-  setSpaces: React.Dispatch<React.SetStateAction<SpaceItem[]>>;
+  selectedSpaceId?: string | null;
 }
 
+export default function ManageSpaceScreen({ onBack, onUpdateSpaceStatus, spaces, selectedSpaceId }: ManageSpaceProps) {
 export default function ManageSpaceScreen({ onBack, spaces, setSpaces }: ManageSpaceProps) {
   const insets = useSafeAreaInsets();
   const topPadding = Math.max(
@@ -77,6 +87,7 @@ export default function ManageSpaceScreen({ onBack, spaces, setSpaces }: ManageS
   const [selectedSpace, setSelectedSpace] = useState<SpaceItem | null>(null);
   const [newStatus, setNewStatus] = useState<SpaceStatus>('Available');
   const [isModalVisible, setIsModalVisible] = useState(false);
+  const selectedSlotLabel = spaces.find((item) => item.id === selectedSpaceId)?.slot || null;
 
   // Compute counts
   const availableCount = spaces.filter((s) => s.status === 'Available').length;
@@ -97,15 +108,16 @@ export default function ManageSpaceScreen({ onBack, spaces, setSpaces }: ManageS
     setIsModalVisible(true);
   };
 
-  const handleSaveStatus = () => {
+  const handleSaveStatus = async () => {
     if (!selectedSpace) return;
-    setSpaces((prev) =>
-      prev.map((item) =>
-        item.id === selectedSpace.id ? { ...item, status: newStatus } : item
-      )
-    );
-    setIsModalVisible(false);
-    setSelectedSpace(null);
+    try {
+      await onUpdateSpaceStatus(selectedSpace, newStatus);
+      setIsModalVisible(false);
+      setSelectedSpace(null);
+    } catch (error) {
+      const message = error instanceof Error ? error.message : 'Please try again.';
+      Alert.alert('Unable to update space', message);
+    }
   };
 
   return (
@@ -123,7 +135,9 @@ export default function ManageSpaceScreen({ onBack, spaces, setSpaces }: ManageS
         </TouchableOpacity>
         <View style={styles.headerTitleContainer}>
           <Text style={styles.headerTitle}>Manage Space</Text>
-          <Text style={styles.headerSubtitle}>One Galle Face Mall- Ground Floor</Text>
+          <Text style={styles.headerSubtitle}>
+            {selectedSlotLabel ? `Selected: ${selectedSlotLabel}` : 'One Galle Face Mall- Ground Floor'}
+          </Text>
         </View>
       </View>
 
@@ -246,6 +260,7 @@ export default function ManageSpaceScreen({ onBack, spaces, setSpaces }: ManageS
                   isAvail && styles.tileAvailable,
                   isRes && styles.tileReserved,
                   isOcc && styles.tileOccupied,
+                  selectedSpaceId === space.id && styles.selectedSpaceTile,
                 ]}
                 onPress={() => handleTilePress(space)}
                 activeOpacity={0.7}
@@ -437,6 +452,14 @@ const styles = StyleSheet.create({
     color: '#64748B',
     marginTop: 2,
     fontWeight: '500',
+  },
+  selectedSpaceTile: {
+    borderWidth: 2,
+    borderColor: '#0F766E',
+    shadowColor: '#0F766E',
+    shadowOpacity: 0.25,
+    shadowRadius: 6,
+    shadowOffset: { width: 0, height: 0 },
   },
   searchContainer: {
     paddingHorizontal: 16,

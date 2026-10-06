@@ -2,6 +2,12 @@ const mongoose = require('mongoose');
 
 const reservationSchema = new mongoose.Schema(
   {
+    reference: {
+      type: String,
+      unique: true,
+      sparse: true,
+      trim: true,
+    },
     driver: {
       type: mongoose.Schema.Types.ObjectId,
       ref: 'User',

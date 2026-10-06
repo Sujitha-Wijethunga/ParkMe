@@ -16,7 +16,7 @@ router.get('/', getParkingLots);
 router.get('/nearby-driving', getNearbyDrivingParking);
 router.get('/:id/availability', getParkingLotAvailability);
 router.get('/:id', getParkingLotById);
-router.post('/', protect, authorize('admin'), createParkingLot);
+router.post('/', protect, authorize('admin', 'staff'), createParkingLot);
 router.put('/:id', protect, authorize('admin', 'staff'), updateParkingLot);
 router.delete('/:id', protect, authorize('admin'), deleteParkingLot);
 
