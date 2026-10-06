@@ -68,6 +68,22 @@ const API_BASE_URL = (() => {
   return 'http://192.168.1.33:5000';
 })();
 
+const resolveApiImageUrl = (imageUrl?: string) => {
+  if (!imageUrl) return undefined;
+  return imageUrl.startsWith('/') ? `${API_BASE_URL}${imageUrl}` : imageUrl;
+};
+
+const readApiError = async (response: Response, fallback: string) => {
+  const responseText = await response.text();
+  try {
+    const payload = JSON.parse(responseText);
+    if (typeof payload.message === 'string' && payload.message.trim()) return payload.message;
+  } catch {
+    // Non-JSON server errors are surfaced as their response text below.
+  }
+  return responseText || fallback;
+};
+
 const normalizeSpaceStatus = (status?: string): SpaceItem['status'] => {
   switch (status) {
     case 'occupied':
@@ -121,7 +137,8 @@ export default function App() {
   const [lotDetailsOrigin, setLotDetailsOrigin] = useState<'driver-home' | 'driver-search'>('driver-home');
   const [loggedStaffId, setLoggedStaffId] = useState<string>('STF-4091');
   const [staffProfile, setStaffProfile] = useState<StaffProfile>(defaultStaffProfile);
-  const [activeReservation, setActiveReservation] = useState<{ ref: string; slot: string }>({
+  const [activeReservation, setActiveReservation] = useState<{ id: string; ref: string; slot: string }>({
+    id: '',
     ref: 'PE-84213',
     slot: 'A3',
   });
@@ -142,6 +159,36 @@ export default function App() {
         const lots = await response.json();
         if (Array.isArray(lots) && lots.length > 0) {
           setDriverParkingLots(lots.map(mapLotToDriverCard));
+          const spacesByLot = await Promise.all(
+            lots.map(async (lot: any) => {
+              const lotId = lot._id || lot.id;
+              const spacesResponse = await fetch(`${API_BASE_URL}/api/parking-lots/${lotId}/spaces`);
+              if (!spacesResponse.ok) {
+                throw new Error(`Unable to load spaces for ${lot.name || 'parking lot'}`);
+              }
+
+              const lotSpaces = await spacesResponse.json();
+              return Array.isArray(lotSpaces)
+                ? lotSpaces.map((space: any): SpaceItem => ({
+                    id: space._id || space.id,
+                    slot: space.spaceNumber,
+                    status: normalizeSpaceStatus(space.status),
+                    location: lot.name,
+                    level: space.floor,
+                    parkingLotId: lotId,
+                    imageUrl: resolveApiImageUrl(space.imageUrl),
+                  }))
+                : [];
+            })
+          );
+          const persistedSpaces = spacesByLot.flat();
+          setSpaces((currentSpaces) => {
+            const persistedIds = new Set(persistedSpaces.map((space) => space.id));
+            return [
+              ...persistedSpaces,
+              ...currentSpaces.filter((space) => !persistedIds.has(space.id)),
+            ];
+          });
         }
       } catch (error) {
         console.warn('Failed to load parking lots from backend:', error);
@@ -150,6 +197,60 @@ export default function App() {
 
     void fetchDriverLots();
   }, []);
+
+  useEffect(() => {
+    if (!authToken) return;
+
+    const loadStaffProfile = async () => {
+      const response = await fetch(`${API_BASE_URL}/api/auth/me`, {
+        headers: { Authorization: `Bearer ${authToken}` },
+      });
+      if (!response.ok) throw new Error('Unable to load staff profile');
+      const user = await response.json();
+      setLoggedStaffId(user.staffId || user._id);
+      setStaffProfile((profile) => ({
+        ...profile,
+        name: user.name,
+        email: user.email,
+        role: user.role,
+        staffId: user.staffId || user._id,
+      }));
+    };
+
+    const loadStaffSpaces = async () => {
+      const response = await fetch(`${API_BASE_URL}/api/parking-lots`);
+      if (!response.ok) throw new Error('Unable to load parking lots');
+      const lots = await response.json();
+      if (!Array.isArray(lots)) throw new Error('Invalid parking-lot response');
+
+      const spacesByLot = await Promise.all(
+        lots.map(async (lot: any) => {
+          const lotId = lot._id || lot.id;
+          const spacesResponse = await fetch(`${API_BASE_URL}/api/parking-lots/${lotId}/spaces`);
+          if (!spacesResponse.ok) throw new Error(`Unable to load spaces for ${lot.name}`);
+          const lotSpaces = await spacesResponse.json();
+          return Array.isArray(lotSpaces)
+            ? lotSpaces.map((space: any): SpaceItem => ({
+                id: space._id || space.id,
+                slot: space.spaceNumber,
+                status: normalizeSpaceStatus(space.status),
+                location: lot.name,
+                level: space.floor,
+                parkingLotId: lotId,
+                imageUrl: resolveApiImageUrl(space.imageUrl),
+              }))
+            : [];
+        })
+      );
+      setSpaces(spacesByLot.flat());
+      setDriverParkingLots(lots.map(mapLotToDriverCard));
+    };
+
+    void Promise.all([loadStaffProfile(), loadStaffSpaces()]).catch((error) => {
+      console.error('Failed to load staff data:', error);
+      Alert.alert('Unable to load staff data', error instanceof Error ? error.message : 'Please try again.');
+    });
+  }, [authToken]);
 
   const handleOpenSearch = (
     query: string = '',
@@ -228,6 +329,81 @@ export default function App() {
     setCurrentScreen('dashboard');
   };
 
+  const handleUpdateProfile = async (updatedProfile: StaffProfile) => {
+    if (!authToken) throw new Error('Please sign in again to update your profile.');
+    const response = await fetch(`${API_BASE_URL}/api/auth/me`, {
+      method: 'PUT',
+      headers: {
+        'Content-Type': 'application/json',
+        Authorization: `Bearer ${authToken}`,
+      },
+      body: JSON.stringify({ name: updatedProfile.name, email: updatedProfile.email }),
+    });
+    const result = await response.json();
+    if (!response.ok) throw new Error(result.message || 'Unable to update profile');
+    setStaffProfile((profile) => ({
+      ...profile,
+      name: result.name,
+      email: result.email,
+    }));
+  };
+
+  const handleChangePassword = async (currentPassword: string, newPassword: string) => {
+    if (!authToken) throw new Error('Please sign in again to change your password.');
+    const response = await fetch(`${API_BASE_URL}/api/auth/change-password`, {
+      method: 'PUT',
+      headers: {
+        'Content-Type': 'application/json',
+        Authorization: `Bearer ${authToken}`,
+      },
+      body: JSON.stringify({ currentPassword, newPassword }),
+    });
+    const result = await response.json();
+    if (!response.ok) throw new Error(result.message || 'Unable to update password');
+  };
+
+  const handleSubmitLeaveRequest = async (request: {
+    type: string;
+    startDate: string;
+    endDate: string;
+    reason: string;
+  }) => {
+    if (!authToken) throw new Error('Please sign in again to submit a leave request.');
+    const response = await fetch(`${API_BASE_URL}/api/leave-requests`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        Authorization: `Bearer ${authToken}`,
+      },
+      body: JSON.stringify(request),
+    });
+    const result = await response.json();
+    if (!response.ok) throw new Error(result.message || 'Unable to submit leave request');
+  };
+
+  const handleUpdateSpaceStatus = async (space: SpaceItem, status: SpaceItem['status']) => {
+    if (!authToken || !space.parkingLotId) {
+      throw new Error('This space is not connected to a saved parking lot. Reload the staff spaces and try again.');
+    }
+    const apiStatus = status === 'Available' ? 'available' : status === 'Occupied' ? 'occupied' : 'maintenance';
+    const response = await fetch(
+      `${API_BASE_URL}/api/parking-lots/${space.parkingLotId}/spaces/${space.id}`,
+      {
+        method: 'PUT',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${authToken}`,
+        },
+        body: JSON.stringify({ status: apiStatus }),
+      }
+    );
+    const result = await response.json();
+    if (!response.ok) throw new Error(result.message || 'Unable to update space status');
+    setSpaces((current) => current.map((item) => item.id === space.id
+      ? { ...item, status: normalizeSpaceStatus(result.status) }
+      : item));
+  };
+
   const syncDriverLotWithNewSpace = (newSpace: SpaceItem) => {
     const lotName = (newSpace.location ?? 'One Galle Face Mall').trim() || 'One Galle Face Mall';
 
@@ -278,6 +454,7 @@ export default function App() {
   };
 
   const handleLogout = () => {
+    setAuthToken(null);
     setCurrentScreen('login');
   };
 
@@ -294,7 +471,10 @@ export default function App() {
       };
 
       const lotResponse = await fetch(`${API_BASE_URL}/api/parking-lots`);
-      const lotList = lotResponse.ok ? await lotResponse.json() : [];
+      if (!lotResponse.ok) {
+        throw new Error(await readApiError(lotResponse, 'Unable to load parking lots.'));
+      }
+      const lotList = await lotResponse.json();
       let lot = Array.isArray(lotList)
         ? lotList.find((item: any) => item.name && item.name.toLowerCase().includes(lotName.toLowerCase()))
         : null;
@@ -319,63 +499,141 @@ export default function App() {
         });
 
         if (!createLotResponse.ok) {
-          const errText = await createLotResponse.text();
-          throw new Error(errText || 'Unable to create parking lot');
+          throw new Error(await readApiError(createLotResponse, 'Unable to create parking lot.'));
         }
 
         lot = await createLotResponse.json();
       }
 
       const lotId = lot._id || lot.id;
-      const apiStatus = newSpace.status === 'Available' ? 'available' : newSpace.status === 'Occupied' ? 'occupied' : 'maintenance';
       const createSpaceResponse = await fetch(`${API_BASE_URL}/api/parking-lots/${lotId}/spaces`, {
         method: 'POST',
-        headers,
-        body: JSON.stringify({
-          spaceNumber: newSpace.slot,
-          floor: newSpace.level || 'Level 3',
-          status: apiStatus,
-          type: 'standard',
-        }),
+        headers: { Authorization: headers.Authorization },
+        body: (() => {
+          const formData = new FormData() as FormData & {
+            append(name: string, value: string | { uri: string; name: string; type: string }): void;
+          };
+          formData.append('spaceNumbers', JSON.stringify(newSpace.spaceNumbers ?? [newSpace.slot]));
+          formData.append('floor', newSpace.level || 'Level 3');
+          formData.append('type', 'standard');
+          if (newSpace.imageUri) {
+            const imageExtension = newSpace.imageMimeType === 'image/png'
+              ? 'png'
+              : newSpace.imageMimeType === 'image/webp'
+                ? 'webp'
+                : 'jpg';
+            formData.append('image', {
+              uri: newSpace.imageUri,
+              name: `parking-space-image.${imageExtension}`,
+              type: newSpace.imageMimeType || 'image/jpeg',
+            });
+          }
+          return formData;
+        })(),
       });
 
       if (!createSpaceResponse.ok) {
-        const errText = await createSpaceResponse.text();
-        throw new Error(errText || 'Unable to create parking space');
+        throw new Error(await readApiError(createSpaceResponse, 'Unable to create parking space.'));
       }
 
-      const createdSpace = await createSpaceResponse.json();
-      const mappedSpace: SpaceItem = {
-        id: createdSpace._id || createdSpace.id || `${Date.now()}`,
-        slot: createdSpace.spaceNumber || newSpace.slot,
+      const createdResponse = await createSpaceResponse.json();
+      const createdRecords = Array.isArray(createdResponse) ? createdResponse : [createdResponse];
+      const mappedSpaces: SpaceItem[] = createdRecords.map((createdSpace: any) => ({
+        id: createdSpace._id || createdSpace.id || `${Date.now()}-${createdSpace.spaceNumber}`,
+        slot: createdSpace.spaceNumber,
         status: normalizeSpaceStatus(createdSpace.status),
         location: lotName,
         level: createdSpace.floor || newSpace.level || 'Level 3',
-      };
+        parkingLotId: lotId,
+        imageUrl: resolveApiImageUrl(createdSpace.imageUrl),
+      }));
 
-      setSpaces((prev) => [mappedSpace, ...prev]);
-      syncDriverLotWithNewSpace(mappedSpace);
+      setSpaces((prev) => [...mappedSpaces, ...prev]);
+      mappedSpaces.forEach(syncDriverLotWithNewSpace);
 
-      const refreshedLots = await fetch(`${API_BASE_URL}/api/parking-lots`);
-      if (refreshedLots.ok) {
-        const lots = await refreshedLots.json();
-        if (Array.isArray(lots) && lots.length > 0) {
-          setDriverParkingLots(lots.map(mapLotToDriverCard));
+      try {
+        const refreshedLots = await fetch(`${API_BASE_URL}/api/parking-lots`);
+        if (refreshedLots.ok) {
+          const lots = await refreshedLots.json();
+          if (Array.isArray(lots) && lots.length > 0) {
+            setDriverParkingLots(lots.map(mapLotToDriverCard));
+          }
         }
+      } catch (error) {
+        console.warn('Space was saved, but driver parking-lot counts could not be refreshed:', error);
       }
     } catch (error) {
       console.error('Failed to save new parking space:', error);
-      setSpaces((prev) => [newSpace, ...prev]);
-      syncDriverLotWithNewSpace(newSpace);
       Alert.alert(
-        'Saved locally',
-        `${newSpace.slot} was added to the app preview, even though the backend sync is temporarily unavailable.`
+        'Unable to save space',
+        error instanceof Error ? error.message : 'Please check the connection and try again.'
       );
+      throw error;
+    }
+    return newSpace.spaceNumbers?.length ?? 1;
+  };
+
+  const handleDeleteSpace = async (space: SpaceItem) => {
+    if (space.parkingLotId) {
+      if (!authToken) {
+        throw new Error('Please sign in again before deleting a saved parking space.');
+      }
+
+      const response = await fetch(
+        `${API_BASE_URL}/api/parking-lots/${space.parkingLotId}/spaces/${space.id}`,
+        {
+          method: 'DELETE',
+          headers: { Authorization: `Bearer ${authToken}` },
+        }
+      );
+
+      if (!response.ok) {
+        const errorMessage = await response.text();
+        throw new Error(errorMessage || 'Unable to delete parking space.');
+      }
+
+      const lotName = space.location || '';
+      setDriverParkingLots((currentLots) =>
+        currentLots.map((lot) => {
+          if (!lot.name.toLowerCase().includes(lotName.toLowerCase())) {
+            return lot;
+          }
+          const totalSpaces = Math.max(0, lot.totalSpaces - 1);
+          const availableSpaces = Math.max(
+            0,
+            lot.availableSpaces - (space.status === 'Available' ? 1 : 0)
+          );
+          return {
+            ...lot,
+            totalSpaces,
+            availableSpaces,
+            status: availableSpaces > 0 ? 'Available' : 'Full',
+          };
+        })
+      );
+
+      try {
+        const lotsResponse = await fetch(`${API_BASE_URL}/api/parking-lots`);
+        if (!lotsResponse.ok) {
+          throw new Error('Unable to refresh parking lots after deleting a space.');
+        }
+        const lots = await lotsResponse.json();
+        if (Array.isArray(lots)) {
+          setDriverParkingLots(lots.map(mapLotToDriverCard));
+        }
+      } catch (error) {
+        console.warn('Space deleted, but driver parking-lot counts could not be refreshed:', error);
+      }
+    }
+
+    setSpaces((currentSpaces) => currentSpaces.filter((item) => item.id !== space.id));
+    if (selectedSpaceId === space.id) {
+      setSelectedSpaceId(null);
     }
   };
 
-  const handleAdmitVehicle = (ref: string, slot: string) => {
-    setActiveReservation({ ref, slot });
+  const handleAdmitVehicle = (id: string, ref: string, slot: string) => {
+    setActiveReservation({ id, ref, slot });
     setCurrentScreen('verify');
   };
 
@@ -462,7 +720,7 @@ export default function App() {
           onLogout={handleLogout}
           onNavigateToSpaces={() => setCurrentScreen('spaces-list')}
           onNavigateToReservations={() => setCurrentScreen('reservations')}
-          onNavigateToVerifyEntry={() => setCurrentScreen('verify')}
+          onNavigateToVerifyEntry={() => setCurrentScreen('reservations')}
           onNavigateToProfile={() => setCurrentScreen('profile')}
           spaces={spaces}
         />
@@ -476,15 +734,15 @@ export default function App() {
             setSelectedSpaceId(space.id);
             setCurrentScreen('spaces');
           }}
+          onDeleteSpace={handleDeleteSpace}
         />
       )}
       {currentScreen === 'spaces' && (
         <ManageSpaceScreen 
           selectedSpaceId={selectedSpaceId}
           onBack={() => setCurrentScreen('spaces-list')} 
-          onAddSpace={() => setCurrentScreen('add-space')}
+          onUpdateSpaceStatus={handleUpdateSpaceStatus}
           spaces={spaces}
-          setSpaces={setSpaces}
         />
       )}
       {currentScreen === 'add-space' && (
@@ -497,12 +755,17 @@ export default function App() {
         <ReservationsScreen
           onBack={() => setCurrentScreen('dashboard')}
           onAdmitVehicle={handleAdmitVehicle}
+          apiBaseUrl={API_BASE_URL}
+          authToken={authToken}
         />
       )}
       {currentScreen === 'verify' && (
         <VerifyEntryScreen
+          reservationId={activeReservation.id}
           initialReference={activeReservation.ref}
           initialSlot={activeReservation.slot}
+          apiBaseUrl={API_BASE_URL}
+          authToken={authToken}
           onBack={() => setCurrentScreen('reservations')}
           onEntryConfirmed={() => setCurrentScreen('dashboard')}
         />
@@ -510,7 +773,7 @@ export default function App() {
       {currentScreen === 'profile' && (
         <StaffProfileScreen
           profile={staffProfile}
-          onUpdateProfile={setStaffProfile}
+          onUpdateProfile={handleUpdateProfile}
           onBack={() => setCurrentScreen('dashboard')}
           onLogout={handleLogout}
           onNavigateTab={(tab) => {
@@ -524,16 +787,24 @@ export default function App() {
         />
       )}
       {currentScreen === 'change-password' && (
-        <ChangePasswordScreen onBack={() => setCurrentScreen('profile')} />
+        <ChangePasswordScreen
+          onBack={() => setCurrentScreen('profile')}
+          onUpdatePassword={handleChangePassword}
+        />
       )}
       {currentScreen === 'attendance' && (
         <AttendanceScreen 
           onBack={() => setCurrentScreen('profile')} 
           onRequestLeave={() => setCurrentScreen('leave-request')}
+          apiBaseUrl={API_BASE_URL}
+          authToken={authToken}
         />
       )}
       {currentScreen === 'leave-request' && (
-        <LeaveRequestScreen onBack={() => setCurrentScreen('attendance')} />
+        <LeaveRequestScreen
+          onBack={() => setCurrentScreen('attendance')}
+          onSubmitRequest={handleSubmitLeaveRequest}
+        />
       )}
 
       {/* Dev Mode Role Switcher: Positioned in top header area so it never overlaps driver bottom nav or parking content */}
@@ -594,4 +865,3 @@ const styles = StyleSheet.create({
     letterSpacing: 0.2,
   },
 });
-

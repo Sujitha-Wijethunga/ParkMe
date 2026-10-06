@@ -14,14 +14,15 @@ import {
 
 interface ChangePasswordScreenProps {
   onBack: () => void;
+  onUpdatePassword: (currentPassword: string, newPassword: string) => Promise<void>;
 }
 
-export default function ChangePasswordScreen({ onBack }: ChangePasswordScreenProps) {
+export default function ChangePasswordScreen({ onBack, onUpdatePassword }: ChangePasswordScreenProps) {
   const [currentPassword, setCurrentPassword] = useState('');
   const [newPassword, setNewPassword] = useState('');
   const [confirmPassword, setConfirmPassword] = useState('');
 
-  const handleUpdatePassword = () => {
+  const handleUpdatePassword = async () => {
     if (!currentPassword || !newPassword || !confirmPassword) {
       Alert.alert('Required', 'Please fill all password fields.');
       return;
@@ -35,10 +36,12 @@ export default function ChangePasswordScreen({ onBack }: ChangePasswordScreenPro
       return;
     }
 
-    // Success simulation
-    Alert.alert('Success', 'Your password has been successfully updated.', [
-      { text: 'OK', onPress: onBack }
-    ]);
+    try {
+      await onUpdatePassword(currentPassword, newPassword);
+      Alert.alert('Success', 'Your password has been updated.', [{ text: 'OK', onPress: onBack }]);
+    } catch (error) {
+      Alert.alert('Unable to update password', error instanceof Error ? error.message : 'Please try again.');
+    }
   };
 
   return (

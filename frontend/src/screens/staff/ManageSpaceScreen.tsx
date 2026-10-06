@@ -11,9 +11,8 @@ import {
   TextInput,
   Modal,
   Pressable,
+  Alert,
 } from 'react-native';
-import { Colors } from '../../constants/colors';
-
 export type SpaceStatus = 'Available' | 'Reserved' | 'Occupied';
 
 export interface SpaceItem {
@@ -22,6 +21,11 @@ export interface SpaceItem {
   status: SpaceStatus;
   location?: string;
   level?: string;
+  parkingLotId?: string;
+  imageUrl?: string;
+  imageUri?: string;
+  imageMimeType?: string;
+  spaceNumbers?: string[];
 }
 
 export const initialSpaces: SpaceItem[] = [
@@ -61,13 +65,12 @@ export const initialSpaces: SpaceItem[] = [
 
 interface ManageSpaceProps {
   onBack: () => void;
-  onAddSpace?: () => void;
+  onUpdateSpaceStatus: (space: SpaceItem, status: SpaceStatus) => Promise<void>;
   spaces: SpaceItem[];
-  setSpaces: React.Dispatch<React.SetStateAction<SpaceItem[]>>;
   selectedSpaceId?: string | null;
 }
 
-export default function ManageSpaceScreen({ onBack, onAddSpace, spaces, setSpaces, selectedSpaceId }: ManageSpaceProps) {
+export default function ManageSpaceScreen({ onBack, onUpdateSpaceStatus, spaces, selectedSpaceId }: ManageSpaceProps) {
   const [searchQuery, setSearchQuery] = useState('');
   const [activeFilter, setActiveFilter] = useState<'All' | 'Available' | 'Reserved' | 'Occupied'>('All');
 
@@ -96,15 +99,16 @@ export default function ManageSpaceScreen({ onBack, onAddSpace, spaces, setSpace
     setIsModalVisible(true);
   };
 
-  const handleSaveStatus = () => {
+  const handleSaveStatus = async () => {
     if (!selectedSpace) return;
-    setSpaces((prev) =>
-      prev.map((item) =>
-        item.id === selectedSpace.id ? { ...item, status: newStatus } : item
-      )
-    );
-    setIsModalVisible(false);
-    setSelectedSpace(null);
+    try {
+      await onUpdateSpaceStatus(selectedSpace, newStatus);
+      setIsModalVisible(false);
+      setSelectedSpace(null);
+    } catch (error) {
+      const message = error instanceof Error ? error.message : 'Please try again.';
+      Alert.alert('Unable to update space', message);
+    }
   };
 
   return (
@@ -126,13 +130,6 @@ export default function ManageSpaceScreen({ onBack, onAddSpace, spaces, setSpace
             {selectedSlotLabel ? `Selected: ${selectedSlotLabel}` : 'One Galle Face Mall- Ground Floor'}
           </Text>
         </View>
-        <TouchableOpacity
-          style={styles.addButton}
-          onPress={onAddSpace}
-          activeOpacity={0.85}
-        >
-          <Text style={styles.addButtonText}>Add Space</Text>
-        </TouchableOpacity>
       </View>
 
       {/* Search Input */}
@@ -414,18 +411,6 @@ const styles = StyleSheet.create({
     paddingTop: 12,
     paddingBottom: 8,
     backgroundColor: '#FFFFFF',
-  },
-  addButton: {
-    backgroundColor: '#0F766E',
-    paddingHorizontal: 12,
-    paddingVertical: 8,
-    borderRadius: 10,
-    marginLeft: 8,
-  },
-  addButtonText: {
-    color: '#FFFFFF',
-    fontSize: 12,
-    fontWeight: '700',
   },
   backButton: {
     width: 36,

@@ -75,7 +75,7 @@ export default function StaffSignupScreen({
   const confirmPasswordInputRef = useRef<TextInput>(null);
 
   // Animated scale for button
-  const buttonScale = useRef(new Animated.Value(1)).current;
+  const [buttonScale] = useState(() => new Animated.Value(1));
 
   const handlePressIn = () => {
     Animated.spring(buttonScale, {

@@ -1,5 +1,6 @@
 import React from 'react';
 import {
+  Alert,
   SafeAreaView,
   ScrollView,
   StatusBar,
@@ -15,13 +16,31 @@ interface SpaceListScreenProps {
   spaces: SpaceItem[];
   onBack: () => void;
   onSelectSpace: (space: SpaceItem) => void;
+  onDeleteSpace: (space: SpaceItem) => Promise<void>;
   onAddSpace?: () => void;
 }
 
-const lotImage = 'https://images.unsplash.com/photo-1506521781263-d8422e82f27a?auto=format&fit=crop&w=600&q=80';
-const altImage = 'https://images.unsplash.com/photo-1590674899484-d5640e854abe?auto=format&fit=crop&w=600&q=80';
+export default function SpaceListScreen({ spaces, onBack, onSelectSpace, onDeleteSpace, onAddSpace }: SpaceListScreenProps) {
+  const confirmDelete = (space: SpaceItem) => {
+    Alert.alert(
+      'Delete parking space?',
+      `Are you sure you want to delete ${space.slot}?`,
+      [
+        { text: 'Cancel', style: 'cancel' },
+        {
+          text: 'Yes, delete',
+          style: 'destructive',
+          onPress: () => {
+            void onDeleteSpace(space).catch((error: unknown) => {
+              const message = error instanceof Error ? error.message : 'Please try again.';
+              Alert.alert('Could not delete space', message);
+            });
+          },
+        },
+      ]
+    );
+  };
 
-export default function SpaceListScreen({ spaces, onBack, onSelectSpace, onAddSpace }: SpaceListScreenProps) {
   return (
     <SafeAreaView style={styles.safeArea}>
       <StatusBar barStyle="dark-content" backgroundColor="#FFFFFF" />
@@ -42,14 +61,14 @@ export default function SpaceListScreen({ spaces, onBack, onSelectSpace, onAddSp
       </View>
 
       <ScrollView contentContainerStyle={styles.listContainer} showsVerticalScrollIndicator={false}>
-        {spaces.map((space, index) => {
+        {spaces.map((space) => {
           const status = space.status;
           const isAvailable = status === 'Available';
           const isReserved = status === 'Reserved';
           const isOccupied = status === 'Occupied';
 
           return (
-            <TouchableOpacity
+            <View
               key={space.id}
               style={[
                 styles.card,
@@ -57,73 +76,51 @@ export default function SpaceListScreen({ spaces, onBack, onSelectSpace, onAddSp
                 isReserved && styles.cardReserved,
                 isOccupied && styles.cardOccupied,
               ]}
-              onPress={() => onSelectSpace(space)}
-              activeOpacity={0.9}
             >
-              <View style={styles.contentRow}>
-                <View style={styles.imageContainer}>
-                  <Image
-                    source={{ uri: index % 2 === 0 ? lotImage : altImage }}
-                    style={styles.image}
-                    resizeMode="cover"
-                  />
-                </View>
-
-                <View style={styles.infoColumn}>
-                  <View style={styles.statusRow}>
-                    <View
-                      style={[
-                        styles.badge,
-                        isAvailable && styles.badgeAvailable,
-                        isReserved && styles.badgeReserved,
-                        isOccupied && styles.badgeOccupied,
-                      ]}
-                    >
-                      <Text style={styles.checkIcon}>✓</Text>
-                      <Text
-                        style={[
-                          styles.badgeText,
-                          isAvailable && styles.badgeTextAvailable,
-                          isReserved && styles.badgeTextReserved,
-                          isOccupied && styles.badgeTextOccupied,
-                        ]}
-                      >
-                        {status}
-                      </Text>
-                    </View>
-
-                    <View style={styles.distanceWrap}>
-                      <Text style={styles.distanceIcon}>📍</Text>
-                      <Text style={styles.distanceText}>0.{(index + 1) * 4} km</Text>
-                    </View>
-                  </View>
-
-                  <Text style={styles.nameText} numberOfLines={1}>
-                    {space.location || 'One Galle Face Mall'}
+              {space.imageUrl ? (
+                <Image source={{ uri: space.imageUrl }} style={styles.spaceImage} resizeMode="cover" />
+              ) : null}
+              <TouchableOpacity
+                style={styles.cardContent}
+                onPress={() => onSelectSpace(space)}
+                activeOpacity={0.8}
+              >
+                <Text style={styles.nameText} numberOfLines={1}>
+                  {space.location || 'One Galle Face Mall'}
+                </Text>
+                <Text style={styles.addressText} numberOfLines={1}>
+                  {space.level || 'Level 3'} · {space.slot}
+                </Text>
+                <View
+                  style={[
+                    styles.badge,
+                    isAvailable && styles.badgeAvailable,
+                    isReserved && styles.badgeReserved,
+                    isOccupied && styles.badgeOccupied,
+                  ]}
+                >
+                  <Text
+                    style={[
+                      styles.badgeText,
+                      isAvailable && styles.badgeTextAvailable,
+                      isReserved && styles.badgeTextReserved,
+                      isOccupied && styles.badgeTextOccupied,
+                    ]}
+                  >
+                    {status}
                   </Text>
-                  <Text style={styles.addressText} numberOfLines={1}>
-                    {space.level || 'Level 3'} · {space.slot}
-                  </Text>
-
-                  <View style={styles.bottomRow}>
-                    <View style={styles.capacityRow}>
-                      <Text style={styles.remainingSpacesText}>
-                        <Text style={styles.remainingSpacesBold}>{status === 'Available' ? '1' : status === 'Reserved' ? '0' : '0'}</Text>
-                        /1 left
-                      </Text>
-                      <View style={styles.coveredBadge}>
-                        <Text style={styles.coveredBadgeText}>Covered</Text>
-                      </View>
-                    </View>
-
-                    <Text style={styles.priceContainer}>
-                      <Text style={styles.priceBold}>Rs. {status === 'Available' ? '150' : status === 'Reserved' ? '140' : '130'}</Text>
-                      <Text style={styles.priceUnit}>/hr</Text>
-                    </Text>
-                  </View>
                 </View>
-              </View>
-            </TouchableOpacity>
+              </TouchableOpacity>
+              <TouchableOpacity
+                style={styles.deleteButton}
+                onPress={() => confirmDelete(space)}
+                activeOpacity={0.7}
+                accessibilityRole="button"
+                accessibilityLabel={`Delete space ${space.slot}`}
+              >
+                <Text style={styles.deleteIcon}>🗑️</Text>
+              </TouchableOpacity>
+            </View>
           );
         })}
       </ScrollView>
@@ -191,6 +188,8 @@ const styles = StyleSheet.create({
     gap: 12,
   },
   card: {
+    flexDirection: 'row',
+    alignItems: 'center',
     backgroundColor: '#FFFFFF',
     borderRadius: 18,
     padding: 12,
@@ -211,29 +210,28 @@ const styles = StyleSheet.create({
   cardOccupied: {
     borderColor: '#FCA5A5',
   },
-  contentRow: {
-    flexDirection: 'row',
-  },
-  imageContainer: {
-    width: 96,
-    height: 96,
-    borderRadius: 14,
-    overflow: 'hidden',
-    backgroundColor: '#E2E8F0',
-  },
-  image: {
-    width: '100%',
-    height: '100%',
-  },
-  infoColumn: {
+  cardContent: {
     flex: 1,
-    marginLeft: 12,
-    justifyContent: 'space-between',
+    gap: 8,
   },
-  statusRow: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
+  spaceImage: {
+    width: 76,
+    height: 76,
+    borderRadius: 12,
+    backgroundColor: '#E2E8F0',
+    marginRight: 12,
+  },
+  deleteButton: {
+    width: 44,
+    height: 44,
+    borderRadius: 22,
+    backgroundColor: '#FEF2F2',
     alignItems: 'center',
+    justifyContent: 'center',
+    marginLeft: 12,
+  },
+  deleteIcon: {
+    fontSize: 19,
   },
   badge: {
     flexDirection: 'row',
@@ -255,11 +253,6 @@ const styles = StyleSheet.create({
     backgroundColor: '#FEE2E2',
     borderColor: '#FCA5A5',
   },
-  checkIcon: {
-    fontSize: 10,
-    fontWeight: '800',
-    marginRight: 4,
-  },
   badgeText: {
     fontSize: 11,
     fontWeight: '700',
@@ -273,19 +266,6 @@ const styles = StyleSheet.create({
   badgeTextOccupied: {
     color: '#B91C1C',
   },
-  distanceWrap: {
-    flexDirection: 'row',
-    alignItems: 'center',
-  },
-  distanceIcon: {
-    fontSize: 11,
-    marginRight: 4,
-  },
-  distanceText: {
-    fontSize: 12,
-    fontWeight: '600',
-    color: '#475569',
-  },
   nameText: {
     fontSize: 15,
     fontWeight: '800',
@@ -296,49 +276,5 @@ const styles = StyleSheet.create({
     fontSize: 12,
     color: '#64748B',
     marginTop: 2,
-  },
-  bottomRow: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    marginTop: 8,
-  },
-  capacityRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-  },
-  remainingSpacesText: {
-    fontSize: 12,
-    color: '#475569',
-  },
-  remainingSpacesBold: {
-    fontSize: 13,
-    fontWeight: '800',
-    color: '#0F172A',
-  },
-  coveredBadge: {
-    backgroundColor: '#F8FAFC',
-    borderRadius: 8,
-    paddingHorizontal: 8,
-    paddingVertical: 4,
-    marginLeft: 8,
-  },
-  coveredBadgeText: {
-    fontSize: 11,
-    color: '#334155',
-    fontWeight: '700',
-  },
-  priceContainer: {
-    alignItems: 'flex-end',
-  },
-  priceBold: {
-    fontSize: 18,
-    fontWeight: '800',
-    color: '#0F172A',
-  },
-  priceUnit: {
-    fontSize: 11,
-    color: '#64748B',
-    fontWeight: '700',
   },
 });

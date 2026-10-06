@@ -1,9 +1,9 @@
 import React, { useMemo, useState } from 'react';
 import {
   Alert,
+  Image,
   KeyboardAvoidingView,
   Platform,
-  Pressable,
   SafeAreaView,
   ScrollView,
   StatusBar,
@@ -13,51 +13,88 @@ import {
   TouchableOpacity,
   View,
 } from 'react-native';
+import * as ImagePicker from 'expo-image-picker';
 import { Colors } from '../../constants/colors';
-import { SpaceItem, SpaceStatus } from './ManageSpaceScreen';
+import { SpaceItem } from './ManageSpaceScreen';
 
 interface AddSpaceScreenProps {
   onBack: () => void;
-  onSave: (space: SpaceItem) => Promise<void> | void;
+  onSave: (space: SpaceItem) => Promise<number | void> | number | void;
 }
 
 export default function AddSpaceScreen({ onBack, onSave }: AddSpaceScreenProps) {
   const [lotName, setLotName] = useState('One Galle Face Mall');
   const [level, setLevel] = useState('Level 3');
-  const [slot, setSlot] = useState('L3-A15');
-  const [status, setStatus] = useState<SpaceStatus>('Available');
+  const [capacity, setCapacity] = useState('A1-A20');
+  const [spaceImage, setSpaceImage] = useState<ImagePicker.ImagePickerAsset | null>(null);
 
-  const slotLabel = useMemo(() => {
-    if (!slot.trim()) {
-      return 'L3-A15';
+  const chooseImage = async () => {
+    try {
+      const result = await ImagePicker.launchImageLibraryAsync({
+        mediaTypes: ['images'],
+        allowsEditing: true,
+        quality: 0.8,
+      });
+
+      if (!result.canceled) {
+        const asset = result.assets[0];
+        if (!asset) {
+          throw new Error('The photo picker did not return an image.');
+        }
+        setSpaceImage(asset);
+      }
+    } catch (error) {
+      const message = error instanceof Error ? error.message : 'Please try again.';
+      Alert.alert('Unable to select image', message);
     }
-    return slot.trim().toUpperCase();
-  }, [slot]);
+  };
+
+  const capacityLabel = useMemo(() => capacity.trim().toUpperCase(), [capacity]);
 
   const handleSave = async () => {
     const cleanLot = lotName.trim() || 'One Galle Face Mall';
     const cleanLevel = level.trim() || 'Level 3';
-    const cleanSlot = slotLabel || 'L3-A15';
-
-    if (!cleanSlot) {
-      Alert.alert('Missing Space', 'Please add a space slot number.');
+    let spaceNumbers: string[];
+    try {
+      spaceNumbers = expandSpaceCapacity(capacityLabel);
+    } catch (error) {
+      Alert.alert(
+        'Invalid space capacity',
+        error instanceof Error ? error.message : 'Use a range such as A1-A20.'
+      );
+      return;
+    }
+    if (!spaceImage) {
+      Alert.alert('Image required', 'Please choose an image for these parking spaces.');
+      return;
+    }
+    const imageMimeType = resolveImageMimeType(spaceImage);
+    if (!imageMimeType) {
+      Alert.alert('Unsupported image', 'Choose a JPEG, PNG, or WebP image.');
       return;
     }
 
     const nextSpace: SpaceItem = {
       id: `${Date.now()}`,
-      slot: cleanSlot,
-      status,
+      slot: spaceNumbers[0],
+      status: 'Available',
       location: cleanLot,
       level: cleanLevel,
+      imageUri: spaceImage?.uri,
+      imageMimeType,
+      spaceNumbers,
     };
 
     try {
-      await onSave(nextSpace);
-      Alert.alert('Space Added', `${cleanSlot} has been added to ${cleanLot} (${cleanLevel}).`);
+      const savedCount = await onSave(nextSpace);
+      const count = savedCount ?? spaceNumbers.length;
+      Alert.alert(
+        'Spaces Added',
+        `${count} spaces (${spaceNumbers[0]}-${spaceNumbers[spaceNumbers.length - 1]}) have been added to ${cleanLot} (${cleanLevel}).`
+      );
       onBack();
-    } catch (error) {
-      // Error is already surfaced in App-level alert.
+    } catch {
+      // The app-level save handler already displays the error.
     }
   };
 
@@ -103,52 +140,49 @@ export default function AddSpaceScreen({ onBack, onSave }: AddSpaceScreenProps) 
           </View>
 
           <View style={styles.fieldGroup}>
-            <Text style={styles.label}>Space Number</Text>
+            <Text style={styles.label}>Space Capacity</Text>
             <TextInput
-              value={slot}
-              onChangeText={setSlot}
+              value={capacity}
+              onChangeText={setCapacity}
               style={styles.input}
-              placeholder="L3-A15"
+              placeholder="A1-A20"
               placeholderTextColor={Colors.placeholder}
               autoCapitalize="characters"
             />
+            <Text style={styles.helpText}>Enter a range with one letter prefix, such as A1-A20.</Text>
           </View>
 
           <View style={styles.fieldGroup}>
-            <Text style={styles.label}>Initial Status</Text>
-            <View style={styles.statusRow}>
-              {(['Available', 'Reserved', 'Occupied'] as SpaceStatus[]).map((option) => (
-                <Pressable
-                  key={option}
-                  onPress={() => setStatus(option)}
-                  style={[
-                    styles.statusOption,
-                    status === option && styles.statusOptionSelected,
-                    option === 'Available' && styles.statusAvailable,
-                    option === 'Reserved' && styles.statusReserved,
-                    option === 'Occupied' && styles.statusOccupied,
-                  ]}
+            <Text style={styles.label}>Space Image</Text>
+            {spaceImage ? (
+              <View style={styles.imagePreviewWrap}>
+                <Image source={{ uri: spaceImage.uri }} style={styles.imagePreview} />
+                <TouchableOpacity
+                  onPress={() => setSpaceImage(null)}
+                  style={styles.removeImageButton}
+                  accessibilityRole="button"
+                  accessibilityLabel="Remove selected image"
                 >
-                  <Text
-                    style={[
-                      styles.statusText,
-                      status === option && styles.statusTextSelected,
-                      option === 'Available' && styles.statusTextAvailable,
-                      option === 'Reserved' && styles.statusTextReserved,
-                      option === 'Occupied' && styles.statusTextOccupied,
-                    ]}
-                  >
-                    {option}
-                  </Text>
-                </Pressable>
-              ))}
-            </View>
+                  <Text style={styles.removeImageText}>Remove image</Text>
+                </TouchableOpacity>
+              </View>
+            ) : null}
+            <TouchableOpacity
+              style={styles.chooseImageButton}
+              onPress={chooseImage}
+              activeOpacity={0.85}
+            >
+              <Text style={styles.chooseImageText}>
+                {spaceImage ? 'Choose a different image' : 'Choose image from phone'}
+              </Text>
+            </TouchableOpacity>
+            <Text style={styles.helpText}>JPEG, PNG, or WebP · Maximum 5 MB</Text>
           </View>
 
           <View style={styles.previewCard}>
             <Text style={styles.previewLabel}>Preview</Text>
-            <Text style={styles.previewTitle}>{cleanSlotPreview(slotLabel, level)}</Text>
-            <Text style={styles.previewMeta}>{lotName || 'One Galle Face Mall'} · {level || 'Level 3'} · {status}</Text>
+            <Text style={styles.previewTitle}>{capacityLabel || 'A1-A20'}</Text>
+            <Text style={styles.previewMeta}>{lotName || 'One Galle Face Mall'} · {level || 'Level 3'}</Text>
           </View>
 
           <TouchableOpacity style={styles.saveButton} onPress={handleSave} activeOpacity={0.9}>
@@ -160,10 +194,41 @@ export default function AddSpaceScreen({ onBack, onSave }: AddSpaceScreenProps) 
   );
 }
 
-const cleanSlotPreview = (slot: string, level: string) => {
-  const cleanSlot = slot.trim() || 'L3-A15';
-  const cleanLevel = level.trim() || 'Level 3';
-  return `${cleanLevel} - ${cleanSlot}`;
+const expandSpaceCapacity = (capacity: string) => {
+  const match = capacity.match(/^([A-Z]+)(\d+)-([A-Z]+)(\d+)$/);
+  if (!match || match[1] !== match[3]) {
+    throw new Error('Enter a range using the same letter prefix, such as A1-A20.');
+  }
+
+  const start = Number(match[2]);
+  const end = Number(match[4]);
+  const count = end - start + 1;
+  if (!Number.isSafeInteger(start) || !Number.isSafeInteger(end) || start < 1 || count < 1 || count > 100) {
+    throw new Error('The range must be ascending and contain between 1 and 100 spaces.');
+  }
+
+  return Array.from({ length: count }, (_, index) => `${match[1]}${start + index}`);
+};
+
+const resolveImageMimeType = (asset: ImagePicker.ImagePickerAsset) => {
+  const uriExtension = asset.uri.split(/[?#]/, 1)[0].split('.').pop()?.toLowerCase();
+  const mimeTypeByExtension: Record<string, string> = {
+    jpg: 'image/jpeg',
+    jpeg: 'image/jpeg',
+    png: 'image/png',
+    webp: 'image/webp',
+  };
+  if (uriExtension && mimeTypeByExtension[uriExtension]) {
+    return mimeTypeByExtension[uriExtension];
+  }
+
+  const mimeType = asset.mimeType?.toLowerCase();
+  if (mimeType && Object.values(mimeTypeByExtension).includes(mimeType)) {
+    return mimeType;
+  }
+
+  const fileExtension = asset.fileName?.split('.').pop()?.toLowerCase();
+  return fileExtension ? mimeTypeByExtension[fileExtension] : undefined;
 };
 
 const styles = StyleSheet.create({
@@ -232,52 +297,44 @@ const styles = StyleSheet.create({
     fontSize: 15,
     color: '#0F172A',
   },
-  statusRow: {
-    flexDirection: 'row',
-    gap: 8,
-    flexWrap: 'wrap',
-  },
-  statusOption: {
-    flex: 1,
-    minWidth: 90,
-    borderRadius: 12,
-    paddingVertical: 10,
-    paddingHorizontal: 12,
-    borderWidth: 1,
-    borderColor: '#CBD5E1',
+  chooseImageButton: {
+    minHeight: 52,
     alignItems: 'center',
     justifyContent: 'center',
+    borderWidth: 1,
+    borderStyle: 'dashed',
+    borderColor: '#94A3B8',
+    borderRadius: 12,
+    backgroundColor: '#FFFFFF',
+    paddingHorizontal: 14,
   },
-  statusOptionSelected: {
-    borderWidth: 2,
-  },
-  statusAvailable: {
-    backgroundColor: '#ECFDF5',
-    borderColor: '#10B981',
-  },
-  statusReserved: {
-    backgroundColor: '#FFF7ED',
-    borderColor: '#F59E0B',
-  },
-  statusOccupied: {
-    backgroundColor: '#FEE2E2',
-    borderColor: '#EF4444',
-  },
-  statusText: {
-    fontSize: 12,
+  chooseImageText: {
+    color: '#0F766E',
+    fontSize: 14,
     fontWeight: '700',
   },
-  statusTextSelected: {
-    color: '#FFFFFF',
+  imagePreviewWrap: {
+    marginBottom: 10,
   },
-  statusTextAvailable: {
-    color: '#047857',
+  imagePreview: {
+    width: '100%',
+    height: 180,
+    borderRadius: 12,
+    backgroundColor: '#E2E8F0',
   },
-  statusTextReserved: {
-    color: '#B45309',
+  removeImageButton: {
+    alignSelf: 'flex-end',
+    paddingTop: 8,
   },
-  statusTextOccupied: {
+  removeImageText: {
     color: '#B91C1C',
+    fontSize: 13,
+    fontWeight: '600',
+  },
+  helpText: {
+    marginTop: 6,
+    color: '#64748B',
+    fontSize: 12,
   },
   previewCard: {
     backgroundColor: '#0F172A',

@@ -16,12 +16,11 @@ import {
   Image,
 } from 'react-native';
 import * as ImagePicker from 'expo-image-picker';
-import { Colors } from '../../constants/colors';
 import { StaffProfile } from '../../constants/profile';
 
 interface StaffProfileScreenProps {
   profile: StaffProfile;
-  onUpdateProfile: (updated: StaffProfile) => void;
+  onUpdateProfile: (updated: StaffProfile) => Promise<void>;
   onBack: () => void;
   onLogout: () => void;
   onNavigateTab: (tab: 'dashboard' | 'spaces' | 'reservations' | 'profile') => void;
@@ -31,8 +30,6 @@ interface StaffProfileScreenProps {
 
 const AVATAR_OPTIONS = ['👤', '👨‍💼', '👩‍💼', '👮‍♂️', '👮‍♀️', '🧑‍💻', '🚗', '🛡️'];
 const AVATAR_BG_OPTIONS = ['#BAE6FD', '#DCFCE7', '#FEF08A', '#FED7AA', '#FBCFE8', '#DDD6FE'];
-const ROLE_OPTIONS = ['Parking Staff', 'Senior Attendant', 'Gate Supervisor', 'Shift Manager'];
-
 export default function StaffProfileScreen({
   profile,
   onUpdateProfile,
@@ -48,7 +45,6 @@ export default function StaffProfileScreen({
   const [isEditModalVisible, setIsEditModalVisible] = useState(false);
   const [editName, setEditName] = useState(profile.name);
   const [editEmail, setEditEmail] = useState(profile.email);
-  const [editRole, setEditRole] = useState(profile.role);
   const [editAvatar, setEditAvatar] = useState(profile.avatar);
   const [editAvatarBg, setEditAvatarBg] = useState(profile.avatarBg);
   const [editAvatarImageUri, setEditAvatarImageUri] = useState(profile.avatarImageUri);
@@ -56,7 +52,6 @@ export default function StaffProfileScreen({
   const openEditModal = () => {
     setEditName(profile.name);
     setEditEmail(profile.email);
-    setEditRole(profile.role);
     setEditAvatar(profile.avatar);
     setEditAvatarBg(profile.avatarBg);
     setEditAvatarImageUri(profile.avatarImageUri);
@@ -76,7 +71,7 @@ export default function StaffProfileScreen({
     }
   };
 
-  const handleSaveProfile = () => {
+  const handleSaveProfile = async () => {
     if (!editName.trim()) {
       Alert.alert('Required', 'Please enter your name.');
       return;
@@ -90,15 +85,19 @@ export default function StaffProfileScreen({
       ...profile,
       name: editName.trim(),
       email: editEmail.trim(),
-      role: editRole.trim(),
+      role: profile.role,
       avatar: editAvatar,
       avatarBg: editAvatarBg,
       avatarImageUri: editAvatarImageUri,
     };
 
-    onUpdateProfile(updated);
-    setIsEditModalVisible(false);
-    Alert.alert('Profile Updated', 'Your profile changes have been saved successfully! ✨');
+    try {
+      await onUpdateProfile(updated);
+      setIsEditModalVisible(false);
+      Alert.alert('Profile Updated', 'Your profile changes have been saved successfully.');
+    } catch (error) {
+      Alert.alert('Unable to update profile', error instanceof Error ? error.message : 'Please try again.');
+    }
   };
 
   const handleMenuItemPress = (title: string, detail?: string) => {
@@ -410,32 +409,6 @@ export default function StaffProfileScreen({
                   keyboardType="email-address"
                   autoCapitalize="none"
                 />
-              </View>
-
-              {/* Role Selector */}
-              <View style={styles.editInputGroup}>
-                <Text style={styles.editInputLabel}>Staff Role</Text>
-                <View style={styles.roleChipsContainer}>
-                  {ROLE_OPTIONS.map((role) => (
-                    <TouchableOpacity
-                      key={role}
-                      style={[
-                        styles.roleChip,
-                        editRole === role && styles.roleChipSelected,
-                      ]}
-                      onPress={() => setEditRole(role)}
-                    >
-                      <Text
-                        style={[
-                          styles.roleChipText,
-                          editRole === role && styles.roleChipTextSelected,
-                        ]}
-                      >
-                        {role}
-                      </Text>
-                    </TouchableOpacity>
-                  ))}
-                </View>
               </View>
 
               {/* Action Buttons */}

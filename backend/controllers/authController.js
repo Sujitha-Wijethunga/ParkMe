@@ -117,16 +117,35 @@ const getMe = async (req, res) => {
 // @access  Private
 const updateMe = async (req, res, next) => {
   try {
-    const { name, phone } = req.body;
+    const { name, email, phone } = req.body;
+    const updates = {};
+    if (name !== undefined) updates.name = name.trim();
+    if (phone !== undefined) updates.phone = phone.trim();
+    if (email !== undefined) updates.email = email.trim().toLowerCase();
+
+    if (updates.email) {
+      const duplicateStaff = await Staff.findOne({
+        email: updates.email,
+        _id: { $ne: req.user._id },
+      });
+      const duplicateUser = await User.findOne({
+        email: updates.email,
+        _id: { $ne: req.user._id },
+      });
+      if (duplicateStaff || duplicateUser) {
+        return res.status(409).json({ message: 'Email is already in use' });
+      }
+    }
+
     let user = await Staff.findByIdAndUpdate(
       req.user._id,
-      { name, phone },
+      updates,
       { new: true, runValidators: true }
     );
     if (!user) {
       user = await User.findByIdAndUpdate(
         req.user._id,
-        { name, phone },
+        updates,
         { new: true, runValidators: true }
       );
     }

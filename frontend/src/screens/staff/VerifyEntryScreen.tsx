@@ -12,23 +12,28 @@ import {
   Alert,
 } from 'react-native';
 import { CameraView, useCameraPermissions } from 'expo-camera';
-import { Colors } from '../../constants/colors';
 
 interface VerifyEntryProps {
+  reservationId: string;
   initialReference?: string;
   initialSlot?: string;
+  apiBaseUrl: string;
+  authToken: string | null;
   onBack: () => void;
   onEntryConfirmed?: () => void;
 }
 
 export default function VerifyEntryScreen({
+  reservationId,
   initialReference = 'PE-84213',
   initialSlot = 'A3',
+  apiBaseUrl,
+  authToken,
   onBack,
   onEntryConfirmed,
 }: VerifyEntryProps) {
   const [referenceInput, setReferenceInput] = useState(initialReference);
-  const [isVerified, setIsVerified] = useState(true);
+  const [isVerified, setIsVerified] = useState(false);
   const [isConfirming, setIsConfirming] = useState(false);
   const [isScanning, setIsScanning] = useState(false);
   const [permission, requestPermission] = useCameraPermissions();
@@ -39,9 +44,14 @@ export default function VerifyEntryScreen({
       Alert.alert('Required', 'Please enter a booking reference.');
       return;
     }
+    if (refToVerify.trim().toUpperCase() !== initialReference.trim().toUpperCase()) {
+      setIsVerified(false);
+      Alert.alert('Reservation not found', 'The reference does not match the active reservation selected from the reservations list.');
+      return;
+    }
     setReferenceInput(refToVerify);
     setIsVerified(true);
-    Alert.alert('Verified', `Booking reference ${refToVerify.trim()} is valid and active.`);
+    Alert.alert('Verified', `Booking reference ${refToVerify.trim()} matches the active reservation.`);
   };
 
   const handleResetScanner = () => {
@@ -50,13 +60,23 @@ export default function VerifyEntryScreen({
     setReferenceInput('');
   };
 
-  const handleConfirmEntry = () => {
+  const handleConfirmEntry = async () => {
+    if (!authToken || !reservationId) {
+      Alert.alert('Reservation unavailable', 'Return to reservations and select an active reservation.');
+      return;
+    }
     setIsConfirming(true);
-    setTimeout(() => {
+    try {
+      const response = await fetch(`${apiBaseUrl}/api/reservations/${reservationId}/complete`, {
+        method: 'PUT',
+        headers: { Authorization: `Bearer ${authToken}` },
+      });
+      const result = await response.json();
+      if (!response.ok) throw new Error(result.message || 'Unable to complete reservation');
       setIsConfirming(false);
       Alert.alert(
-        'Boom Gate Opened! 🚗',
-        `Vehicle entry confirmed for Space ${initialSlot}.\nBoom barrier opened successfully!`,
+        'Reservation completed',
+        `Space ${initialSlot} has been released.`,
         [
           {
             text: 'Go to Dashboard',
@@ -70,7 +90,10 @@ export default function VerifyEntryScreen({
           },
         ]
       );
-    }, 700);
+    } catch (error) {
+      setIsConfirming(false);
+      Alert.alert('Unable to complete reservation', error instanceof Error ? error.message : 'Please try again.');
+    }
   };
 
   return (
@@ -144,7 +167,7 @@ export default function VerifyEntryScreen({
           )}
 
           <Text style={styles.scannerTitle}>Scan booking QR code</Text>
-          <Text style={styles.scannerSubtitle}>Hold scanner over driver's mobile pass</Text>
+          <Text style={styles.scannerSubtitle}>Hold scanner over driver&apos;s mobile pass</Text>
 
           <TouchableOpacity
             style={styles.resetScannerBtn}
@@ -162,7 +185,10 @@ export default function VerifyEntryScreen({
             <TextInput
               style={styles.manualInput}
               value={referenceInput}
-              onChangeText={setReferenceInput}
+              onChangeText={(value) => {
+                setReferenceInput(value);
+                setIsVerified(false);
+              }}
               placeholder="e.g. PE-84213"
               placeholderTextColor="#94A3B8"
               autoCapitalize="characters"

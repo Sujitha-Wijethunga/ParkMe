@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useCallback, useEffect, useState } from 'react';
 import {
   View,
   Text,
@@ -11,16 +11,15 @@ import {
   TextInput,
   Alert,
 } from 'react-native';
-import { Colors } from '../../constants/colors';
-
 export interface ReservationItem {
   id: string;
+  parkingLotId: string;
   initials: string;
   slot: string;
   reference: string;
   time: string;
   eta: string;
-  status: 'Reserved' | 'Active' | 'Completed';
+  status: 'Reserved' | 'Active' | 'Completed' | 'Cancelled';
   driverNameMasked: string;
   plate: string;
   bookingTime: string;
@@ -29,97 +28,98 @@ export interface ReservationItem {
   paymentMethod: string;
 }
 
-const initialReservations: ReservationItem[] = [
-  {
-    id: '1',
-    initials: 'KD',
-    slot: 'A3',
-    reference: 'PE-84213',
-    time: '02:00 PM',
-    eta: 'in 15 mins',
-    status: 'Reserved',
-    driverNameMasked: 'K***n D**s',
-    plate: 'WP CAB-4921',
-    bookingTime: 'Today at 01:15 PM',
-    assignedSpace: 'Space A3 (Ground Floor)',
-    paymentAmount: 'Rs. 320',
-    paymentMethod: 'Visa',
-  },
-  {
-    id: '2',
-    initials: 'NS',
-    slot: 'B1',
-    reference: 'PE-84214',
-    time: '02:20 PM',
-    eta: 'in 35 mins',
-    status: 'Reserved',
-    driverNameMasked: 'N***i S***a',
-    plate: 'WP KX-8812',
-    bookingTime: 'Today at 01:30 PM',
-    assignedSpace: 'Space B1 (Ground Floor)',
-    paymentAmount: 'Rs. 250',
-    paymentMethod: 'MasterCard',
-  },
-  {
-    id: '3',
-    initials: 'RJ',
-    slot: 'A7',
-    reference: 'PE-84215',
-    time: '02:45 PM',
-    eta: 'in 1 hr',
-    status: 'Reserved',
-    driverNameMasked: 'R***n J***y',
-    plate: 'WP CAR-1029',
-    bookingTime: 'Today at 01:45 PM',
-    assignedSpace: 'Space A7 (Ground Floor)',
-    paymentAmount: 'Rs. 400',
-    paymentMethod: 'Online Banking',
-  },
-  {
-    id: '4',
-    initials: 'SM',
-    slot: 'C2',
-    reference: 'PE-84201',
-    time: '12:30 PM',
-    eta: 'parked 1h ago',
-    status: 'Active',
-    driverNameMasked: 'S***h M***a',
-    plate: 'WP CAD-5544',
-    bookingTime: 'Today at 11:45 AM',
-    assignedSpace: 'Space C2 (Ground Floor)',
-    paymentAmount: 'Rs. 320',
-    paymentMethod: 'Visa',
-  },
-  {
-    id: '5',
-    initials: 'DW',
-    slot: 'D4',
-    reference: 'PE-84198',
-    time: '11:00 AM',
-    eta: 'completed',
-    status: 'Completed',
-    driverNameMasked: 'D***h W***e',
-    plate: 'WP CAH-9988',
-    bookingTime: 'Today at 10:15 AM',
-    assignedSpace: 'Space D4 (Ground Floor)',
-    paymentAmount: 'Rs. 300',
-    paymentMethod: 'Visa',
-  },
-];
-
 interface ReservationsScreenProps {
   onBack: () => void;
-  onAdmitVehicle?: (reference: string, slot: string) => void;
+  onAdmitVehicle?: (reservationId: string, reference: string, slot: string) => void;
+  apiBaseUrl: string;
+  authToken: string | null;
 }
 
 export default function ReservationsScreen({
   onBack,
   onAdmitVehicle,
+  apiBaseUrl,
+  authToken,
 }: ReservationsScreenProps) {
-  const [reservations, setReservations] = useState<ReservationItem[]>(initialReservations);
+  const [reservations, setReservations] = useState<ReservationItem[]>([]);
   const [searchQuery, setSearchQuery] = useState('');
-  const [activeTab, setActiveTab] = useState<'Upcoming' | 'Active' | 'Completed'>('Upcoming');
-  const [expandedId, setExpandedId] = useState<string | null>('1'); // Default card 1 expanded
+  const [activeTab, setActiveTab] = useState<'Upcoming' | 'Active' | 'Completed' | 'Cancelled'>('Upcoming');
+  const [expandedId, setExpandedId] = useState<string | null>(null);
+  const [isLoading, setIsLoading] = useState(true);
+
+  const fetchReservations = useCallback(async (): Promise<ReservationItem[]> => {
+    if (!authToken) {
+      return [];
+    }
+    const response = await fetch(`${apiBaseUrl}/api/reservations`, {
+      headers: { Authorization: `Bearer ${authToken}` },
+    });
+    const result = await response.json();
+    if (!response.ok) throw new Error(result.message || 'Unable to load reservations');
+    return result.map((reservation: any): ReservationItem => {
+      const slot = reservation.parkingSpace?.spaceNumber || '—';
+      const driverName = reservation.driver?.name || 'Driver';
+      const createdAt = new Date(reservation.createdAt);
+      const startTime = new Date(reservation.startTime);
+      const status = reservation.status === 'pending'
+        ? 'Reserved'
+        : reservation.status === 'active'
+          ? 'Active'
+          : reservation.status === 'cancelled'
+            ? 'Cancelled'
+            : 'Completed';
+      return {
+        id: reservation._id,
+        parkingLotId: reservation.parkingLot?._id || reservation.parkingLot,
+        initials: driverName.split(/\s+/).map((part: string) => part[0]).join('').slice(0, 2).toUpperCase(),
+        slot,
+        reference: reservation.reference || `PM-${reservation._id.slice(-6).toUpperCase()}`,
+        time: startTime.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
+        eta: startTime > new Date() ? startTime.toLocaleDateString() : status,
+        status,
+        driverNameMasked: driverName,
+        plate: '—',
+        bookingTime: createdAt.toLocaleString(),
+        assignedSpace: `${slot} · ${reservation.parkingLot?.name || 'Parking lot'}`,
+        paymentAmount: `Rs. ${Number(reservation.totalAmount || 0).toFixed(2)}`,
+        paymentMethod: 'Not recorded',
+      };
+    });
+  }, [apiBaseUrl, authToken]);
+
+  const loadReservations = async () => {
+    setReservations(await fetchReservations());
+  };
+
+  useEffect(() => {
+    let isMounted = true;
+    void fetchReservations()
+      .then((data) => {
+        if (isMounted) setReservations(data);
+      })
+      .catch((error: unknown) => {
+        if (isMounted) {
+          Alert.alert('Unable to load reservations', error instanceof Error ? error.message : 'Please try again.');
+        }
+      })
+      .finally(() => {
+        if (isMounted) setIsLoading(false);
+      });
+    return () => {
+      isMounted = false;
+    };
+  }, [fetchReservations]);
+
+  const updateReservation = async (item: ReservationItem, action: 'verify' | 'complete') => {
+    if (!authToken) throw new Error('Please sign in again to manage reservations.');
+    const response = await fetch(`${apiBaseUrl}/api/reservations/${item.id}/${action}`, {
+      method: 'PUT',
+      headers: { Authorization: `Bearer ${authToken}` },
+    });
+    const result = await response.json();
+    if (!response.ok) throw new Error(result.message || `Unable to ${action} reservation`);
+    await loadReservations();
+  };
 
   const toggleExpand = (id: string) => {
     setExpandedId((prev) => (prev === id ? null : id));
@@ -128,12 +128,14 @@ export default function ReservationsScreen({
   const upcomingCount = reservations.filter((r) => r.status === 'Reserved').length;
   const activeCount = reservations.filter((r) => r.status === 'Active').length;
   const completedCount = reservations.filter((r) => r.status === 'Completed').length;
+  const cancelledCount = reservations.filter((r) => r.status === 'Cancelled').length;
 
   const filteredReservations = reservations.filter((r) => {
     const matchesTab =
       (activeTab === 'Upcoming' && r.status === 'Reserved') ||
       (activeTab === 'Active' && r.status === 'Active') ||
-      (activeTab === 'Completed' && r.status === 'Completed');
+      (activeTab === 'Completed' && r.status === 'Completed') ||
+      (activeTab === 'Cancelled' && r.status === 'Cancelled');
 
     const query = searchQuery.trim().toLowerCase();
     const matchesSearch =
@@ -145,12 +147,22 @@ export default function ReservationsScreen({
   });
 
   const handleVerify = (item: ReservationItem) => {
-    Alert.alert('Scan & Verify', `Verifying QR code for reference: ${item.reference} (Slot ${item.slot})`);
+    Alert.alert('Verify reservation?', `Activate booking ${item.reference} for space ${item.slot}?`, [
+      { text: 'Cancel', style: 'cancel' },
+      {
+        text: 'Verify',
+        onPress: () => {
+          void updateReservation(item, 'verify').catch((error: unknown) =>
+            Alert.alert('Unable to verify reservation', error instanceof Error ? error.message : 'Please try again.')
+          );
+        },
+      },
+    ]);
   };
 
   const handleAdmit = (item: ReservationItem) => {
     if (onAdmitVehicle) {
-      onAdmitVehicle(item.reference, item.slot);
+      onAdmitVehicle(item.id, item.reference, item.slot);
     } else {
       Alert.alert(
         'Admit Vehicle',
@@ -247,6 +259,21 @@ export default function ReservationsScreen({
             </Text>
           </View>
         </TouchableOpacity>
+
+        <TouchableOpacity
+          style={[styles.tabButton, activeTab === 'Cancelled' && styles.tabButtonActive]}
+          onPress={() => setActiveTab('Cancelled')}
+          activeOpacity={0.8}
+        >
+          <Text style={[styles.tabText, activeTab === 'Cancelled' && styles.tabTextActive]}>
+            Cancelled
+          </Text>
+          <View style={[styles.tabBadge, activeTab === 'Cancelled' && styles.tabBadgeActive]}>
+            <Text style={[styles.tabBadgeText, activeTab === 'Cancelled' && styles.tabBadgeTextActive]}>
+              {cancelledCount}
+            </Text>
+          </View>
+        </TouchableOpacity>
       </View>
 
       {/* List Subheader */}
@@ -263,6 +290,9 @@ export default function ReservationsScreen({
         contentContainerStyle={styles.scrollContent}
         showsVerticalScrollIndicator={false}
       >
+        {!isLoading && filteredReservations.length === 0 && (
+          <Text style={styles.emptyText}>No reservations to show.</Text>
+        )}
         {filteredReservations.map((item) => {
           const isExpanded = expandedId === item.id;
 
@@ -296,14 +326,16 @@ export default function ReservationsScreen({
 
                 {/* Right Side: Verify & Status */}
                 <View style={styles.headerRightCol}>
-                  <TouchableOpacity
-                    style={styles.verifyBtn}
-                    onPress={() => handleVerify(item)}
-                    activeOpacity={0.7}
-                  >
-                    <Text style={styles.verifyIcon}>🔳</Text>
-                    <Text style={styles.verifyText}>Verify</Text>
-                  </TouchableOpacity>
+                  {item.status === 'Reserved' && (
+                    <TouchableOpacity
+                      style={styles.verifyBtn}
+                      onPress={() => handleVerify(item)}
+                      activeOpacity={0.7}
+                    >
+                      <Text style={styles.verifyIcon}>✓</Text>
+                      <Text style={styles.verifyText}>Verify</Text>
+                    </TouchableOpacity>
+                  )}
 
                   <View style={styles.statusPillRow}>
                     <View style={styles.statusPill}>
@@ -371,17 +403,17 @@ export default function ReservationsScreen({
                   </View>
 
                   {/* Admit Vehicle Action Button */}
-                  <TouchableOpacity
-                    style={styles.admitButton}
-                    onPress={() => handleAdmit(item)}
-                    activeOpacity={0.85}
-                  >
-                    <Text style={styles.admitIcon}>🔳</Text>
-                    <Text style={styles.admitText}>
-                      Admit Vehicle & Confirm Entry (Screen 20)
-                    </Text>
-                    <Text style={styles.admitArrow}>→</Text>
-                  </TouchableOpacity>
+                  {item.status === 'Active' && (
+                    <TouchableOpacity
+                      style={styles.admitButton}
+                      onPress={() => handleAdmit(item)}
+                      activeOpacity={0.85}
+                    >
+                      <Text style={styles.admitIcon}>✓</Text>
+                      <Text style={styles.admitText}>Complete reservation</Text>
+                      <Text style={styles.admitArrow}>→</Text>
+                    </TouchableOpacity>
+                  )}
                 </View>
               )}
             </View>
@@ -540,6 +572,12 @@ const styles = StyleSheet.create({
     paddingTop: 8,
     paddingBottom: 32,
     gap: 12,
+  },
+  emptyText: {
+    paddingVertical: 24,
+    color: '#64748B',
+    fontSize: 14,
+    textAlign: 'center',
   },
   cardWrapper: {
     backgroundColor: '#FFFFFF',

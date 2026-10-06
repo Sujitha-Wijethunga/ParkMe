@@ -48,7 +48,7 @@ export default function StaffLoginScreen({ onLoginSuccess, onNavigateToSignup }:
   const passwordInputRef = useRef<TextInput>(null);
 
   // Animated values for subtle button press
-  const buttonScale = useRef(new Animated.Value(1)).current;
+  const [buttonScale] = useState(() => new Animated.Value(1));
 
   const handlePressIn = () => {
     Animated.spring(buttonScale, {

@@ -12,7 +12,6 @@ import {
   Modal,
   Pressable,
 } from 'react-native';
-import { Colors } from '../../constants/colors';
 import { StaffProfile } from '../../constants/profile';
 import { SpaceItem } from './ManageSpaceScreen';
 

@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useCallback, useEffect, useState } from 'react';
 import {
   View,
   Text,
@@ -8,29 +8,134 @@ import {
   StatusBar,
   TouchableOpacity,
   ScrollView,
+  Alert,
 } from 'react-native';
+
+interface AttendanceRecord {
+  id: string;
+  date: string;
+  checkIn: string;
+  checkOut: string;
+  status: string;
+}
+
+interface LeaveRecord {
+  id: string;
+  type: string;
+  dates: string;
+  days: number;
+  status: string;
+}
 
 interface AttendanceScreenProps {
   onBack: () => void;
   onRequestLeave: () => void;
+  apiBaseUrl: string;
+  authToken: string | null;
 }
 
-export default function AttendanceScreen({ onBack, onRequestLeave }: AttendanceScreenProps) {
+export default function AttendanceScreen({ onBack, onRequestLeave, apiBaseUrl, authToken }: AttendanceScreenProps) {
   const [activeTab, setActiveTab] = useState<'Attendance' | 'Leaves'>('Attendance');
+  const [attendanceRecords, setAttendanceRecords] = useState<AttendanceRecord[]>([]);
+  const [leaveRecords, setLeaveRecords] = useState<LeaveRecord[]>([]);
+  const todayRecord = attendanceRecords.find((record) => new Date(record.date).toDateString() === new Date().toDateString());
 
-  const attendanceRecords = [
-    { id: '1', date: 'Oct 12, 2026', checkIn: '08:00 AM', checkOut: '05:00 PM', status: 'Present' },
-    { id: '2', date: 'Oct 11, 2026', checkIn: '08:15 AM', checkOut: '05:30 PM', status: 'Late' },
-    { id: '3', date: 'Oct 10, 2026', checkIn: '08:00 AM', checkOut: '05:00 PM', status: 'Present' },
-    { id: '4', date: 'Oct 09, 2026', checkIn: '-', checkOut: '-', status: 'Absent' },
-    { id: '5', date: 'Oct 08, 2026', checkIn: '07:55 AM', checkOut: '05:05 PM', status: 'Present' },
-  ];
+  const fetchRecords = useCallback(async () => {
+    if (!authToken) return { attendance: [], leaves: [] };
+    const headers = { Authorization: `Bearer ${authToken}` };
+    const [attendanceResponse, leaveResponse] = await Promise.all([
+      fetch(`${apiBaseUrl}/api/attendance`, { headers }),
+      fetch(`${apiBaseUrl}/api/leave-requests`, { headers }),
+    ]);
+    const attendanceData = await attendanceResponse.json();
+    const leaveData = await leaveResponse.json();
+    if (!attendanceResponse.ok) throw new Error(attendanceData.message || 'Unable to load attendance');
+    if (!leaveResponse.ok) throw new Error(leaveData.message || 'Unable to load leave requests');
+    return {
+      attendance: attendanceData.map((record: any): AttendanceRecord => ({
+      id: record._id,
+      date: record.date,
+      checkIn: record.checkIn || '—',
+      checkOut: record.checkOut || '—',
+      status: record.status,
+      })),
+      leaves: leaveData.map((leave: any): LeaveRecord => ({
+      id: leave._id,
+      type: leave.type,
+      dates: `${new Date(leave.startDate).toLocaleDateString()} - ${new Date(leave.endDate).toLocaleDateString()}`,
+      days: leave.days,
+      status: leave.status,
+      })),
+    };
+  }, [apiBaseUrl, authToken]);
 
-  const leaveRecords = [
-    { id: '1', type: 'Annual Leave', dates: 'Oct 15 - Oct 16, 2026', days: 2, status: 'Approved' },
-    { id: '2', type: 'Sick Leave', dates: 'Sep 22, 2026', days: 1, status: 'Approved' },
-    { id: '3', type: 'Casual Leave', dates: 'Nov 01, 2026', days: 1, status: 'Pending' },
-  ];
+  const loadRecords = async () => {
+    const records = await fetchRecords();
+    setAttendanceRecords(records.attendance);
+    setLeaveRecords(records.leaves);
+  };
+
+  useEffect(() => {
+    let isMounted = true;
+    void fetchRecords()
+      .then((records) => {
+        if (isMounted) {
+          setAttendanceRecords(records.attendance);
+          setLeaveRecords(records.leaves);
+        }
+      })
+      .catch((error: unknown) => {
+        if (isMounted) {
+          Alert.alert('Unable to load attendance', error instanceof Error ? error.message : 'Please try again.');
+        }
+      });
+    return () => {
+      isMounted = false;
+    };
+  }, [fetchRecords]);
+
+  const updateAttendance = async (action: 'check-in' | 'check-out') => {
+    if (!authToken) {
+      Alert.alert('Sign in required', 'Please sign in again to record attendance.');
+      return;
+    }
+    try {
+      const response = await fetch(`${apiBaseUrl}/api/attendance/${action}`, {
+        method: action === 'check-in' ? 'POST' : 'PUT',
+        headers: { Authorization: `Bearer ${authToken}` },
+      });
+      const result = await response.json();
+      if (!response.ok) throw new Error(result.message || `Unable to ${action}`);
+      await loadRecords();
+      Alert.alert('Attendance updated', action === 'check-in' ? 'Your check-in was recorded.' : 'Your check-out was recorded.');
+    } catch (error) {
+      Alert.alert('Attendance update failed', error instanceof Error ? error.message : 'Please try again.');
+    }
+  };
+
+  const withdrawLeave = (leaveId: string) => {
+    Alert.alert('Withdraw leave request?', 'This removes your pending leave request.', [
+      { text: 'Keep request', style: 'cancel' },
+      {
+        text: 'Withdraw',
+        style: 'destructive',
+        onPress: () => {
+          void (async () => {
+            if (!authToken) throw new Error('Please sign in again.');
+            const response = await fetch(`${apiBaseUrl}/api/leave-requests/${leaveId}`, {
+              method: 'DELETE',
+              headers: { Authorization: `Bearer ${authToken}` },
+            });
+            const result = await response.json();
+            if (!response.ok) throw new Error(result.message || 'Unable to withdraw leave request');
+            await loadRecords();
+          })().catch((error: unknown) =>
+            Alert.alert('Unable to withdraw request', error instanceof Error ? error.message : 'Please try again.')
+          );
+        },
+      },
+    ]);
+  };
 
   return (
     <SafeAreaView style={styles.safeArea}>
@@ -52,15 +157,15 @@ export default function AttendanceScreen({ onBack, onRequestLeave }: AttendanceS
       {/* Summary Cards */}
       <View style={styles.summaryContainer}>
         <View style={[styles.summaryCard, { backgroundColor: '#F0FDF4', borderColor: '#86EFAC' }]}>
-          <Text style={styles.summaryValue}>21</Text>
+          <Text style={styles.summaryValue}>{attendanceRecords.filter((record) => record.status === 'Present').length}</Text>
           <Text style={styles.summaryLabel}>Days Present</Text>
         </View>
         <View style={[styles.summaryCard, { backgroundColor: '#FEFCE8', borderColor: '#FDE047' }]}>
-          <Text style={styles.summaryValue}>4</Text>
+          <Text style={styles.summaryValue}>{leaveRecords.filter((leave) => leave.status === 'Approved').reduce((sum, leave) => sum + leave.days, 0)}</Text>
           <Text style={styles.summaryLabel}>Leaves Taken</Text>
         </View>
         <View style={[styles.summaryCard, { backgroundColor: '#EFF6FF', borderColor: '#BFDBFE' }]}>
-          <Text style={styles.summaryValue}>10</Text>
+          <Text style={styles.summaryValue}>{leaveRecords.filter((leave) => leave.status === 'Pending').length}</Text>
           <Text style={styles.summaryLabel}>Leaves Left</Text>
         </View>
       </View>
@@ -90,6 +195,29 @@ export default function AttendanceScreen({ onBack, onRequestLeave }: AttendanceS
       >
         {activeTab === 'Attendance' ? (
           <View style={styles.listContainer}>
+            <View style={styles.attendanceActions}>
+              <TouchableOpacity
+                style={[styles.attendanceAction, !!todayRecord?.checkIn && styles.attendanceActionDisabled]}
+                disabled={!!todayRecord?.checkIn}
+                onPress={() => updateAttendance('check-in')}
+              >
+                <Text style={styles.attendanceActionText}>
+                  {todayRecord?.checkIn ? `Checked in ${todayRecord.checkIn}` : 'Check in'}
+                </Text>
+              </TouchableOpacity>
+              <TouchableOpacity
+                style={[styles.attendanceAction, !todayRecord?.checkIn || !!todayRecord.checkOut ? styles.attendanceActionDisabled : null]}
+                disabled={!todayRecord?.checkIn || !!todayRecord.checkOut}
+                onPress={() => updateAttendance('check-out')}
+              >
+                <Text style={styles.attendanceActionText}>
+                  {todayRecord?.checkOut ? `Checked out ${todayRecord.checkOut}` : 'Check out'}
+                </Text>
+              </TouchableOpacity>
+            </View>
+            {attendanceRecords.length === 0 && (
+              <Text style={styles.emptyText}>No attendance records yet.</Text>
+            )}
             {attendanceRecords.map((record) => (
               <View key={record.id} style={styles.recordCard}>
                 <View style={styles.recordHeader}>
@@ -166,8 +294,20 @@ export default function AttendanceScreen({ onBack, onRequestLeave }: AttendanceS
                   <Text style={styles.leaveDatesIcon}>⏳</Text>
                   <Text style={styles.leaveDays}>{leave.days} Day(s)</Text>
                 </View>
+                {leave.status === 'Pending' && (
+                  <TouchableOpacity
+                    style={styles.withdrawButton}
+                    onPress={() => withdrawLeave(leave.id)}
+                    accessibilityRole="button"
+                  >
+                    <Text style={styles.withdrawButtonText}>Withdraw request</Text>
+                  </TouchableOpacity>
+                )}
               </View>
             ))}
+            {leaveRecords.length === 0 && (
+              <Text style={styles.emptyText}>No leave requests yet.</Text>
+            )}
           </View>
         )}
       </ScrollView>
@@ -277,6 +417,45 @@ const styles = StyleSheet.create({
   },
   listContainer: {
     gap: 12,
+  },
+  attendanceActions: {
+    flexDirection: 'row',
+    gap: 10,
+    marginBottom: 4,
+  },
+  attendanceAction: {
+    flex: 1,
+    minHeight: 46,
+    backgroundColor: '#0F766E',
+    borderRadius: 12,
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingHorizontal: 8,
+  },
+  attendanceActionDisabled: {
+    backgroundColor: '#94A3B8',
+  },
+  attendanceActionText: {
+    color: '#FFFFFF',
+    fontSize: 13,
+    fontWeight: '700',
+    textAlign: 'center',
+  },
+  emptyText: {
+    textAlign: 'center',
+    paddingVertical: 24,
+    color: '#64748B',
+    fontSize: 14,
+  },
+  withdrawButton: {
+    alignSelf: 'flex-start',
+    marginTop: 8,
+    paddingVertical: 8,
+  },
+  withdrawButtonText: {
+    color: '#B91C1C',
+    fontWeight: '700',
+    fontSize: 13,
   },
   recordCard: {
     backgroundColor: '#FFFFFF',
