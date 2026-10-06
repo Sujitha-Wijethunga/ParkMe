@@ -129,20 +129,56 @@ const getReservationById = async (req, res, next) => {
 // @access  Driver
 const cancelReservation = async (req, res, next) => {
   try {
-    const reservation = await Reservation.findById(req.params.id);
-    if (!reservation) return res.status(404).json({ message: 'Reservation not found' });
+    const { reason, note } = req.body || {};
+    const validReasons = [
+      'Change of plans / Schedule changed',
+      'Found alternative parking spot',
+      'Vehicle breakdown or issue',
+      'Booked wrong location, date, or time',
+      'Other reason',
+    ];
+    if (!validReasons.includes(reason)) {
+      return res.status(400).json({ message: 'Select a valid cancellation reason.' });
+    }
+    if (note !== undefined && (typeof note !== 'string' || note.trim().length > 500)) {
+      return res.status(400).json({ message: 'Cancellation details must be 500 characters or fewer.' });
+    }
+    if (reason !== 'Other reason' && note?.trim()) {
+      return res.status(400).json({ message: 'Additional details are only accepted for Other reason.' });
+    }
 
-    if (reservation.driver.toString() !== req.user._id.toString()) {
+    const existingReservation = await Reservation.findById(req.params.id);
+    if (!existingReservation) return res.status(404).json({ message: 'Reservation not found' });
+    if (existingReservation.driver.toString() !== req.user._id.toString()) {
       return res.status(403).json({ message: 'Access denied' });
     }
-    if (reservation.status === 'completed' || reservation.status === 'cancelled') {
-      return res.status(400).json({ message: `Cannot cancel a ${reservation.status} reservation` });
+    if (
+      existingReservation.status !== 'pending' ||
+      new Date(existingReservation.startTime).getTime() <= Date.now()
+    ) {
+      return res.status(400).json({ message: 'Only future upcoming reservations can be cancelled.' });
     }
 
-    reservation.status = 'cancelled';
-    reservation.cancellationReason = req.body.reason || '';
-    reservation.cancelledAt = new Date();
-    await reservation.save();
+    const reservation = await Reservation.findOneAndUpdate(
+      {
+        _id: existingReservation._id,
+        driver: req.user._id,
+        status: 'pending',
+        startTime: { $gt: new Date() },
+      },
+      {
+        $set: {
+          status: 'cancelled',
+          cancellationReason: reason,
+          cancellationNote: reason === 'Other reason' ? (note || '').trim() : '',
+          cancelledAt: new Date(),
+        },
+      },
+      { new: true, runValidators: true }
+    );
+    if (!reservation) {
+      return res.status(400).json({ message: 'This reservation is no longer eligible for cancellation.' });
+    }
 
     // Release the parking space
     await ParkingSpace.findByIdAndUpdate(reservation.parkingSpace, { status: 'available' });

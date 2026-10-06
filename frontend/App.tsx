@@ -28,6 +28,7 @@ import BookingSummaryScreen from './src/screens/driver/BookingSummaryScreen';
 import PaymentScreen from './src/screens/driver/PaymentScreen';
 import BookingConfirmedScreen from './src/screens/driver/BookingConfirmedScreen';
 import MyBookingsScreen, { BookingDetailsScreen } from './src/screens/driver/MyBookingsScreen';
+import CancelBookingScreen from './src/screens/driver/CancelBookingScreen';
 import ActiveParkingScreen, {
   ExitConfirmationScreen,
   ReleaseParkingScreen,
@@ -84,6 +85,7 @@ type ScreenType =
   | 'driver-navigation'
   | 'driver-bookings'
   | 'driver-booking-details'
+  | 'driver-cancel-booking'
   | 'driver-active-parking'
   | 'driver-release-parking'
   | 'driver-exit-confirmation'
@@ -241,6 +243,7 @@ export default function App() {
   /** NEW: booking used by Payment, Booking Confirmed and Navigation screens. */
   const [confirmedBooking, setConfirmedBooking] = useState<BookingDetails | null>(null);
   const [selectedReservationId, setSelectedReservationId] = useState<string | null>(null);
+  const [reservationToCancel, setReservationToCancel] = useState<DriverReservation | null>(null);
   const [reservationToRelease, setReservationToRelease] = useState<DriverReservation | null>(null);
   const [releaseReceipt, setReleaseReceipt] = useState<ReleasedReservationReceipt | null>(null);
 
@@ -949,6 +952,10 @@ export default function App() {
           userId={driverUser?._id || 'guest'}
           onBack={() => setCurrentScreen('driver-home')}
           onSelectBooking={handleSelectReservation}
+          onCancelBooking={(reservation) => {
+            setReservationToCancel(reservation);
+            setCurrentScreen('driver-cancel-booking');
+          }}
           onViewActiveParking={() => {
             setSelectedReservationId(null);
             setCurrentScreen('driver-active-parking');
@@ -956,6 +963,18 @@ export default function App() {
           onNavigateHome={() => setCurrentScreen('driver-home')}
           onNavigateMap={() => handleOpenSearch('', 'map', 'Nearest')}
           onNavigateProfile={handleDriverProfilePress}
+        />
+      )}
+      {currentScreen === 'driver-cancel-booking' && reservationToCancel && (
+        <CancelBookingScreen
+          token={driverToken}
+          userId={driverUser?._id || 'guest'}
+          reservation={reservationToCancel}
+          onBack={() => setCurrentScreen('driver-bookings')}
+          onDone={() => {
+            setReservationToCancel(null);
+            setCurrentScreen('driver-bookings');
+          }}
         />
       )}
       {currentScreen === 'driver-booking-details' && selectedReservationId && (
@@ -967,7 +986,6 @@ export default function App() {
           onNavigateHome={() => setCurrentScreen('driver-home')}
           onNavigateMap={() => handleOpenSearch('', 'map', 'Nearest')}
           onNavigateProfile={handleDriverProfilePress}
-          onReservationCancelled={() => setCurrentScreen('driver-bookings')}
         />
       )}
       {currentScreen === 'driver-active-parking' && (

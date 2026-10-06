@@ -31,6 +31,7 @@ export interface DriverReservation {
   actualEndTime?: string;
   finalAmount?: number;
   cancellationReason?: string;
+  cancellationNote?: string;
   cancelledAt?: string;
   createdAt?: string;
   verifiedAt?: string;
@@ -110,7 +111,12 @@ function isDriverReservation(value: unknown): value is DriverReservation {
   );
 }
 
-async function reservationRequest<T>(path: string, token: string, method = 'GET'): Promise<T> {
+async function reservationRequest<T>(
+  path: string,
+  token: string,
+  method = 'GET',
+  body?: Record<string, string>
+): Promise<T> {
   const controller = new AbortController();
   const timeoutId = setTimeout(() => controller.abort(), REQUEST_TIMEOUT_MS);
 
@@ -123,7 +129,7 @@ async function reservationRequest<T>(path: string, token: string, method = 'GET'
         Authorization: `Bearer ${token}`,
         'Content-Type': 'application/json',
       },
-      ...(method === 'PUT' ? { body: JSON.stringify({}) } : {}),
+      ...(method === 'PUT' ? { body: JSON.stringify(body || {}) } : {}),
     });
     const data = await response.json().catch(() => null);
 
@@ -256,10 +262,29 @@ export async function getReservationById(
   return reservation;
 }
 
+export const CANCELLATION_REASONS = [
+  'Change of plans / Schedule changed',
+  'Found alternative parking spot',
+  'Vehicle breakdown or issue',
+  'Booked wrong location, date, or time',
+  'Other reason',
+] as const;
+
+export type CancellationReason = (typeof CANCELLATION_REASONS)[number];
+
+export function canCancelReservation(
+  reservation: Pick<DriverReservation, 'status' | 'startTime'>,
+  now = Date.now()
+): boolean {
+  return reservation.status === 'pending' && Date.parse(reservation.startTime) > now;
+}
+
 export async function cancelReservation(
   token: string,
   userId: string,
-  reservationId: string
+  reservationId: string,
+  reason: CancellationReason,
+  note?: string
 ): Promise<void> {
   if (!reservationId) {
     throw new Error('A booking ID is required to cancel a booking.');
@@ -269,11 +294,19 @@ export async function cancelReservation(
     const reservations = await readLocalReservations(userId);
     const reservation = reservations.find((item) => item._id === reservationId);
     if (!reservation) throw new Error('This saved booking could not be found.');
-    if (reservation.status !== 'pending') throw new Error('Only upcoming bookings can be cancelled.');
+    if (!canCancelReservation(reservation)) throw new Error('Only future upcoming bookings can be cancelled.');
     await saveDriverBookingData(
       userId,
       JSON.stringify(reservations.map((item) =>
-        item._id === reservationId ? { ...item, status: 'cancelled' as const, cancelledAt: new Date().toISOString() } : item
+        item._id === reservationId
+          ? {
+              ...item,
+              status: 'cancelled' as const,
+              cancellationReason: reason,
+              cancellationNote: reason === 'Other reason' ? note?.trim() || undefined : undefined,
+              cancelledAt: new Date().toISOString(),
+            }
+          : item
       ))
     );
     return;
@@ -283,7 +316,11 @@ export async function cancelReservation(
   await reservationRequest<{ message: string }>(
     `/${encodeURIComponent(reservationId)}/cancel`,
     token,
-    'PUT'
+    'PUT',
+    {
+      reason,
+      ...(reason === 'Other reason' && note?.trim() ? { note: note.trim() } : {}),
+    }
   );
 }
 
