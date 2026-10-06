@@ -1,12 +1,5 @@
 import { Alert, Platform } from 'react-native';
 import Constants from 'expo-constants';
-import {
-  GoogleSignin,
-  statusCodes,
-  isErrorWithCode,
-  isSuccessResponse,
-  isCancelledResponse,
-} from '@react-native-google-signin/google-signin';
 
 export interface GoogleAuthResult {
   success: boolean;
@@ -16,7 +9,62 @@ export interface GoogleAuthResult {
   isAccountCollision?: boolean;
 }
 
+interface GoogleSigninModule {
+  GoogleSignin: {
+    configure: (options: Record<string, any>) => void;
+    hasPlayServices: (options?: { showPlayServicesUpdateDialog?: boolean }) => Promise<boolean>;
+    signIn: () => Promise<any>;
+    signOut: () => Promise<void>;
+  };
+  statusCodes: {
+    SIGN_IN_CANCELLED: string;
+    IN_PROGRESS: string;
+    PLAY_SERVICES_NOT_AVAILABLE: string;
+  };
+  isErrorWithCode: (error: any) => boolean;
+  isSuccessResponse: (response: any) => boolean;
+  isCancelledResponse: (response: any) => boolean;
+}
+
 let isConfigured = false;
+let googleSigninModule: GoogleSigninModule | null = null;
+let googleSigninModuleLoaded = false;
+
+/**
+ * Detects whether the app is currently running inside standard Expo Go,
+ * where custom native modules cannot execute without a development build.
+ */
+export function isRunningInExpoGo(): boolean {
+  return Constants.appOwnership === 'expo';
+}
+
+/**
+ * Safely loads the native GoogleSignin module lazily.
+ * Prevents TurboModuleRegistry.getEnforcing('RNGoogleSignin') invariant violations
+ * from crashing the app during initial startup bundle evaluation.
+ */
+function getGoogleSigninModule(): GoogleSigninModule | null {
+  if (googleSigninModuleLoaded) {
+    return googleSigninModule;
+  }
+  googleSigninModuleLoaded = true;
+
+  if (isRunningInExpoGo()) {
+    return null;
+  }
+
+  try {
+    // Dynamically require so module evaluation does not crash runtimes without RNGoogleSignin
+    // eslint-disable-next-line @typescript-eslint/no-require-imports
+    const mod = require('@react-native-google-signin/google-signin');
+    googleSigninModule = mod as GoogleSigninModule;
+    return googleSigninModule;
+  } catch (err: any) {
+    console.warn('[googleAuthService] Native GoogleSignin module unavailable in current runtime:', err?.message || err);
+    googleSigninModule = null;
+    return null;
+  }
+}
 
 /**
  * Initializes and configures GoogleSignin.
@@ -29,11 +77,16 @@ let isConfigured = false;
 export function configureGoogleSignIn(): void {
   if (isConfigured) return;
 
+  const mod = getGoogleSigninModule();
+  if (!mod?.GoogleSignin) {
+    return;
+  }
+
   const webClientId = process.env.EXPO_PUBLIC_GOOGLE_WEB_CLIENT_ID || '';
   const iosClientId = process.env.EXPO_PUBLIC_GOOGLE_IOS_CLIENT_ID || '';
 
   try {
-    GoogleSignin.configure({
+    mod.GoogleSignin.configure({
       webClientId: webClientId.trim() || undefined,
       iosClientId: iosClientId.trim() || undefined,
       scopes: ['openid', 'email', 'profile'],
@@ -46,38 +99,30 @@ export function configureGoogleSignIn(): void {
 }
 
 /**
- * Detects whether the app is currently running inside standard Expo Go,
- * where custom native modules cannot execute without a development build.
- */
-export function isRunningInExpoGo(): boolean {
-  return Constants.appOwnership === 'expo';
-}
-
-/**
  * Initiates the native Google Sign-In flow.
  *
  * Handles:
- * - Expo Go native limitation detection with clear instructions.
+ * - Runtime limitation detection when RNGoogleSignin is absent from native binary.
  * - Missing/outdated Google Play Services on Android.
  * - User cancellation.
  * - In-progress operation debounce.
  * - Extraction of verified Google ID token.
  */
 export async function promptNativeGoogleSignIn(): Promise<GoogleAuthResult> {
-  // Check for Expo Go runtime limitation
-  if (isRunningInExpoGo()) {
+  const mod = getGoogleSigninModule();
+  if (!mod?.GoogleSignin) {
     const message =
-      'Google Sign-In uses native Google Play / iOS identity services, which are not bundled into Expo Go.\n\n' +
-      'To test Google Sign-In on a device, create an Expo Development Build:\n' +
-      '• Local: npx expo run:android\n' +
-      '• Cloud: eas build --profile development --platform android';
+      'Google Sign-In requires native Google Play identity services, which are not bundled into this binary.\n\n' +
+      'Please test with email/password login, or run using a development build with RNGoogleSignin registered.';
 
     Alert.alert('Development Build Required', message, [{ text: 'OK', style: 'default' }]);
     return {
       success: false,
-      error: 'Expo Go does not include the native Google Sign-In module. A development build is required.',
+      error: 'Native Google Sign-In module is not bundled in the current runtime binary.',
     };
   }
+
+  const { GoogleSignin, statusCodes, isErrorWithCode, isSuccessResponse, isCancelledResponse } = mod;
 
   try {
     configureGoogleSignIn();
@@ -158,7 +203,7 @@ export async function promptNativeGoogleSignIn(): Promise<GoogleAuthResult> {
     ) {
       Alert.alert(
         'Native Module Required',
-        'Native Google Sign-In is not installed in the currently running binary. Please start the app using a development build (npx expo run:android).',
+        'Native Google Sign-In is not installed in the currently running binary. Please test with email/password login.',
         [{ text: 'OK', style: 'default' }]
       );
       return {
@@ -182,8 +227,9 @@ export async function promptNativeGoogleSignIn(): Promise<GoogleAuthResult> {
  */
 export async function signOutOfGoogle(): Promise<void> {
   try {
-    if (!isRunningInExpoGo()) {
-      await GoogleSignin.signOut();
+    const mod = getGoogleSigninModule();
+    if (mod?.GoogleSignin) {
+      await mod.GoogleSignin.signOut();
     }
   } catch {
     // Ignore sign-out errors on app cleanup
