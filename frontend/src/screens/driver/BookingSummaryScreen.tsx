@@ -865,12 +865,22 @@ export default function BookingSummaryScreen({
                     fieldError('vehiclePlate') ? styles.inputError : null,
                   ]}
                   value={draft.vehiclePlate}
-                  onChangeText={(v) => updateDraft((prev) => ({ ...prev, vehiclePlate: v }))}
+                  onChangeText={(value) => {
+                    const normalized = value.toUpperCase().replace(/[^A-Z0-9]/g, '');
+                    const letters = (normalized.match(/^[A-Z]*/)?.[0] ?? '').slice(0, 3);
+                    const digits = normalized
+                      .slice(letters.length)
+                      .replace(/[^0-9]/g, '')
+                      .slice(0, 4);
+                    updateDraft((prev) => ({ ...prev, vehiclePlate: `${letters}${digits}` }));
+                  }}
                   onBlur={() => touch('vehiclePlate')}
                   placeholder={`e.g. ${vehicleDetails.plateExample}`}
                   placeholderTextColor={DriverColors.textMuted}
                   autoCapitalize="characters"
-                  maxLength={14}
+                  maxLength={7}
+                  keyboardType="ascii-capable"
+                  textContentType="none"
                   accessibilityLabel={`${vehicleType} number`}
                 />
                 {fieldError('vehiclePlate') ? (
