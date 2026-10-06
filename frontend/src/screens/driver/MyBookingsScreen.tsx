@@ -328,7 +328,7 @@ export default function MyBookingsScreen({
                 onPress={() => onSelectBooking(reservation)}
               >
                 <View style={styles.cardTopRow}>
-                  <Text style={styles.reference} numberOfLines={1}>REF: {reservation._id}</Text>
+                  <Text style={styles.reference} numberOfLines={1}>REF: {reservation.reference || reservation._id}</Text>
                   <BookingStatus status={reservation.status} />
                 </View>
                 <Text style={styles.lotName} numberOfLines={1}>{getLotName(reservation)}</Text>
@@ -467,7 +467,7 @@ export function BookingDetailsScreen({
         <ScrollView contentContainerStyle={styles.detailsContent} showsVerticalScrollIndicator={false}>
           <View style={styles.detailsCard}>
             <View style={styles.cardTopRow}>
-              <Text style={styles.reference} numberOfLines={1}>REF: {reservation._id}</Text>
+              <Text style={styles.reference} numberOfLines={1}>REF: {reservation.reference || reservation._id}</Text>
               <BookingStatus status={reservation.status} />
             </View>
             <Text style={styles.lotName}>{getLotName(reservation)}</Text>

@@ -7,10 +7,12 @@ import {
   StatusBar,
   StyleSheet,
   Text,
+  TextInput,
   TouchableOpacity,
   View,
 } from 'react-native';
 import { DriverColors } from '../../constants/colors';
+import { saveDriverSessionFeedback } from '../../services/storage';
 import {
   calculateFinalParkingCost,
   DriverReservation,
@@ -39,7 +41,8 @@ interface ReleaseParkingScreenProps {
 
 interface ExitConfirmationScreenProps {
   receipt: ReleasedReservationReceipt;
-  onViewBookings: () => void;
+  userId: string;
+  onDone: () => void;
 }
 
 function getRelatedString(
@@ -87,6 +90,16 @@ function formatClock(value: string): string {
   const date = new Date(value);
   if (Number.isNaN(date.getTime())) return 'Time unavailable';
   return date.toLocaleTimeString(undefined, { hour: 'numeric', minute: '2-digit' });
+}
+
+function formatDate(value: string): string {
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return 'Date unavailable';
+  return date.toLocaleDateString(undefined, {
+    day: 'numeric',
+    month: 'short',
+    year: 'numeric',
+  });
 }
 
 function getRatePerHour(reservation: DriverReservation): number {
@@ -373,49 +386,160 @@ function SummaryRow({ label, value, detail }: { label: string; value: string; de
   );
 }
 
-export function ExitConfirmationScreen({ receipt, onViewBookings }: ExitConfirmationScreenProps) {
+export function ExitConfirmationScreen({ receipt, userId, onDone }: ExitConfirmationScreenProps) {
   const reservation = receipt.reservation;
   const exitTime = reservation.actualEndTime || reservation.endTime;
   const entryTime = reservation.verifiedAt || reservation.startTime;
   const finalAmount = reservation.finalAmount ?? reservation.totalAmount;
+  const receiptReference = reservation.reference || reservation._id;
+  const [rating, setRating] = useState<number | null>(null);
+  const [feedback, setFeedback] = useState('');
+  const [isSaving, setIsSaving] = useState(false);
+  const [saveError, setSaveError] = useState<string | null>(null);
+  const ratingLabels = ['Poor', 'Fair', 'Good', 'Very Good', 'Excellent!'];
+  const durationMs = new Date(exitTime).getTime() - new Date(entryTime).getTime();
+
+  const handleDone = async () => {
+    if (isSaving) return;
+    setSaveError(null);
+    if (rating !== null || feedback.trim()) {
+      setIsSaving(true);
+      try {
+        await saveDriverSessionFeedback(userId, {
+          reservationId: reservation._id,
+          rating,
+          feedback: feedback.trim(),
+          submittedAt: new Date().toISOString(),
+        });
+      } catch (error) {
+        const message = error instanceof Error ? error.message : 'Unable to save your feedback.';
+        setSaveError(message);
+        Alert.alert('Feedback not saved', `${message} Please try again.`);
+        setIsSaving(false);
+        return;
+      }
+      setIsSaving(false);
+    }
+    onDone();
+  };
 
   return (
     <SafeAreaView style={styles.safeArea}>
       <StatusBar barStyle="dark-content" backgroundColor={DriverColors.background} />
-      <View style={styles.header}>
-        <View style={styles.headerButton} />
-        <Text style={styles.headerTitle}>Parking Receipt</Text>
-        <View style={styles.headerButton} />
+      <View style={styles.receiptHeader}>
+        <Text style={styles.receiptHeaderTitle}>Session Completed</Text>
+        <Text style={styles.receiptHeaderReference}>Receipt #{receiptReference}</Text>
       </View>
-      <ScrollView contentContainerStyle={styles.receiptContent}>
+      <ScrollView contentContainerStyle={styles.receiptContent} showsVerticalScrollIndicator={false}>
         <View style={styles.receiptSuccess}><Text style={styles.receiptCheck}>✓</Text></View>
-        <Text style={styles.receiptTitle}>Space Released</Text>
-        <Text style={styles.receiptSubtitle}>Your parking session has ended successfully.</Text>
-        <View style={styles.releaseSummaryCard}>
-          <Text style={styles.reference}>REF: {reservation._id}</Text>
-          <Text style={styles.locationName}>{getLocationName(reservation)}</Text>
-          {!!getLocationAddress(reservation) && (
-            <Text style={styles.address}>{getLocationAddress(reservation)}</Text>
-          )}
-          <View style={styles.summaryDivider} />
-          <SummaryRow label="Space" value={`${getSpace(reservation)} (${getFloor(reservation)})`} />
-          <SummaryRow label="Entry time" value={formatClock(entryTime)} />
-          <SummaryRow label="Exit time" value={formatClock(exitTime)} />
-          <SummaryRow
-            label="Duration parked"
-            value={formatDuration(new Date(exitTime).getTime() - new Date(entryTime).getTime())}
-          />
-          <SummaryRow label="Payment method" value={getPaymentMethodLabel(receipt.paymentMethod) || 'Not recorded'} />
-          <View style={styles.summaryDivider} />
-          <View style={styles.finalCostRow}>
-            <Text style={styles.finalCostLabel}>Final total</Text>
-            <Text style={styles.finalCostValue}>{formatMoney(finalAmount)}</Text>
+        <Text style={styles.receiptTitle}>Thanks for parking with ParkMe!</Text>
+        <Text style={styles.receiptSubtitle}>Space <Text style={styles.receiptSpace}>{getSpace(reservation)}</Text> has been released. Safe travels!</Text>
+
+        <View style={styles.eReceiptCard}>
+          <View style={styles.eReceiptHeader}>
+            <View style={styles.eReceiptTitleRow}>
+              <Text style={styles.eReceiptIcon}>▣</Text>
+              <Text style={styles.eReceiptTitle}>OFFICIAL E-RECEIPT</Text>
+            </View>
+            <View style={[styles.paymentBadge, receipt.paymentMethod ? styles.paymentBadgePaid : styles.paymentBadgeUnknown]}>
+              <View style={[styles.paymentDot, receipt.paymentMethod ? styles.paymentDotPaid : styles.paymentDotUnknown]} />
+              <Text style={[styles.paymentBadgeText, receipt.paymentMethod ? styles.paymentBadgeTextPaid : styles.paymentBadgeTextUnknown]}>
+                {receipt.paymentMethod ? 'Paid in Full' : 'Payment not recorded'}
+              </Text>
+            </View>
+          </View>
+          <View style={styles.receiptDivider} />
+          <View style={styles.receiptInfoRow}>
+            <Text style={styles.receiptRowIcon}>⌖</Text>
+            <Text style={styles.receiptRowLabel}>Parking Lot</Text>
+            <View style={styles.receiptRowValue}>
+              <Text style={styles.receiptValueText}>{getLocationName(reservation)}</Text>
+              {!!getLocationAddress(reservation) && (
+                <Text style={styles.receiptDetailText}>{getLocationAddress(reservation)}</Text>
+              )}
+            </View>
+          </View>
+          <View style={styles.receiptInfoRow}>
+            <Text style={styles.receiptRowIcon}>▦</Text>
+            <Text style={styles.receiptRowLabel}>Date & Time</Text>
+            <View style={styles.receiptRowValue}>
+              <Text style={styles.receiptValueText}>{formatDate(exitTime)}</Text>
+              <Text style={styles.receiptDetailText}>{formatClock(entryTime)} – {formatClock(exitTime)}</Text>
+            </View>
+          </View>
+          <View style={styles.receiptInfoRow}>
+            <Text style={styles.receiptRowIcon}>◷</Text>
+            <Text style={styles.receiptRowLabel}>Duration</Text>
+            <Text style={styles.receiptValueText}>{formatDuration(durationMs)}</Text>
+          </View>
+          <View style={styles.receiptInfoRow}>
+            <Text style={styles.receiptRowIcon}>▤</Text>
+            <Text style={styles.receiptRowLabel}>Payment Method</Text>
+            <Text style={styles.receiptValueText}>{getPaymentMethodLabel(receipt.paymentMethod) || 'Not recorded'}</Text>
+          </View>
+          <View style={styles.receiptDivider} />
+          <View style={styles.receiptTotalRow}>
+            <View>
+              <Text style={styles.receiptTotalLabel}>Total Charged</Text>
+              <Text style={styles.receiptTaxNote}>No tax or service fee recorded</Text>
+            </View>
+            <Text style={styles.receiptTotalValue}>{formatMoney(finalAmount)}</Text>
           </View>
         </View>
+
+        <View style={styles.ratingCard}>
+          <Text style={styles.ratingTitle}>♡  RATE YOUR EXPERIENCE</Text>
+          <View style={styles.starsRow}>
+            {ratingLabels.map((label, index) => {
+              const starRating = index + 1;
+              const selected = rating !== null && starRating <= rating;
+              return (
+                <TouchableOpacity
+                  key={starRating}
+                  accessibilityRole="button"
+                  accessibilityLabel={`${starRating} star${starRating === 1 ? '' : 's'}, ${label}`}
+                  accessibilityState={{ selected: rating === starRating }}
+                  style={styles.starButton}
+                  onPress={() => setRating(starRating)}
+                >
+                  <Text style={[styles.star, selected && styles.starSelected]}>★</Text>
+                </TouchableOpacity>
+              );
+            })}
+          </View>
+          {rating !== null && <Text style={styles.ratingLabel}>{ratingLabels[rating - 1]}</Text>}
+          <Text style={styles.feedbackLabel}>Any feedback? (optional)</Text>
+          <TextInput
+            accessibilityLabel="Optional feedback"
+            multiline
+            maxLength={500}
+            placeholder="Tell us what you liked or how we can improve..."
+            placeholderTextColor={DriverColors.textMuted}
+            style={styles.feedbackInput}
+            value={feedback}
+            onChangeText={setFeedback}
+            textAlignVertical="top"
+          />
+          {saveError ? <Text style={styles.feedbackError}>{saveError}</Text> : null}
+        </View>
       </ScrollView>
-      <View style={styles.releaseFooter}>
-        <TouchableOpacity accessibilityRole="button" style={styles.confirmButton} onPress={onViewBookings}>
-          <Text style={styles.confirmButtonText}>Back to My Bookings</Text>
+      <View style={styles.receiptFooter}>
+        <TouchableOpacity
+          accessibilityRole="button"
+          disabled={isSaving}
+          style={[styles.receiptDoneButton, isSaving && styles.disabledButton]}
+          onPress={() => void handleDone()}
+        >
+          {isSaving
+            ? <ActivityIndicator color="#FFFFFF" />
+            : <Text style={styles.receiptDoneText}>Done  ➜</Text>}
+        </TouchableOpacity>
+        <TouchableOpacity
+          accessibilityRole="button"
+          style={styles.downloadReceiptButton}
+          onPress={() => Alert.alert('Receipt download unavailable', 'Receipt downloads are not configured yet.')}
+        >
+          <Text style={styles.downloadReceiptText}>⇩  Download Receipt</Text>
         </TouchableOpacity>
       </View>
     </SafeAreaView>
@@ -876,9 +1000,82 @@ const styles = StyleSheet.create({
   confirmButtonText: { color: '#FFFFFF', fontSize: 14, fontWeight: '800' },
   keepButton: { minHeight: 43, alignItems: 'center', justifyContent: 'center', marginTop: 8, borderRadius: 23, borderWidth: 1, borderColor: '#33216C', backgroundColor: '#FFFFFF' },
   keepButtonText: { color: '#33216C', fontSize: 13, fontWeight: '800' },
-  receiptContent: { flexGrow: 1, paddingHorizontal: 18, paddingTop: 28, paddingBottom: 18 },
-  receiptSuccess: { width: 68, height: 68, borderRadius: 34, backgroundColor: '#DCFCE7', alignItems: 'center', justifyContent: 'center', alignSelf: 'center' },
-  receiptCheck: { color: '#15803D', fontSize: 35, fontWeight: '800' },
-  receiptTitle: { color: DriverColors.navyHeading, fontSize: 22, fontWeight: '900', textAlign: 'center', marginTop: 15 },
-  receiptSubtitle: { color: DriverColors.textSecondary, fontSize: 12, textAlign: 'center', marginTop: 6, marginBottom: 15 },
+  receiptHeader: { alignItems: 'center', paddingTop: 8, paddingBottom: 2 },
+  receiptHeaderTitle: { color: DriverColors.navyHeading, fontSize: 17, fontWeight: '900' },
+  receiptHeaderReference: { color: DriverColors.textSecondary, fontSize: 10, marginTop: 2 },
+  receiptContent: { flexGrow: 1, paddingHorizontal: 16, paddingTop: 12, paddingBottom: 12 },
+  receiptSuccess: { width: 62, height: 62, borderRadius: 31, backgroundColor: '#10B981', alignItems: 'center', justifyContent: 'center', alignSelf: 'center' },
+  receiptCheck: { color: '#FFFFFF', fontSize: 34, fontWeight: '800' },
+  receiptTitle: { color: DriverColors.navyHeading, fontSize: 18, lineHeight: 24, fontWeight: '900', textAlign: 'center', marginTop: 10 },
+  receiptSubtitle: { color: DriverColors.textSecondary, fontSize: 11, lineHeight: 16, textAlign: 'center', marginTop: 3 },
+  receiptSpace: { color: DriverColors.navyHeading, fontWeight: '800' },
+  eReceiptCard: {
+    backgroundColor: '#FFFFFF',
+    borderRadius: 18,
+    borderWidth: 1,
+    borderColor: DriverColors.cardBorder,
+    paddingHorizontal: 12,
+    paddingVertical: 12,
+    marginTop: 15,
+  },
+  eReceiptHeader: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: 6 },
+  eReceiptTitleRow: { flexDirection: 'row', alignItems: 'center', gap: 7, flexShrink: 1 },
+  eReceiptIcon: { color: DriverColors.navyHeading, fontSize: 15, fontWeight: '800' },
+  eReceiptTitle: { color: DriverColors.navyHeading, fontSize: 9, fontWeight: '900' },
+  paymentBadge: { flexDirection: 'row', alignItems: 'center', gap: 4, borderRadius: 12, paddingHorizontal: 7, paddingVertical: 4 },
+  paymentBadgePaid: { backgroundColor: '#E8F8F1' },
+  paymentBadgeUnknown: { backgroundColor: '#F1F5F9' },
+  paymentDot: { width: 5, height: 5, borderRadius: 3 },
+  paymentDotPaid: { backgroundColor: '#10B981' },
+  paymentDotUnknown: { backgroundColor: DriverColors.textMuted },
+  paymentBadgeText: { fontSize: 8, fontWeight: '700' },
+  paymentBadgeTextPaid: { color: '#059669' },
+  paymentBadgeTextUnknown: { color: DriverColors.textSecondary },
+  receiptDivider: { height: 1, borderStyle: 'dashed', borderWidth: 0.5, borderColor: DriverColors.cardBorder, marginVertical: 8 },
+  receiptInfoRow: { flexDirection: 'row', alignItems: 'center', gap: 5, paddingVertical: 4 },
+  receiptRowIcon: { width: 14, color: DriverColors.textSecondary, fontSize: 12, fontWeight: '700' },
+  receiptRowLabel: { width: 77, color: DriverColors.textSecondary, fontSize: 9 },
+  receiptRowValue: { flex: 1, alignItems: 'flex-end' },
+  receiptValueText: { flexShrink: 1, color: DriverColors.navyHeading, fontSize: 9, lineHeight: 13, fontWeight: '700', textAlign: 'right' },
+  receiptDetailText: { color: DriverColors.textSecondary, fontSize: 8, lineHeight: 12, textAlign: 'right', marginTop: 1 },
+  receiptTotalRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: 8 },
+  receiptTotalLabel: { color: DriverColors.navyHeading, fontSize: 10, fontWeight: '800' },
+  receiptTaxNote: { color: DriverColors.textSecondary, fontSize: 8, marginTop: 3 },
+  receiptTotalValue: { color: DriverColors.navyHeading, fontSize: 19, fontWeight: '900' },
+  ratingCard: {
+    backgroundColor: '#FFFFFF',
+    borderRadius: 18,
+    borderWidth: 1,
+    borderColor: DriverColors.cardBorder,
+    paddingHorizontal: 13,
+    paddingVertical: 12,
+    marginTop: 10,
+    alignItems: 'center',
+  },
+  ratingTitle: { color: DriverColors.orangePrimary, fontSize: 9, fontWeight: '900' },
+  starsRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', marginTop: 3 },
+  starButton: { minWidth: 27, minHeight: 31, alignItems: 'center', justifyContent: 'center' },
+  star: { color: '#CBD5E1', fontSize: 23 },
+  starSelected: { color: '#F59E0B' },
+  ratingLabel: { color: DriverColors.navyHeading, fontSize: 10, fontWeight: '800', marginTop: 1 },
+  feedbackLabel: { alignSelf: 'flex-start', color: DriverColors.textSecondary, fontSize: 9, marginTop: 8, marginBottom: 5 },
+  feedbackInput: {
+    width: '100%',
+    minHeight: 42,
+    maxHeight: 84,
+    borderRadius: 11,
+    borderWidth: 1,
+    borderColor: DriverColors.cardBorder,
+    backgroundColor: '#F1F5F9',
+    paddingHorizontal: 10,
+    paddingVertical: 8,
+    color: DriverColors.navyHeading,
+    fontSize: 9,
+  },
+  feedbackError: { alignSelf: 'flex-start', color: '#B42318', fontSize: 9, marginTop: 6 },
+  receiptFooter: { paddingHorizontal: 18, paddingTop: 6, paddingBottom: 8, backgroundColor: DriverColors.background, gap: 7 },
+  receiptDoneButton: { minHeight: 42, backgroundColor: '#FF5722', borderRadius: 23, alignItems: 'center', justifyContent: 'center' },
+  receiptDoneText: { color: '#FFFFFF', fontSize: 13, fontWeight: '800' },
+  downloadReceiptButton: { minHeight: 41, borderRadius: 22, borderWidth: 1.5, borderColor: DriverColors.navyHeading, alignItems: 'center', justifyContent: 'center' },
+  downloadReceiptText: { color: DriverColors.navyHeading, fontSize: 13, fontWeight: '800' },
 });

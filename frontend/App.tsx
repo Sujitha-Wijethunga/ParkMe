@@ -991,7 +991,8 @@ export default function App() {
       {currentScreen === 'driver-exit-confirmation' && releaseReceipt && (
         <ExitConfirmationScreen
           receipt={releaseReceipt}
-          onViewBookings={() => {
+          userId={driverUser?._id || 'guest'}
+          onDone={() => {
             setReleaseReceipt(null);
             setSelectedReservationId(null);
             setCurrentScreen('driver-bookings');

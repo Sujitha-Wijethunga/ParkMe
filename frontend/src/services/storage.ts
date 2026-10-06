@@ -4,6 +4,7 @@ import { Platform } from 'react-native';
 const TOKEN_KEY = 'parkme_driver_token';
 const USER_KEY = 'parkme_driver_user';
 const BOOKING_KEY_PREFIX = 'parkme_driver_bookings_';
+const SESSION_FEEDBACK_KEY_PREFIX = 'parkme_driver_session_feedback_';
 
 export interface DriverUser {
   _id: string;
@@ -11,6 +12,13 @@ export interface DriverUser {
   email: string;
   phone?: string;
   role: 'driver';
+}
+
+export interface DriverSessionFeedback {
+  reservationId: string;
+  rating: number | null;
+  feedback: string;
+  submittedAt: string;
 }
 
 // In-memory fallback for environments without SecureStore or localStorage
@@ -157,4 +165,39 @@ export async function saveDriverBookingData(userId: string, data: string): Promi
 export async function getDriverBookingData(userId: string): Promise<string | null> {
   if (!userId) return null;
   return getItem(`${BOOKING_KEY_PREFIX}${userId}`);
+}
+
+export async function saveDriverSessionFeedback(
+  userId: string,
+  sessionFeedback: DriverSessionFeedback
+): Promise<void> {
+  if (!userId) throw new Error('A driver ID is required to save session feedback.');
+  if (!sessionFeedback.reservationId) throw new Error('A booking ID is required to save session feedback.');
+  if (
+    sessionFeedback.rating !== null &&
+    (!Number.isInteger(sessionFeedback.rating) || sessionFeedback.rating < 1 || sessionFeedback.rating > 5)
+  ) {
+    throw new Error('The session rating must be between 1 and 5.');
+  }
+
+  const key = `${SESSION_FEEDBACK_KEY_PREFIX}${userId}`;
+  const saved = await getItem(key);
+  let feedbackByReservation: Record<string, DriverSessionFeedback> = {};
+  if (saved) {
+    try {
+      const parsed: unknown = JSON.parse(saved);
+      if (typeof parsed !== 'object' || parsed === null || Array.isArray(parsed)) {
+        throw new Error('Saved session feedback has an unexpected format.');
+      }
+      feedbackByReservation = parsed as Record<string, DriverSessionFeedback>;
+    } catch (error) {
+      if (error instanceof SyntaxError) {
+        throw new Error('Saved session feedback is invalid and could not be updated.');
+      }
+      throw error;
+    }
+  }
+
+  feedbackByReservation[sessionFeedback.reservationId] = sessionFeedback;
+  await setItem(key, JSON.stringify(feedbackByReservation));
 }

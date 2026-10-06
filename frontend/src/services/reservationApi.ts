@@ -20,6 +20,7 @@ export interface ReservationSpace {
 
 export interface DriverReservation {
   _id: string;
+  reference?: string;
   parkingLot: ReservationLocation | string;
   parkingSpace: ReservationSpace | string;
   startTime: string;
@@ -88,6 +89,7 @@ function isDriverReservation(value: unknown): value is DriverReservation {
   return (
     typeof value._id === 'string' &&
     value._id.length > 0 &&
+    (value.reference === undefined || typeof value.reference === 'string') &&
     typeof value.startTime === 'string' &&
     !Number.isNaN(Date.parse(value.startTime)) &&
     typeof value.endTime === 'string' &&
