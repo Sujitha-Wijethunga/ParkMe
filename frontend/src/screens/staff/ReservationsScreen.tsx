@@ -50,7 +50,6 @@ export default function ReservationsScreen({
   );
   const bottomPadding = Math.max(insets.bottom, 16) + 24;
 
-  const [reservations] = useState<ReservationItem[]>(initialReservations);
   const [searchQuery, setSearchQuery] = useState('');
   const [activeTab, setActiveTab] = useState<'Upcoming' | 'Active' | 'Completed' | 'Cancelled'>('Upcoming');
   const [expandedId, setExpandedId] = useState<string | null>(null);

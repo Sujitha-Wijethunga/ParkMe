@@ -65,7 +65,6 @@ export default function HomeScreen({
 
   const [searchQuery, setSearchQuery] = useState('');
   const [selectedChip, setSelectedChip] = useState<DriverFilterChip>('Nearest');
-  const [parkingLots] = useState<ParkingLotCardItem[]>(SAMPLE_NEARBY_PARKING_LOTS);
   const [notificationsVisible, setNotificationsVisible] = useState(false);
 
   // Handle bottom navigation tab switching

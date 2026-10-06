@@ -1,4 +1,3 @@
-import React, { useEffect, useState } from 'react';
 import React, { useState, useEffect, useCallback } from 'react';
 import {
   View,
@@ -202,6 +201,13 @@ export default function App() {
       } catch (e) {
         console.warn('[SplashScreen.hideAsync]', e);
       }
+    }
+  }, [appIsReady]);
+
+  // Fallback safety: ensure splash screen hides as soon as readiness completes
+  useEffect(() => {
+    if (appIsReady) {
+      SplashScreen.hideAsync().catch(() => {});
     }
   }, [appIsReady]);
 
@@ -899,7 +905,6 @@ export default function App() {
       {currentScreen === 'driver-home' && (
         <HomeScreen
           parkingLots={driverParkingLots}
-          userName="Kasun"
           userName={driverUser?.name ? driverUser.name.split(' ')[0] : 'Kasun'}
           onNavigateToMap={() => handleOpenSearch('', 'map', 'Nearest')}
           onNavigateToLotDetails={(lotId) =>
@@ -1260,5 +1265,4 @@ const styles = StyleSheet.create({
     fontWeight: '700',
     letterSpacing: 0.2,
   },
-});
 });

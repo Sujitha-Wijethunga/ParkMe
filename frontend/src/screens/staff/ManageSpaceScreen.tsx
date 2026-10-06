@@ -72,7 +72,6 @@ interface ManageSpaceProps {
 }
 
 export default function ManageSpaceScreen({ onBack, onUpdateSpaceStatus, spaces, selectedSpaceId }: ManageSpaceProps) {
-export default function ManageSpaceScreen({ onBack, spaces, setSpaces }: ManageSpaceProps) {
   const insets = useSafeAreaInsets();
   const topPadding = Math.max(
     insets.top,
