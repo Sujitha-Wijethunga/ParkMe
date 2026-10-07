@@ -1,5 +1,4 @@
-import React, { useEffect, useState } from 'react';
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useCallback, useEffect, useState } from 'react';
 import {
   View,
   TouchableOpacity,
@@ -11,6 +10,7 @@ import {
 } from 'react-native';
 import { StatusBar } from 'expo-status-bar';
 import * as SplashScreen from 'expo-splash-screen';
+import { File as ExpoFile } from 'expo-file-system';
 import { SafeAreaProvider } from 'react-native-safe-area-context';
 
 // Prevent native splash screen from autohiding while initial resources load
@@ -707,30 +707,35 @@ export default function App() {
       }
 
       const lotId = lot._id || lot.id;
+      const formData = new FormData() as FormData & {
+        append(
+          name: string,
+          value: string | Blob | { uri: string; name: string; type: string },
+          fileName?: string
+        ): void;
+      };
+      formData.append('spaceNumbers', JSON.stringify(newSpace.spaceNumbers ?? [newSpace.slot]));
+      formData.append('floor', newSpace.level || 'Level 3');
+      formData.append('type', 'standard');
+      if (newSpace.imageUri) {
+        if (Platform.OS === 'web') {
+          if (!newSpace.imageFile || newSpace.imageFile.size === 0) {
+            throw new Error('Unable to read the selected image. Please choose it again.');
+          }
+          formData.append('image', newSpace.imageFile);
+        } else {
+          const imageFile = new ExpoFile(newSpace.imageUri);
+          if (!imageFile.exists || imageFile.size === 0) {
+            throw new Error('Unable to read the selected image. Please choose it again.');
+          }
+          formData.append('image', imageFile);
+        }
+      }
+
       const createSpaceResponse = await fetch(`${API_BASE_URL}/api/parking-lots/${lotId}/spaces`, {
         method: 'POST',
         headers: { Authorization: headers.Authorization },
-        body: (() => {
-          const formData = new FormData() as FormData & {
-            append(name: string, value: string | { uri: string; name: string; type: string }): void;
-          };
-          formData.append('spaceNumbers', JSON.stringify(newSpace.spaceNumbers ?? [newSpace.slot]));
-          formData.append('floor', newSpace.level || 'Level 3');
-          formData.append('type', 'standard');
-          if (newSpace.imageUri) {
-            const imageExtension = newSpace.imageMimeType === 'image/png'
-              ? 'png'
-              : newSpace.imageMimeType === 'image/webp'
-                ? 'webp'
-                : 'jpg';
-            formData.append('image', {
-              uri: newSpace.imageUri,
-              name: `parking-space-image.${imageExtension}`,
-              type: newSpace.imageMimeType || 'image/jpeg',
-            });
-          }
-          return formData;
-        })(),
+        body: formData,
       });
 
       if (!createSpaceResponse.ok) {
@@ -890,7 +895,6 @@ export default function App() {
       {currentScreen === 'driver-home' && (
         <HomeScreen
           parkingLots={driverParkingLots}
-          userName="Kasun"
           userName={driverUser?.name ? driverUser.name.split(' ')[0] : 'Kasun'}
           onNavigateToMap={() => handleOpenSearch('', 'map', 'Nearest')}
           onNavigateToLotDetails={(lotId) =>
@@ -1044,6 +1048,7 @@ export default function App() {
         <StaffLoginScreen
           onLoginSuccess={handleLoginSuccess}
           onNavigateToSignup={() => setCurrentScreen('signup')}
+          onNavigateToDriverLogin={() => setCurrentScreen('driver-login')}
         />
       )}
       {currentScreen === 'signup' && (
@@ -1251,5 +1256,4 @@ const styles = StyleSheet.create({
     fontWeight: '700',
     letterSpacing: 0.2,
   },
-});
 });

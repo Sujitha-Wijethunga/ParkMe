@@ -14,26 +14,12 @@ import {
   Alert,
 } from 'react-native';
 import { Colors } from '../../constants/colors';
+import { API_BASE_URL, getApiConnectionError } from '../../constants/api';
 
 interface StaffSignupScreenProps {
   onSignupSuccess?: (user: any, token: string) => void;
   onBackToLogin?: () => void;
 }
-
-const API_URLS = ['http://192.168.1.33:5000', 'http://localhost:5000', 'http://10.0.2.2:5000'];
-
-const fetchWithFallback = async (endpoint: string, options: RequestInit) => {
-  let lastError: any = null;
-  for (const url of API_URLS) {
-    try {
-      const res = await fetch(`${url}${endpoint}`, options);
-      return res;
-    } catch (err) {
-      lastError = err;
-    }
-  }
-  throw lastError || new Error('Could not connect to backend server');
-};
 
 export default function StaffSignupScreen({
   onSignupSuccess,
@@ -75,7 +61,7 @@ export default function StaffSignupScreen({
   const confirmPasswordInputRef = useRef<TextInput>(null);
 
   // Animated scale for button
-  const buttonScale = useRef(new Animated.Value(1)).current;
+  const [buttonScale] = useState(() => new Animated.Value(1));
 
   const handlePressIn = () => {
     Animated.spring(buttonScale, {
@@ -105,17 +91,20 @@ export default function StaffSignupScreen({
     const cleanEmail = email.trim();
     const cleanPhone = phone.trim();
     const cleanStaffId = staffId.trim();
+    const phoneDigits = cleanPhone.replace(/\D/g, '');
 
     if (!cleanName) {
       nextErrors.name = 'Please enter your full name.';
     } else if (cleanName.length < 2) {
       nextErrors.name = 'Name must be at least 2 characters.';
+    } else if (cleanName.length > 80 || !/^[\p{L}\p{M}]+(?:[ .'-][\p{L}\p{M}]+)*$/u.test(cleanName)) {
+      nextErrors.name = 'Enter a valid name using letters, spaces, apostrophes, periods, or hyphens.';
     }
 
     if (!cleanEmail) {
       nextErrors.email = 'Please enter your email address.';
     } else {
-      const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+      const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]{2,}$/;
       if (!emailRegex.test(cleanEmail)) {
         nextErrors.email = 'Please enter a valid email address.';
       }
@@ -124,16 +113,15 @@ export default function StaffSignupScreen({
     if (!cleanPhone) {
       nextErrors.phone = 'Please enter your phone number.';
     } else {
-      const phoneDigits = cleanPhone.replace(/\D/g, '');
       if (phoneDigits.length < 9 || phoneDigits.length > 12) {
         nextErrors.phone = 'Phone number must be 9 to 12 digits.';
-      } else if (!/^(?:\+?94|0)?[0-9\s()+-]{9,20}$/.test(cleanPhone)) {
+      } else if (!/^\+?[0-9][0-9\s()-]*$/.test(cleanPhone)) {
         nextErrors.phone = 'Phone number format is invalid.';
       }
     }
 
     if (cleanStaffId && !/^[A-Z0-9-]{3,20}$/i.test(cleanStaffId)) {
-      nextErrors.staffId = 'Staff ID can only contain letters, numbers, and hyphens.';
+      nextErrors.staffId = 'Staff ID must be 3 to 20 characters and use only letters, numbers, or hyphens.';
     }
 
     if (!password) {
@@ -163,7 +151,7 @@ export default function StaffSignupScreen({
     setIsLoading(true);
 
     try {
-      const response = await fetchWithFallback('/api/auth/register', {
+      const response = await fetch(`${API_BASE_URL}/api/auth/register`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -193,7 +181,7 @@ export default function StaffSignupScreen({
 
       Alert.alert(
         'Account Created Successfully',
-        'Your staff account has been created successfully.',
+        `Your staff account has been saved. Staff ID: ${data.staffId || 'not assigned'}. You can log in with your email or Staff ID and password.`,
         [
           {
             text: 'Proceed to Portal',
@@ -207,7 +195,10 @@ export default function StaffSignupScreen({
       );
     } catch (error: any) {
       setIsLoading(false);
-      Alert.alert('Registration Failed', error.message || 'Could not connect to server.');
+      Alert.alert(
+        'Registration Failed',
+        error instanceof TypeError ? getApiConnectionError() : error instanceof Error ? error.message : 'Please try again.'
+      );
     }
   };
 
@@ -331,7 +322,9 @@ export default function StaffSignupScreen({
 
             {/* Phone Number Field */}
             <View style={styles.fieldGroup}>
-              <Text style={styles.label}>Phone Number</Text>
+              <Text style={styles.label}>
+                Phone Number <Text style={styles.required}>*</Text>
+              </Text>
               <Pressable
                 style={[
                   styles.inputWrapper,
@@ -413,7 +406,7 @@ export default function StaffSignupScreen({
                 <TextInput
                   ref={passwordInputRef}
                   style={styles.input}
-                  placeholder="•••••••• (Min 6 characters)"
+                  placeholder="At least 8 characters, with a capital letter and number"
                   placeholderTextColor={Colors.placeholder}
                   value={password}
                   onChangeText={(value) => {

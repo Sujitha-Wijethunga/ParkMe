@@ -1,9 +1,8 @@
 const mongoose = require('mongoose');
 const dns = require('dns');
 
-// Force Google DNS to resolve MongoDB SRV records
-// (bypasses network/hotspot DNS that may block SRV queries)
-dns.setServers(['8.8.8.8', '8.8.4.4']);
+// If standard system DNS fails to resolve SRV records on some networks, fallback will be used
+
 
 let cachedPromise = null;
 

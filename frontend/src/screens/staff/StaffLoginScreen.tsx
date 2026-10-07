@@ -20,10 +20,15 @@ import { API_BASE_URL, getApiConnectionError } from '../../constants/api';
 interface StaffLoginScreenProps {
   onLoginSuccess?: (user: any, token: string) => void;
   onNavigateToSignup?: () => void;
+  onNavigateToDriverLogin?: () => void;
 }
 
-export default function StaffLoginScreen({ onLoginSuccess, onNavigateToSignup }: StaffLoginScreenProps) {
-export default function StaffLoginScreen({ onLoginSuccess }: StaffLoginScreenProps) {
+export default function StaffLoginScreen({
+  onLoginSuccess,
+  onNavigateToSignup,
+  onNavigateToDriverLogin,
+}: StaffLoginScreenProps) {
+
   const insets = useSafeAreaInsets();
   const topPadding =
     Math.max(insets.top, Platform.OS === 'android' ? (StatusBar.currentHeight ?? 0) : 0) + 16;
@@ -69,9 +74,9 @@ export default function StaffLoginScreen({ onLoginSuccess }: StaffLoginScreenPro
     const cleanPassword = password.trim();
 
     if (!cleanStaffId) {
-      nextErrors.staffId = 'Please enter your Staff ID.';
+      nextErrors.staffId = 'Please enter your Staff ID or email.';
     } else if (cleanStaffId.length < 3) {
-      nextErrors.staffId = 'Staff ID must be at least 3 characters.';
+      nextErrors.staffId = 'Enter a valid Staff ID or email address.';
     }
 
     if (!cleanPassword) {
@@ -96,7 +101,7 @@ export default function StaffLoginScreen({ onLoginSuccess }: StaffLoginScreenPro
       const response = await fetch(`${API_BASE_URL}/api/auth/login`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ staffId: staffId.trim().toUpperCase(), password }),
+        body: JSON.stringify({ identifier: staffId.trim(), password }),
       });
 
       const data = await response.json();
@@ -176,7 +181,7 @@ export default function StaffLoginScreen({ onLoginSuccess }: StaffLoginScreenPro
             {/* Staff ID Field */}
             <View style={styles.fieldGroup}>
               <Text style={styles.label}>
-                Staff ID <Text style={styles.required}>*</Text>
+                Staff ID or Email <Text style={styles.required}>*</Text>
               </Text>
               <Pressable
                 style={[
@@ -190,14 +195,14 @@ export default function StaffLoginScreen({ onLoginSuccess }: StaffLoginScreenPro
                 <TextInput
                   ref={staffIdInputRef}
                   style={styles.input}
-                  placeholder="e.g. STF-4091"
+                  placeholder="Staff ID or signup email"
                   placeholderTextColor={Colors.placeholder}
                   value={staffId}
                   onChangeText={(value) => {
                     setStaffId(value);
                     setLoginErrors((prev) => ({ ...prev, staffId: '' }));
                   }}
-                  autoCapitalize="characters"
+                  autoCapitalize="none"
                   autoCorrect={false}
                   onFocus={() => setStaffIdFocused(true)}
                   onBlur={() => setStaffIdFocused(false)}
@@ -205,7 +210,7 @@ export default function StaffLoginScreen({ onLoginSuccess }: StaffLoginScreenPro
                   onSubmitEditing={() => passwordInputRef.current?.focus()}
                 />
               </Pressable>
-              {loginErrors.staffId ? <Text style={styles.errorText}>{loginErrors.staffId}</Text> : <Text style={styles.fieldHint}>Issued by your facility administrator</Text>}
+              {loginErrors.staffId ? <Text style={styles.errorText}>{loginErrors.staffId}</Text> : <Text style={styles.fieldHint}>Use your Staff ID or the email used to sign up</Text>}
             </View>
 
             {/* Password Field */}
@@ -305,7 +310,7 @@ export default function StaffLoginScreen({ onLoginSuccess }: StaffLoginScreenPro
             <View style={styles.footer}>
               <Text style={styles.footerText}>Are you a driver? </Text>
               <Text style={styles.footerEmoji}>🚙</Text>
-              <TouchableOpacity>
+              <TouchableOpacity onPress={onNavigateToDriverLogin}>
                 <Text style={styles.footerLink}> Go to driver login</Text>
               </TouchableOpacity>
             </View>

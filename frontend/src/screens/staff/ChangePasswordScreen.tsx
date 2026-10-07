@@ -18,7 +18,6 @@ interface ChangePasswordScreenProps {
 }
 
 export default function ChangePasswordScreen({ onBack, onUpdatePassword }: ChangePasswordScreenProps) {
-export default function ChangePasswordScreen({ onBack }: ChangePasswordScreenProps) {
   const insets = useSafeAreaInsets();
   const topPadding = Math.max(
     insets.top,

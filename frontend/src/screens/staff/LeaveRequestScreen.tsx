@@ -25,7 +25,6 @@ interface LeaveRequestScreenProps {
 }
 
 export default function LeaveRequestScreen({ onBack, onSubmitRequest }: LeaveRequestScreenProps) {
-export default function LeaveRequestScreen({ onBack }: LeaveRequestScreenProps) {
   const insets = useSafeAreaInsets();
   const topPadding = Math.max(
     insets.top,

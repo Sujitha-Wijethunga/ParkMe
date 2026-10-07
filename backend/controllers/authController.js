@@ -69,24 +69,26 @@ const register = async (req, res, next) => {
 // @access  Public
 const login = async (req, res, next) => {
   try {
-    const { staffId, password } = req.body;
+    const { staffId, identifier, email, password } = req.body;
+    const loginId = String(identifier || staffId || email || '').trim();
 
-    if (!staffId || !password) {
-      return res.status(400).json({ message: 'Staff ID and password are required' });
+    if (!loginId || !password) {
+      return res.status(400).json({ message: 'Staff ID or email and password are required' });
     }
 
-    const formattedStaffId = staffId.trim().toUpperCase();
-
-    // Look up in Staff table first
-    let user = await Staff.findOne({ staffId: formattedStaffId }).select('+password');
+    const isEmail = loginId.includes('@');
+    const lookup = isEmail
+      ? { email: loginId.toLowerCase() }
+      : { staffId: loginId.toUpperCase() };
+    let user = await Staff.findOne(lookup).select('+password');
 
     // Fallback to User table if not found in Staff table
     if (!user) {
-      user = await User.findOne({ staffId: formattedStaffId }).select('+password');
+      user = await User.findOne(lookup).select('+password');
     }
 
     if (!user || !(await user.matchPassword(password))) {
-      return res.status(401).json({ message: 'Invalid Staff ID or password' });
+      return res.status(401).json({ message: 'Invalid Staff ID/email or password' });
     }
 
     if (!user.isActive) {
@@ -268,13 +270,44 @@ const driverLogin = async (req, res, next) => {
 
 // Validation chains
 const registerValidation = [
-  body('name').trim().notEmpty().withMessage('Name is required'),
-  body('email').isEmail().withMessage('Valid email is required'),
-  body('password').isLength({ min: 6 }).withMessage('Password must be at least 6 characters'),
+  body('name')
+    .trim()
+    .isLength({ min: 2, max: 80 })
+    .withMessage('Name must be between 2 and 80 characters')
+    .matches(/^[\p{L}\p{M}]+(?:[ .'-][\p{L}\p{M}]+)*$/u)
+    .withMessage('Name contains invalid characters'),
+  body('email').trim().isEmail().withMessage('Valid email is required').normalizeEmail(),
+  body('phone')
+    .trim()
+    .notEmpty()
+    .withMessage('Phone number is required')
+    .custom((value) => {
+      const digits = value.replace(/\D/g, '');
+      return digits.length >= 9 && digits.length <= 12 && /^\+?[0-9][0-9\s()-]*$/.test(value);
+    })
+    .withMessage('Phone number must be valid and contain 9 to 12 digits'),
+  body('staffId')
+    .optional({ checkFalsy: true })
+    .trim()
+    .matches(/^[A-Z0-9-]{3,20}$/i)
+    .withMessage('Staff ID must be 3 to 20 characters and use only letters, numbers, or hyphens'),
+  body('password')
+    .isLength({ min: 8 })
+    .withMessage('Password must be at least 8 characters')
+    .matches(/[A-Z]/)
+    .withMessage('Password must include at least one uppercase letter')
+    .matches(/[0-9]/)
+    .withMessage('Password must include at least one number'),
 ];
 
 const loginValidation = [
-  body('staffId').trim().notEmpty().withMessage('Staff ID is required'),
+  body().custom((value, { req }) => {
+    const loginId = req.body.identifier || req.body.staffId || req.body.email;
+    if (!loginId || !String(loginId).trim()) {
+      throw new Error('Staff ID or email is required');
+    }
+    return true;
+  }),
   body('password').notEmpty().withMessage('Password is required'),
 ];
 
@@ -424,4 +457,3 @@ module.exports = {
   driverLoginValidation,
   googleAuthValidation,
 };
-
