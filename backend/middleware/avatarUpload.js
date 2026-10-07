@@ -3,7 +3,7 @@ const path = require('path');
 const { randomUUID } = require('crypto');
 const multer = require('multer');
 
-const uploadDirectory = path.join(__dirname, '..', 'uploads', 'parking-spaces');
+const uploadDirectory = path.join(__dirname, '..', 'uploads', 'avatars');
 const extensionsByMimeType = {
   'image/jpeg': '.jpg',
   'image/jpg': '.jpg',
@@ -28,7 +28,7 @@ const storage = multer.diskStorage({
   destination: (_req, _file, callback) => callback(null, uploadDirectory),
   filename: (_req, file, callback) => {
     const ext = resolveExtension(file);
-    callback(null, `${randomUUID()}${ext}`);
+    callback(null, `avatar_${randomUUID()}${ext}`);
   },
 });
 

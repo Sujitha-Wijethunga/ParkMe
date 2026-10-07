@@ -17,6 +17,9 @@ interface VerifyEntryProps {
   reservationId: string;
   initialReference?: string;
   initialSlot?: string;
+  driverName?: string;
+  vehiclePlate?: string;
+  vehicleModel?: string;
   apiBaseUrl: string;
   authToken: string | null;
   onBack: () => void;
@@ -25,8 +28,11 @@ interface VerifyEntryProps {
 
 export default function VerifyEntryScreen({
   reservationId,
-  initialReference = 'PE-84213',
+  initialReference = 'PM-000000',
   initialSlot = 'A3',
+  driverName = 'Driver',
+  vehiclePlate = '—',
+  vehicleModel = '',
   apiBaseUrl,
   authToken,
   onBack,
@@ -45,7 +51,9 @@ export default function VerifyEntryScreen({
   const [isScanning, setIsScanning] = useState(false);
   const [permission, requestPermission] = useCameraPermissions();
 
-  const handleVerifyRef = (refString?: string) => {
+  const [isVerifying, setIsVerifying] = useState(false);
+
+  const handleVerifyRef = async (refString?: string) => {
     const refToVerify = typeof refString === 'string' ? refString : referenceInput;
     if (!refToVerify.trim()) {
       Alert.alert('Required', 'Please enter a booking reference.');
@@ -53,12 +61,40 @@ export default function VerifyEntryScreen({
     }
     if (refToVerify.trim().toUpperCase() !== initialReference.trim().toUpperCase()) {
       setIsVerified(false);
-      Alert.alert('Reservation not found', 'The reference does not match the active reservation selected from the reservations list.');
+      Alert.alert(
+        'Reference mismatch',
+        'The scanned or entered reference does not match this reservation. Please check and try again.'
+      );
       return;
     }
-    setReferenceInput(refToVerify);
-    setIsVerified(true);
-    Alert.alert('Verified', `Booking reference ${refToVerify.trim()} matches the active reservation.`);
+
+    // Reference matches — call backend to activate the reservation
+    if (!authToken || !reservationId) {
+      Alert.alert('Session error', 'Please go back and select the reservation again.');
+      return;
+    }
+    setIsVerifying(true);
+    try {
+      const response = await fetch(`${apiBaseUrl}/api/reservations/${reservationId}/verify`, {
+        method: 'PUT',
+        headers: { Authorization: `Bearer ${authToken}` },
+      });
+      const result = await response.json();
+      if (!response.ok) throw new Error(result.message || 'Unable to verify reservation');
+      setReferenceInput(refToVerify);
+      setIsVerified(true);
+      Alert.alert(
+        '✓ Match Confirmed',
+        `Booking ${refToVerify.trim()} verified. Space ${initialSlot} is now active.`
+      );
+    } catch (error) {
+      Alert.alert(
+        'Verification failed',
+        error instanceof Error ? error.message : 'Please try again.'
+      );
+    } finally {
+      setIsVerifying(false);
+    }
   };
 
   const handleResetScanner = () => {
@@ -144,7 +180,7 @@ export default function VerifyEntryScreen({
                   onBarcodeScanned={({ data }) => {
                     setReferenceInput(data);
                     setIsScanning(false);
-                    handleVerifyRef(data);
+                    void handleVerifyRef(data);
                   }}
                 />
               ) : (
@@ -174,7 +210,6 @@ export default function VerifyEntryScreen({
           )}
 
           <Text style={styles.scannerTitle}>Scan booking QR code</Text>
-          <Text style={styles.scannerSubtitle}>Hold scanner over driver&apos;s mobile pass</Text>
           <Text style={styles.scannerSubtitle}>{"Hold scanner over driver's mobile pass"}</Text>
 
           <TouchableOpacity
@@ -202,11 +237,14 @@ export default function VerifyEntryScreen({
               autoCapitalize="characters"
             />
             <TouchableOpacity
-              style={styles.verifyRefBtn}
-              onPress={() => handleVerifyRef()}
+              style={[styles.verifyRefBtn, isVerifying && { opacity: 0.6 }]}
+              onPress={() => void handleVerifyRef()}
               activeOpacity={0.8}
+              disabled={isVerifying}
             >
-              <Text style={styles.verifyRefBtnText}>Verify Ref</Text>
+              <Text style={styles.verifyRefBtnText}>
+                {isVerifying ? 'Verifying…' : 'Verify Ref'}
+              </Text>
             </TouchableOpacity>
           </View>
         </View>
@@ -252,7 +290,10 @@ export default function VerifyEntryScreen({
                   <Text style={styles.fieldIcon}>👤</Text>
                   <Text style={styles.fieldLabel}>Driver</Text>
                 </View>
-                <Text style={styles.fieldValue}>Kasun Dias</Text>
+                <Text style={styles.fieldValue}>{driverName}</Text>
+                {vehicleModel ? (
+                  <Text style={[styles.fieldLabel, { marginTop: 2 }]}>{vehicleModel}</Text>
+                ) : null}
               </View>
 
               {/* Vehicle Plate Box */}
@@ -261,7 +302,7 @@ export default function VerifyEntryScreen({
                   <Text style={styles.fieldIcon}>💳</Text>
                   <Text style={styles.fieldLabel}>Vehicle Plate</Text>
                 </View>
-                <Text style={[styles.fieldValue, styles.plateBold]}>WP CAB-4921</Text>
+                <Text style={[styles.fieldValue, styles.plateBold]}>{vehiclePlate}</Text>
               </View>
             </View>
 

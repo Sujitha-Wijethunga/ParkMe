@@ -5,6 +5,8 @@ export interface BookingDetails {
   spaceId: string;
   floor: string;
   vehicleType: VehicleType;
+  vehiclePlate?: string;
+  vehicleModel?: string;
   tariffPerHour: number;
   hours: number;
   /** Final amount to pay (parking + service fee) */

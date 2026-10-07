@@ -47,12 +47,6 @@ const getSpaceById = async (req, res, next) => {
 // @access  Admin / Staff
 const createSpace = async (req, res, next) => {
   try {
-    if (!req.file) {
-      const error = new Error('A parking-space image is required. Choose a JPEG, PNG, or WebP image.');
-      error.statusCode = 400;
-      throw error;
-    }
-
     const lot = await ParkingLot.findById(req.params.lotId);
     if (!lot) {
       const error = new Error('Parking lot not found');
@@ -97,7 +91,9 @@ const createSpace = async (req, res, next) => {
       throw error;
     }
 
-    const imageUrl = req.file ? `/uploads/parking-spaces/${req.file.filename}` : undefined;
+    const imageUrl = req.file
+      ? `/uploads/parking-spaces/${req.file.filename}`
+      : (req.body.imageUrl || undefined);
     const createdSpaces = await ParkingSpace.insertMany(
       spaceNumbers.map((spaceNumber) => ({
         parkingLot: req.params.lotId,
@@ -135,8 +131,11 @@ const createSpace = async (req, res, next) => {
 const updateSpace = async (req, res, next) => {
   try {
     const allowedUpdates = {};
-    for (const field of ['status', 'floor', 'type']) {
+    for (const field of ['status', 'floor', 'type', 'imageUrl']) {
       if (req.body[field] !== undefined) allowedUpdates[field] = req.body[field];
+    }
+    if (req.file) {
+      allowedUpdates.imageUrl = `/uploads/parking-spaces/${req.file.filename}`;
     }
     const space = await ParkingSpace.findOneAndUpdate(
       { _id: req.params.id, parkingLot: req.params.lotId },

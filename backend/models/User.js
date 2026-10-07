@@ -57,6 +57,21 @@ const userSchema = new mongoose.Schema(
       type: Boolean,
       default: true,
     },
+    avatarUrl: {
+      type: String,
+      trim: true,
+      default: '',
+    },
+    avatar: {
+      type: String,
+      trim: true,
+      default: '',
+    },
+    avatarBg: {
+      type: String,
+      trim: true,
+      default: '',
+    },
     vehicles: [
       {
         plateNumber: {

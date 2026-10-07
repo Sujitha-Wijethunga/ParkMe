@@ -1,5 +1,4 @@
 import React, { useCallback, useEffect, useState } from 'react';
-import React, { useState, useEffect, useCallback } from 'react';
 import {
   View,
   TouchableOpacity,
@@ -11,8 +10,8 @@ import {
 } from 'react-native';
 import { StatusBar } from 'expo-status-bar';
 import * as SplashScreen from 'expo-splash-screen';
-import { File as ExpoFile } from 'expo-file-system';
 import { SafeAreaProvider } from 'react-native-safe-area-context';
+import { appendImageToFormData } from './src/utils/imageUpload';
 
 // Prevent native splash screen from autohiding while initial resources load
 SplashScreen.preventAutoHideAsync().catch((err) => {
@@ -236,9 +235,12 @@ export default function App() {
   const [lotDetailsOrigin, setLotDetailsOrigin] = useState<'driver-home' | 'driver-search'>('driver-home');
   const [loggedStaffId, setLoggedStaffId] = useState<string>('STF-4091');
   const [staffProfile, setStaffProfile] = useState<StaffProfile>(defaultStaffProfile);
-  const [activeReservation, setActiveReservation] = useState<{ id: string; ref: string; slot: string }>({
+  const [activeReservation, setActiveReservation] = useState<{
+    id: string; ref: string; slot: string;
+    driverName?: string; plate?: string; vehicleModel?: string;
+  }>({
     id: '',
-    ref: 'PE-84213',
+    ref: 'PM-000000',
     slot: 'A3',
   });
   const [authToken, setAuthToken] = useState<string | null>(null);
@@ -322,6 +324,9 @@ export default function App() {
         email: user.email,
         role: user.role,
         staffId: user.staffId || user._id,
+        avatar: user.avatar || profile.avatar,
+        avatarBg: user.avatarBg || profile.avatarBg,
+        avatarImageUri: resolveApiImageUrl(user.avatarUrl) || profile.avatarImageUri,
       }));
     };
 
@@ -460,6 +465,8 @@ export default function App() {
       spaceId: bookingSelection.spaceId,
       floor: bookingSelection.floor,
       vehicleType: bookingSelection.vehicleType,
+      vehiclePlate: draft.vehiclePlate,
+      vehicleModel: draft.vehicleModel,
       tariffPerHour: bookingSelection.tariffPerHour,
       hours: draft.durationHours,
       total: price.totalRs,
@@ -477,6 +484,7 @@ export default function App() {
       userId: driverUser?._id || 'guest',
       booking: paid,
       startTime: bookingDraft.arrivalTime,
+      token: driverToken,
     });
     setConfirmedReservation(savedReservation);
     setConfirmedBooking(paid);
@@ -550,20 +558,58 @@ export default function App() {
 
   const handleUpdateProfile = async (updatedProfile: StaffProfile) => {
     if (!authToken) throw new Error('Please sign in again to update your profile.');
-    const response = await fetch(`${API_BASE_URL}/api/auth/me`, {
-      method: 'PUT',
-      headers: {
-        'Content-Type': 'application/json',
-        Authorization: `Bearer ${authToken}`,
-      },
-      body: JSON.stringify({ name: updatedProfile.name, email: updatedProfile.email }),
-    });
-    const result = await response.json();
-    if (!response.ok) throw new Error(result.message || 'Unable to update profile');
+
+    let result: any;
+    const isLocalImage =
+      updatedProfile.avatarImageUri &&
+      (updatedProfile.avatarImageUri.startsWith('file:') ||
+        updatedProfile.avatarImageUri.startsWith('content:') ||
+        updatedProfile.avatarImageUri.startsWith('blob:') ||
+        updatedProfile.avatarImageUri.startsWith('data:'));
+
+    if (isLocalImage) {
+      const formData = new FormData();
+      formData.append('name', updatedProfile.name);
+      formData.append('email', updatedProfile.email);
+      if (updatedProfile.avatar) formData.append('avatar', updatedProfile.avatar);
+      if (updatedProfile.avatarBg) formData.append('avatarBg', updatedProfile.avatarBg);
+      await appendImageToFormData(formData, 'avatar', updatedProfile.avatarImageUri!);
+
+      const response = await fetch(`${API_BASE_URL}/api/auth/me`, {
+        method: 'PUT',
+        headers: {
+          Authorization: `Bearer ${authToken}`,
+        },
+        body: formData,
+      });
+      result = await response.json();
+      if (!response.ok) throw new Error(result.message || 'Unable to update profile');
+    } else {
+      const response = await fetch(`${API_BASE_URL}/api/auth/me`, {
+        method: 'PUT',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${authToken}`,
+        },
+        body: JSON.stringify({
+          name: updatedProfile.name,
+          email: updatedProfile.email,
+          avatar: updatedProfile.avatar,
+          avatarBg: updatedProfile.avatarBg,
+          avatarUrl: updatedProfile.avatarImageUri || '',
+        }),
+      });
+      result = await response.json();
+      if (!response.ok) throw new Error(result.message || 'Unable to update profile');
+    }
+
     setStaffProfile((profile) => ({
       ...profile,
-      name: result.name,
-      email: result.email,
+      name: result.name || updatedProfile.name,
+      email: result.email || updatedProfile.email,
+      avatar: result.avatar || updatedProfile.avatar,
+      avatarBg: result.avatarBg || updatedProfile.avatarBg,
+      avatarImageUri: resolveApiImageUrl(result.avatarUrl) || updatedProfile.avatarImageUri,
     }));
   };
 
@@ -672,6 +718,18 @@ export default function App() {
     });
   };
 
+  const handleAdmitVehicle = (
+    reservationId: string,
+    reference: string,
+    slot: string,
+    driverName?: string,
+    plate?: string,
+    vehicleModel?: string
+  ) => {
+    setActiveReservation({ id: reservationId, ref: reference, slot, driverName, plate, vehicleModel });
+    setCurrentScreen('verify');
+  };
+
   const handleLogout = () => {
     setAuthToken(null);
     setCurrentScreen('login');
@@ -725,30 +783,22 @@ export default function App() {
       }
 
       const lotId = lot._id || lot.id;
-      const formData = new FormData() as FormData & {
-        append(
-          name: string,
-          value: string | Blob | { uri: string; name: string; type: string },
-          fileName?: string
-        ): void;
-      };
+      const formData = new FormData();
       formData.append('spaceNumbers', JSON.stringify(newSpace.spaceNumbers ?? [newSpace.slot]));
       formData.append('floor', newSpace.level || 'Level 3');
       formData.append('type', 'standard');
       if (newSpace.imageUri) {
-        if (Platform.OS === 'web') {
-          if (!newSpace.imageFile || newSpace.imageFile.size === 0) {
-            throw new Error('Unable to read the selected image. Please choose it again.');
-          }
-          formData.append('image', newSpace.imageFile);
-        } else {
-          const imageFile = new ExpoFile(newSpace.imageUri);
-          if (!imageFile.exists || imageFile.size === 0) {
-            throw new Error('Unable to read the selected image. Please choose it again.');
-          }
-          formData.append('image', imageFile);
-        }
-      }
+  console.log('Uploading image:', newSpace.imageUri);
+
+  await appendImageToFormData(
+    formData,
+    'image',
+    newSpace.imageUri,
+    {
+      mimeType: newSpace.imageMimeType || 'image/jpeg',
+    }
+  );
+}
 
       const createSpaceResponse = await fetch(`${API_BASE_URL}/api/parking-lots/${lotId}/spaces`, {
         method: 'POST',
@@ -854,11 +904,6 @@ export default function App() {
     if (selectedSpaceId === space.id) {
       setSelectedSpaceId(null);
     }
-  };
-
-  const handleAdmitVehicle = (id: string, ref: string, slot: string) => {
-    setActiveReservation({ id, ref, slot });
-    setCurrentScreen('verify');
   };
 
   if (!appIsReady) {
@@ -1171,6 +1216,9 @@ export default function App() {
           reservationId={activeReservation.id}
           initialReference={activeReservation.ref}
           initialSlot={activeReservation.slot}
+          driverName={activeReservation.driverName}
+          vehiclePlate={activeReservation.plate}
+          vehicleModel={activeReservation.vehicleModel}
           apiBaseUrl={API_BASE_URL}
           authToken={authToken}
           onBack={() => setCurrentScreen('reservations')}
