@@ -14,7 +14,18 @@ const generateToken = (id) => {
 // @access  Public
 const register = async (req, res, next) => {
   try {
-    let { name, email, password, phone, staffId } = req.body;
+    let { name, email, password, phone, staffId, staffCode } = req.body;
+
+    const requiredCode = (process.env.STAFF_REGISTRATION_CODE || 'PARKME-STAFF-2026').trim().toUpperCase();
+    const providedCode = staffCode ? String(staffCode).trim().toUpperCase() : '';
+    const normalizedRequired = requiredCode.replace(/[-_]/g, '');
+    const normalizedProvided = providedCode.replace(/[-_]/g, '');
+
+    if (!providedCode || normalizedProvided !== normalizedRequired) {
+      return res.status(403).json({
+        message: 'Valid facility staff authorization code is required to register a staff account.',
+      });
+    }
 
     // Check if email already registered in Staff table
     const existingStaffEmail = await Staff.findOne({ email: email.toLowerCase().trim() });
@@ -292,6 +303,10 @@ const registerValidation = [
     .trim()
     .matches(/^[A-Z0-9-]{3,20}$/i)
     .withMessage('Staff ID must be 3 to 20 characters and use only letters, numbers, or hyphens'),
+  body('staffCode')
+    .trim()
+    .notEmpty()
+    .withMessage('Staff authorization code is required to register a staff account'),
   body('password')
     .isLength({ min: 8 })
     .withMessage('Password must be at least 8 characters')
