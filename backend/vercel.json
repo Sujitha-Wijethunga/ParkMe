@@ -1,6 +1,8 @@
 {
   "version": 2,
   "rewrites": [
-    { "source": "/(.*)", "destination": "/server.js" }
+    { "source": "/api/(.*)", "destination": "/server.js?__vercel_path=/api/$1" },
+    { "source": "/", "destination": "/server.js?__vercel_path=/" },
+    { "source": "/(.*)", "destination": "/server.js?__vercel_path=/$1" }
   ]
 }

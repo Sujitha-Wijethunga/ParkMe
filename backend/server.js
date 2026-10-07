@@ -31,13 +31,14 @@ app.use('/uploads', express.static(uploadsDirectory));
 
 // Normalize incoming path when running under Vercel serverless rewrites
 app.use((req, res, next) => {
-  const matchedPath =
+  const vercelPath =
+    (req.query && req.query.__vercel_path) ||
     req.headers['x-matched-path'] ||
     req.headers['x-vercel-matched-path'] ||
     req.headers['x-forwarded-url'] ||
     req.headers['x-original-url'];
-  if (matchedPath && matchedPath !== '/server.js' && matchedPath !== '/backend/server.js') {
-    req.url = matchedPath;
+  if (vercelPath && vercelPath !== '/server.js' && vercelPath !== '/backend/server.js') {
+    req.url = vercelPath;
   } else if (req.url === '/server.js' || req.url === '/backend/server.js') {
     req.url = '/';
   }
@@ -55,7 +56,18 @@ app.get('/', (req, res) => {
 
 // Fallback for Vercel rewrite artifacts targeting server.js directly
 app.all(['/server.js', '/backend/server.js'], (req, res) => {
-  res.json({ status: 'ok', message: 'ParkMe API is running' });
+  const vercelPath = req.headers['x-matched-path'] || req.headers['x-vercel-matched-path'];
+  const originalUrl = req.headers['x-original-url'] || req.headers['x-forwarded-url'] || req.headers['x-now-route-matches'];
+  res.json({
+    status: 'ok',
+    message: 'ParkMe API is running',
+    url: req.url,
+    originalUrl: req.originalUrl,
+    vercelPath,
+    forwardedUrl: originalUrl,
+    allHeaders: req.headers,
+    query: req.query,
+  });
 });
 
 // Ensure database connection for serverless requests
