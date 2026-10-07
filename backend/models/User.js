@@ -57,9 +57,36 @@ const userSchema = new mongoose.Schema(
       type: Boolean,
       default: true,
     },
+    vehicles: [
+      {
+        plateNumber: {
+          type: String,
+          required: [true, 'Vehicle plate number is required'],
+          trim: true,
+          uppercase: true,
+        },
+        model: {
+          type: String,
+          trim: true,
+          default: '',
+        },
+        vehicleType: {
+          type: String,
+          enum: ['Car', 'Bike', 'SUV', 'EV'],
+          default: 'Car',
+        },
+        isDefault: {
+          type: Boolean,
+          default: false,
+        },
+      },
+    ],
   },
   { timestamps: true }
 );
+
+// Indexes
+userSchema.index({ phone: 1 }, { sparse: true });
 
 // Hash password before saving
 userSchema.pre('save', async function () {

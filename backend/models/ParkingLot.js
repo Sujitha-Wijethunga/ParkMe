@@ -87,6 +87,33 @@ const parkingLotSchema = new mongoose.Schema(
       type: mongoose.Schema.Types.ObjectId,
       ref: 'User',
     },
+    overtimeGracePeriodMinutes: {
+      type: Number,
+      default: 15,
+      min: [0, 'Grace period cannot be negative'],
+    },
+    overtimeRateMultiplier: {
+      type: Number,
+      default: 1.5,
+      min: [1.0, 'Overtime multiplier cannot be less than 1.0'],
+    },
+    contactPhone: {
+      type: String,
+      trim: true,
+      default: '',
+    },
+    operatingDays: {
+      type: [String],
+      default: [
+        'Monday',
+        'Tuesday',
+        'Wednesday',
+        'Thursday',
+        'Friday',
+        'Saturday',
+        'Sunday',
+      ],
+    },
     isActive: {
       type: Boolean,
       default: true,
@@ -97,5 +124,7 @@ const parkingLotSchema = new mongoose.Schema(
 
 // Geospatial index for proximity searches
 parkingLotSchema.index({ location: '2dsphere' });
+parkingLotSchema.index({ city: 1, isActive: 1 });
+parkingLotSchema.index({ isActive: 1, availableSpaces: 1 });
 
 module.exports = mongoose.model('ParkingLot', parkingLotSchema);

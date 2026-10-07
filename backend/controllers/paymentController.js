@@ -6,7 +6,7 @@ const Reservation = require('../models/Reservation');
 // @access  Driver
 const createPayment = async (req, res, next) => {
   try {
-    const { reservationId, method } = req.body;
+    const { reservationId, method, paymentType = 'booking', amount } = req.body;
 
     const reservation = await Reservation.findById(reservationId);
     if (!reservation) return res.status(404).json({ message: 'Reservation not found' });
@@ -15,19 +15,27 @@ const createPayment = async (req, res, next) => {
       return res.status(403).json({ message: 'Access denied' });
     }
 
-    const existing = await Payment.findOne({ reservation: reservationId });
+    const existing = await Payment.findOne({ reservation: reservationId, paymentType });
     if (existing) {
-      return res.status(409).json({ message: 'Payment already exists for this reservation' });
+      return res.status(409).json({ message: `Payment (${paymentType}) already exists for this reservation` });
     }
+
+    const paymentAmount = amount !== undefined && Number.isFinite(Number(amount)) && Number(amount) > 0
+      ? Number(amount)
+      : reservation.totalAmount;
 
     const payment = await Payment.create({
       reservation: reservationId,
       driver: req.user._id,
-      amount: reservation.totalAmount,
+      amount: paymentAmount,
+      paymentType,
       method,
       status: 'paid',
       paidAt: new Date(),
     });
+
+    reservation.paymentStatus = 'paid';
+    await reservation.save();
 
     res.status(201).json(payment);
   } catch (error) {
