@@ -66,6 +66,36 @@ const reservationSchema = new mongoose.Schema(
       enum: ['pending', 'active', 'completed', 'cancelled'],
       default: 'pending',
     },
+    checkInStatus: {
+      type: String,
+      enum: ['none', 'requested', 'confirmed', 'cancelled'],
+      default: 'none',
+    },
+    checkInRequestedAt: {
+      type: Date,
+    },
+    checkedInAt: {
+      type: Date,
+    },
+    checkedInBy: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: 'User',
+    },
+    checkoutStatus: {
+      type: String,
+      enum: ['none', 'requested', 'confirmed'],
+      default: 'none',
+    },
+    checkoutRequestedAt: {
+      type: Date,
+    },
+    checkedOutAt: {
+      type: Date,
+    },
+    checkedOutBy: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: 'User',
+    },
     paymentStatus: {
       type: String,
       enum: ['unpaid', 'paid', 'partially_paid', 'refunded'],
@@ -76,6 +106,19 @@ const reservationSchema = new mongoose.Schema(
       required: [true, 'Total amount is required'],
       min: [0, 'Amount cannot be negative'],
     },
+    overtimeGraceMinutes: {
+      type: Number,
+      default: 10,
+      min: [0, 'Grace minutes cannot be negative'],
+    },
+    overtimeBillingRule: {
+      type: String,
+      default: 'per_started_hour',
+    },
+    overtimeRatePerHour: {
+      type: Number,
+      min: [0, 'Overtime rate cannot be negative'],
+    },
     overtimeMinutes: {
       type: Number,
       default: 0,
@@ -85,6 +128,23 @@ const reservationSchema = new mongoose.Schema(
       type: Number,
       default: 0,
       min: [0, 'Overtime amount cannot be negative'],
+    },
+    unpaidOvertimeAmount: {
+      type: Number,
+      default: 0,
+      min: [0, 'Unpaid overtime amount cannot be negative'],
+    },
+    overtimePaymentStatus: {
+      type: String,
+      enum: ['none', 'pending', 'paid'],
+      default: 'none',
+    },
+    overtimePaidAt: {
+      type: Date,
+    },
+    overtimePaymentMethod: {
+      type: String,
+      trim: true,
     },
     extensionHistory: [
       {

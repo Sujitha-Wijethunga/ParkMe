@@ -27,6 +27,13 @@ export interface ReservationItem {
   assignedSpace: string;
   paymentAmount: string;
   paymentMethod: string;
+  checkInStatus?: string;
+  checkoutStatus?: string;
+  isOverdue?: boolean;
+  overdueMinutes?: number;
+  estimatedOvertimeAmount?: number;
+  unpaidOvertimeAmount?: number;
+  checkedInAt?: string;
 }
 
 interface ReservationsScreenProps {
@@ -86,11 +93,18 @@ export default function ReservationsScreen({
         eta: startTime > new Date() ? startTime.toLocaleDateString() : status,
         status,
         driverNameMasked: driverName,
-        plate: '—',
+        plate: reservation.vehiclePlate || '—',
         bookingTime: createdAt.toLocaleString(),
         assignedSpace: `${slot} · ${reservation.parkingLot?.name || 'Parking lot'}`,
         paymentAmount: `Rs. ${Number(reservation.totalAmount || 0).toFixed(2)}`,
-        paymentMethod: 'Not recorded',
+        paymentMethod: reservation.paymentMethod || 'Paid Online',
+        checkInStatus: reservation.checkInStatus || 'none',
+        checkoutStatus: reservation.checkoutStatus || 'none',
+        isOverdue: Boolean(reservation.isOverdue),
+        overdueMinutes: reservation.overdueMinutes || 0,
+        estimatedOvertimeAmount: reservation.estimatedOvertimeAmount || 0,
+        unpaidOvertimeAmount: reservation.unpaidOvertimeAmount || 0,
+        checkedInAt: reservation.checkedInAt,
       };
     });
   }, [apiBaseUrl, authToken]);
@@ -346,7 +360,25 @@ export default function ReservationsScreen({
                   )}
 
                   <View style={styles.statusPillRow}>
-                    <View style={styles.statusPill}>
+                    {item.status === 'Reserved' && item.checkInStatus === 'requested' && (
+                      <View style={styles.checkInRequestedBadge}>
+                        <Text style={styles.checkInRequestedText}>Requested</Text>
+                      </View>
+                    )}
+                    {item.status === 'Active' && item.checkoutStatus === 'requested' && (
+                      <View style={styles.checkoutRequestedBadge}>
+                        <Text style={styles.checkoutRequestedText}>Exit Req.</Text>
+                      </View>
+                    )}
+                    {item.status === 'Active' && item.isOverdue && (
+                      <View style={styles.overdueBadge}>
+                        <Text style={styles.overdueBadgeText}>Overdue</Text>
+                      </View>
+                    )}
+                    <View style={[
+                      styles.statusPill,
+                      item.status === 'Active' && item.isOverdue && { backgroundColor: '#DC2626' },
+                    ]}>
                       <Text style={styles.statusPillText}>{item.status}</Text>
                     </View>
                     <Text style={[styles.chevronArrow, isExpanded && styles.chevronArrowExpanded]}>
@@ -410,15 +442,43 @@ export default function ReservationsScreen({
                     </View>
                   </View>
 
-                  {/* Admit Vehicle Action Button */}
+                  {/* Overdue alert in expanded view */}
+                  {item.status === 'Active' && item.isOverdue && (
+                    <View style={styles.expandedOverdueBanner}>
+                      <Text style={styles.expandedOverdueText}>
+                        ⚠️ Vehicle is overdue by {item.overdueMinutes || 0}m. Estimated overtime fee: Rs. {item.estimatedOvertimeAmount || 0}
+                      </Text>
+                    </View>
+                  )}
+
+                  {/* Entry Verification Button for Reserved */}
+                  {item.status === 'Reserved' && (
+                    <TouchableOpacity
+                      style={[styles.admitButton, { backgroundColor: '#F26419' }]}
+                      onPress={() => {
+                        if (onAdmitVehicle) {
+                          onAdmitVehicle(item.id, item.reference, item.slot);
+                        } else {
+                          handleVerify(item);
+                        }
+                      }}
+                      activeOpacity={0.85}
+                    >
+                      <Text style={styles.admitIcon}>🚪</Text>
+                      <Text style={styles.admitText}>Verify Vehicle Entry</Text>
+                      <Text style={styles.admitArrow}>→</Text>
+                    </TouchableOpacity>
+                  )}
+
+                  {/* Exit Verification Button for Active */}
                   {item.status === 'Active' && (
                     <TouchableOpacity
-                      style={styles.admitButton}
+                      style={[styles.admitButton, { backgroundColor: '#2563EB' }]}
                       onPress={() => handleAdmit(item)}
                       activeOpacity={0.85}
                     >
-                      <Text style={styles.admitIcon}>✓</Text>
-                      <Text style={styles.admitText}>Complete reservation</Text>
+                      <Text style={styles.admitIcon}>🚗</Text>
+                      <Text style={styles.admitText}>Verify Vehicle Exit & Free Space</Text>
                       <Text style={styles.admitArrow}>→</Text>
                     </TouchableOpacity>
                   )}
@@ -831,5 +891,58 @@ const styles = StyleSheet.create({
     fontSize: 16,
     color: '#99F6E4',
     fontWeight: '800',
+  },
+  checkInRequestedBadge: {
+    backgroundColor: '#FFEDD5',
+    borderWidth: 1,
+    borderColor: '#FED7AA',
+    borderRadius: 8,
+    paddingHorizontal: 6,
+    paddingVertical: 3,
+  },
+  checkInRequestedText: {
+    fontSize: 10,
+    fontWeight: '700',
+    color: '#C2410C',
+  },
+  checkoutRequestedBadge: {
+    backgroundColor: '#FEF3C7',
+    borderWidth: 1,
+    borderColor: '#FDE68A',
+    borderRadius: 8,
+    paddingHorizontal: 6,
+    paddingVertical: 3,
+  },
+  checkoutRequestedText: {
+    fontSize: 10,
+    fontWeight: '700',
+    color: '#B45309',
+  },
+  overdueBadge: {
+    backgroundColor: '#FEE2E2',
+    borderWidth: 1,
+    borderColor: '#FECACA',
+    borderRadius: 8,
+    paddingHorizontal: 6,
+    paddingVertical: 3,
+  },
+  overdueBadgeText: {
+    fontSize: 10,
+    fontWeight: '700',
+    color: '#DC2626',
+  },
+  expandedOverdueBanner: {
+    backgroundColor: '#FEF2F2',
+    borderWidth: 1,
+    borderColor: '#FECACA',
+    borderRadius: 10,
+    padding: 10,
+    marginTop: 4,
+  },
+  expandedOverdueText: {
+    fontSize: 12,
+    fontWeight: '600',
+    color: '#DC2626',
+    lineHeight: 16,
   },
 });

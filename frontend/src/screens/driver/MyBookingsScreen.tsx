@@ -14,14 +14,18 @@ import {
 import DriverBottomNav, { DriverTabType } from '../../components/DriverBottomNav';
 import { DriverColors } from '../../constants/colors';
 import {
-  activateReservation,
   canCancelReservation,
   DriverReservation,
   getMyReservations,
   getReservationById,
   isWithinScheduledWindow,
   ReservationStatus,
+  requestCheckInReservation,
 } from '../../services/reservationApi';
+import {
+  formatSriLankanDate,
+  formatSriLankanTime,
+} from '../../utils/timeFormat';
 import {
   getParkingLotEntranceInfo,
   launchGoogleMapsNavigation,
@@ -98,20 +102,11 @@ function getStatusDotStyle(status: ReservationStatus) {
 }
 
 function formatDate(value: string): string {
-  const date = new Date(value);
-  if (Number.isNaN(date.getTime())) return 'Date unavailable';
-  return date.toLocaleDateString(undefined, {
-    weekday: 'short',
-    month: 'short',
-    day: 'numeric',
-    year: 'numeric',
-  });
+  return formatSriLankanDate(value);
 }
 
 function formatTime(value: string): string {
-  const date = new Date(value);
-  if (Number.isNaN(date.getTime())) return 'Time unavailable';
-  return date.toLocaleTimeString(undefined, { hour: 'numeric', minute: '2-digit' });
+  return formatSriLankanTime(value);
 }
 
 function formatDuration(startTime: string, endTime: string): string {
@@ -153,7 +148,15 @@ function getFloor(reservation: DriverReservation): string {
     : reservation.parkingSpace.floor || '';
 }
 
-function BookingStatus({ status }: { status: ReservationStatus }) {
+function BookingStatus({ status, checkInStatus }: { status: ReservationStatus; checkInStatus?: string }) {
+  if (status === 'pending' && checkInStatus === 'requested') {
+    return (
+      <View style={[styles.statusPill, { backgroundColor: '#F0FDFA', borderColor: '#2DD4BF', borderWidth: 1 }]}>
+        <View style={[styles.statusDot, { backgroundColor: '#0D9488' }]} />
+        <Text style={[styles.statusText, { color: '#0F766E', fontWeight: '700' }]}>Waiting for Entry</Text>
+      </View>
+    );
+  }
   return (
     <View style={[styles.statusPill, getStatusStyle(status)]}>
       <View style={[styles.statusDot, getStatusDotStyle(status)]} />
@@ -268,29 +271,18 @@ export default function MyBookingsScreen({
   const handleActivateParking = async (reservation: DriverReservation) => {
     setActivatingId(reservation._id);
     try {
-      const activated = await activateReservation(token, userId, reservation._id);
+      const requested = await requestCheckInReservation(token, userId, reservation._id);
       setReservations((prev) =>
-        prev.map((item) => (item._id === reservation._id ? { ...item, status: 'active' } : item))
+        prev.map((item) => (item._id === reservation._id ? { ...item, checkInStatus: 'requested' } : item))
       );
-      Alert.alert(
-        'Parking Session Started',
-        `Your parking session at ${getLotName(reservation)} is now active!`,
-        [
-          {
-            text: 'View Active Parking',
-            onPress: () => {
-              if (onBookingActivated) {
-                onBookingActivated(activated);
-              } else {
-                onViewActiveParking();
-              }
-            },
-          },
-        ]
-      );
+      if (onBookingActivated) {
+        onBookingActivated(requested);
+      } else {
+        onViewActiveParking();
+      }
     } catch (err: any) {
       Alert.alert(
-        'Activation Failed',
+        'Check-in Request Failed',
         err?.message || 'Could not start your active parking session. Please verify and try again.'
       );
     } finally {
@@ -424,7 +416,7 @@ export default function MyBookingsScreen({
                     )}
                     <View style={styles.cardTopRow}>
                       <Text style={styles.reference} numberOfLines={1}>REF: {reservation.reference || reservation._id}</Text>
-                      <BookingStatus status={reservation.status} />
+                      <BookingStatus status={reservation.status} checkInStatus={reservation.checkInStatus} />
                     </View>
                     <Text style={styles.lotName} numberOfLines={1}>{getLotName(reservation)}</Text>
                     {!!getLotAddress(reservation) && (
@@ -463,15 +455,17 @@ export default function MyBookingsScreen({
 
                         <TouchableOpacity
                           accessibilityRole="button"
-                          accessibilityLabel={`Activate parking session for ${reservation.reference || reservation._id}`}
-                          style={styles.activateButton}
+                          accessibilityLabel={reservation.checkInStatus === 'requested' ? 'View entry QR' : 'Start Active Parking'}
+                          style={[styles.activateButton, reservation.checkInStatus === 'requested' && { backgroundColor: '#0D9488' }]}
                           disabled={activatingId === reservation._id}
                           onPress={() => handleActivateParking(reservation)}
                         >
                           {activatingId === reservation._id ? (
                             <ActivityIndicator size="small" color="#FFFFFF" />
                           ) : (
-                            <Text style={styles.activateButtonText}>🚗  {"I've Parked"}</Text>
+                            <Text style={styles.activateButtonText}>
+                              {reservation.checkInStatus === 'requested' ? '▦  View Entry QR' : '🚗  Start Active Parking'}
+                            </Text>
                           )}
                         </TouchableOpacity>
                       </View>
@@ -556,25 +550,14 @@ export function BookingDetailsScreen({
   const handleActivateParking = async (res: DriverReservation) => {
     setActivating(true);
     try {
-      const activated = await activateReservation(token, userId, res._id);
-      setReservation(activated);
-      Alert.alert(
-        'Parking Session Started',
-        `Your parking session at ${getLotName(res)} is now active!`,
-        [
-          {
-            text: 'View Active Parking',
-            onPress: () => {
-              if (onBookingActivated) {
-                onBookingActivated(activated);
-              }
-            },
-          },
-        ]
-      );
+      const requested = await requestCheckInReservation(token, userId, res._id);
+      setReservation(requested);
+      if (onBookingActivated) {
+        onBookingActivated(requested);
+      }
     } catch (err: any) {
       Alert.alert(
-        'Activation Failed',
+        'Check-in Request Failed',
         err?.message || 'Could not start your active parking session. Please verify and try again.'
       );
     } finally {
@@ -647,7 +630,7 @@ export function BookingDetailsScreen({
           <View style={styles.detailsCard}>
             <View style={styles.cardTopRow}>
               <Text style={styles.reference} numberOfLines={1}>REF: {reservation.reference || reservation._id}</Text>
-              <BookingStatus status={reservation.status} />
+              <BookingStatus status={reservation.status} checkInStatus={reservation.checkInStatus} />
             </View>
             <Text style={styles.lotName}>{getLotName(reservation)}</Text>
             {!!getLotAddress(reservation) && (
@@ -686,15 +669,17 @@ export function BookingDetailsScreen({
 
               <TouchableOpacity
                 accessibilityRole="button"
-                accessibilityLabel="Activate parking session"
-                style={styles.detailsActivateBtn}
+                accessibilityLabel={reservation.checkInStatus === 'requested' ? 'View entry QR' : 'Start Active Parking'}
+                style={[styles.detailsActivateBtn, reservation.checkInStatus === 'requested' && { backgroundColor: '#0D9488' }]}
                 disabled={activating}
                 onPress={() => handleActivateParking(reservation)}
               >
                 {activating ? (
                   <ActivityIndicator size="small" color="#FFFFFF" />
                 ) : (
-                  <Text style={styles.detailsActivateText}>🚗  {"I've Parked"}</Text>
+                  <Text style={styles.detailsActivateText}>
+                    {reservation.checkInStatus === 'requested' ? '▦  View Entry QR' : '🚗  Start Active Parking'}
+                  </Text>
                 )}
               </TouchableOpacity>
             </View>

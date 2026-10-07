@@ -1009,7 +1009,18 @@ export default function BookingSummaryScreen({
             </Text>
           </View>
 
-          {/* ── 6. Free Cancellation Banner ───────────────────────────── */}
+          {/* ── 6. Overtime Policy Card ───────────────────────────────── */}
+          <View style={styles.overtimeNoticeCard}>
+            <View style={styles.overtimeNoticeHeader}>
+              <Text style={styles.overtimeNoticeIcon}>⏱️</Text>
+              <Text style={styles.overtimeNoticeTitle}>OVERTIME BILLING RULE</Text>
+            </View>
+            <Text style={styles.overtimeNoticeText}>
+              A 10-minute grace period applies after your booked end time. Additional parking beyond grace is charged at Rs. {tariffPerHour}/hr for each started hour, confirmed upon verified exit by gate staff.
+            </Text>
+          </View>
+
+          {/* ── 7. Free Cancellation Banner ───────────────────────────── */}
           <View style={styles.cancelBanner}>
             <Text style={styles.cancelBannerIcon}>🛡️</Text>
             <View style={styles.cancelBannerContent}>
@@ -1637,6 +1648,34 @@ const styles = StyleSheet.create({
     marginTop: 8,
     fontStyle: 'italic',
     lineHeight: 14,
+  },
+
+  // Overtime Notice Card
+  overtimeNoticeCard: {
+    backgroundColor: '#EFF6FF',
+    borderRadius: 14,
+    borderWidth: 1,
+    borderColor: '#BFDBFE',
+    padding: 12,
+    marginBottom: 8,
+  },
+  overtimeNoticeHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    marginBottom: 4,
+  },
+  overtimeNoticeIcon: { fontSize: 15 },
+  overtimeNoticeTitle: {
+    fontSize: 11,
+    fontWeight: '800',
+    color: '#1D4ED8',
+    letterSpacing: 0.5,
+  },
+  overtimeNoticeText: {
+    fontSize: 12,
+    color: '#1E40AF',
+    lineHeight: 17,
   },
 
   // Cancellation Banner
