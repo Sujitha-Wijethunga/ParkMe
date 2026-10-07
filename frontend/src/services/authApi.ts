@@ -1,28 +1,6 @@
-import Constants from 'expo-constants';
 import { DriverUser } from './storage';
-
-/**
- * Resolves the backend base URL dynamically:
- * 1. Checks EXPO_PUBLIC_API_URL environment variable.
- * 2. If not defined, extracts Metro bundler host IP (e.g. 192.168.x.x) for physical-device / LAN support.
- * 3. Falls back to localhost for Web / Simulator.
- */
-export function getApiBaseUrl(): string {
-  if (process.env.EXPO_PUBLIC_API_URL) {
-    return process.env.EXPO_PUBLIC_API_URL.replace(/\/+$/, '');
-  }
-
-  // Derive host IP from Expo Constants when running in Expo Go / development client
-  const hostUri = Constants.expoConfig?.hostUri;
-  if (hostUri) {
-    const host = hostUri.split(':')[0];
-    if (host) {
-      return `http://${host}:5000`;
-    }
-  }
-
-  return 'http://localhost:5000';
-}
+import { getApiBaseUrl } from '../constants/api';
+export { getApiBaseUrl };
 
 const DEFAULT_TIMEOUT_MS = 10000;
 

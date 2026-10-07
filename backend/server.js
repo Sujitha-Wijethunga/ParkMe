@@ -17,12 +17,32 @@ if (process.env.MONGO_URI) {
   });
 }
 
+const os = require('os');
 const app = express();
 
 // Middleware
 app.use(cors());
 app.use(express.json());
-app.use('/uploads', express.static(path.join(__dirname, 'uploads')));
+const isServerless = Boolean(process.env.VERCEL || process.env.AWS_LAMBDA_FUNCTION_NAME);
+const uploadsDirectory = isServerless
+  ? path.join(os.tmpdir(), 'uploads')
+  : path.join(__dirname, 'uploads');
+app.use('/uploads', express.static(uploadsDirectory));
+
+// Normalize incoming path when running under Vercel serverless rewrites
+app.use((req, res, next) => {
+  const matchedPath =
+    req.headers['x-matched-path'] ||
+    req.headers['x-vercel-matched-path'] ||
+    req.headers['x-forwarded-url'] ||
+    req.headers['x-original-url'];
+  if (matchedPath && matchedPath !== '/server.js' && matchedPath !== '/backend/server.js') {
+    req.url = matchedPath;
+  } else if (req.url === '/server.js' || req.url === '/backend/server.js') {
+    req.url = '/';
+  }
+  next();
+});
 
 // Health check endpoints (instant response, no DB dependency)
 app.get('/api/health', (req, res) => {
@@ -30,6 +50,11 @@ app.get('/api/health', (req, res) => {
 });
 
 app.get('/', (req, res) => {
+  res.json({ status: 'ok', message: 'ParkMe API is running' });
+});
+
+// Fallback for Vercel rewrite artifacts targeting server.js directly
+app.all(['/server.js', '/backend/server.js'], (req, res) => {
   res.json({ status: 'ok', message: 'ParkMe API is running' });
 });
 

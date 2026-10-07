@@ -141,14 +141,92 @@ export async function removeDriverUser(): Promise<void> {
  * Clears all driver authentication credentials.
  */
 export async function clearDriverSession(): Promise<void> {
-  await Promise.all([removeDriverToken(), removeDriverUser()]);
+  await Promise.all([removeDriverToken(), removeDriverUser(), deleteItem(ACTIVE_ROLE_KEY)]);
 }
 
 /**
  * Stores both driver profile and JWT token into storage.
  */
 export async function saveDriverSession(user: DriverUser, token: string): Promise<void> {
-  await Promise.all([saveDriverToken(token), saveDriverUser(user)]);
+  await Promise.all([
+    saveDriverToken(token),
+    saveDriverUser(user),
+    setItem(ACTIVE_ROLE_KEY, 'driver'),
+  ]);
+}
+
+const STAFF_TOKEN_KEY = 'parkme_staff_token';
+const STAFF_USER_KEY = 'parkme_staff_user';
+const ACTIVE_ROLE_KEY = 'parkme_active_role';
+
+export interface StoredStaffUser {
+  _id: string;
+  name: string;
+  email: string;
+  staffId?: string;
+  role: string;
+}
+
+export async function saveStaffToken(token: string): Promise<void> {
+  await setItem(STAFF_TOKEN_KEY, token);
+}
+
+export async function getStaffToken(): Promise<string | null> {
+  return await getItem(STAFF_TOKEN_KEY);
+}
+
+export async function removeStaffToken(): Promise<void> {
+  await deleteItem(STAFF_TOKEN_KEY);
+}
+
+export async function saveStaffUser(user: StoredStaffUser): Promise<void> {
+  await setItem(STAFF_USER_KEY, JSON.stringify(user));
+}
+
+export async function getStaffUser(): Promise<StoredStaffUser | null> {
+  const data = await getItem(STAFF_USER_KEY);
+  if (!data) return null;
+  try {
+    return JSON.parse(data) as StoredStaffUser;
+  } catch {
+    return null;
+  }
+}
+
+export async function removeStaffUser(): Promise<void> {
+  await deleteItem(STAFF_USER_KEY);
+}
+
+export async function saveStaffSession(user: StoredStaffUser, token: string): Promise<void> {
+  await Promise.all([
+    saveStaffToken(token),
+    saveStaffUser(user),
+    setItem(ACTIVE_ROLE_KEY, 'staff'),
+  ]);
+}
+
+export async function clearStaffSession(): Promise<void> {
+  await Promise.all([removeStaffToken(), removeStaffUser(), deleteItem(ACTIVE_ROLE_KEY)]);
+}
+
+export async function getActiveRole(): Promise<'driver' | 'staff' | null> {
+  const role = await getItem(ACTIVE_ROLE_KEY);
+  if (role === 'driver' || role === 'staff') return role;
+  return null;
+}
+
+export async function saveActiveRole(role: 'driver' | 'staff'): Promise<void> {
+  await setItem(ACTIVE_ROLE_KEY, role);
+}
+
+export async function clearAllSessions(): Promise<void> {
+  await Promise.all([
+    removeDriverToken(),
+    removeDriverUser(),
+    removeStaffToken(),
+    removeStaffUser(),
+    deleteItem(ACTIVE_ROLE_KEY),
+  ]);
 }
 
 /**

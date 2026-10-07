@@ -23,10 +23,14 @@ interface AddSpaceScreenProps {
 }
 
 export default function AddSpaceScreen({ onBack, onSave }: AddSpaceScreenProps) {
-  const [lotName, setLotName] = useState('One Galle Face Mall');
-  const [level, setLevel] = useState('Level 3');
-  const [capacity, setCapacity] = useState('A1-A20');
+  const [lotName, setLotName] = useState('');
+  const [level, setLevel] = useState('');
+  const [capacity, setCapacity] = useState('');
   const [spaceImage, setSpaceImage] = useState<ImagePicker.ImagePickerAsset | null>(null);
+  const [lotError, setLotError] = useState('');
+  const [levelError, setLevelError] = useState('');
+  const [capacityError, setCapacityError] = useState('');
+  const [isSubmitting, setIsSubmitting] = useState(false);
 
   const chooseImage = async () => {
     try {
@@ -52,12 +56,41 @@ export default function AddSpaceScreen({ onBack, onSave }: AddSpaceScreenProps) 
   const capacityLabel = useMemo(() => capacity.trim().toUpperCase(), [capacity]);
 
   const handleSave = async () => {
-    const cleanLot = lotName.trim() || 'One Galle Face Mall';
-    const cleanLevel = level.trim() || 'Level 3';
+    if (isSubmitting) return;
+
+    let hasError = false;
+    const cleanLot = lotName.trim();
+    const cleanLevel = level.trim();
+    const cleanCapacity = capacity.trim().toUpperCase();
+
+    if (!cleanLot) {
+      setLotError('Please enter a parking lot or building name.');
+      hasError = true;
+    } else {
+      setLotError('');
+    }
+
+    if (!cleanLevel) {
+      setLevelError('Please enter a parking floor or level.');
+      hasError = true;
+    } else {
+      setLevelError('');
+    }
+
+    if (!cleanCapacity) {
+      setCapacityError('Please enter space capacity (e.g. A1-A20).');
+      hasError = true;
+    } else {
+      setCapacityError('');
+    }
+
+    if (hasError) return;
+
     let spaceNumbers: string[];
     try {
-      spaceNumbers = expandSpaceCapacity(capacityLabel);
+      spaceNumbers = expandSpaceCapacity(cleanCapacity);
     } catch (error) {
+      setCapacityError(error instanceof Error ? error.message : 'Use a range such as A1-A20.');
       Alert.alert(
         'Invalid space capacity',
         error instanceof Error ? error.message : 'Use a range such as A1-A20.'
@@ -67,6 +100,16 @@ export default function AddSpaceScreen({ onBack, onSave }: AddSpaceScreenProps) 
     const imageMimeType = spaceImage
       ? resolveImageMimeType(spaceImage)
       : undefined;
+
+    if (!spaceImage) {
+      Alert.alert('Image required', 'Please choose an image for these parking spaces.');
+      return;
+    }
+    const imageMimeType = resolveImageMimeType(spaceImage);
+    if (!imageMimeType) {
+      Alert.alert('Unsupported image', 'Choose a JPEG, PNG, or WebP image.');
+      return;
+    }
 
     const nextSpace: SpaceItem = {
       id: `${Date.now()}`,
@@ -80,6 +123,7 @@ export default function AddSpaceScreen({ onBack, onSave }: AddSpaceScreenProps) 
       spaceNumbers,
     };
 
+    setIsSubmitting(true);
     try {
       const savedCount = await onSave(nextSpace);
       const count = savedCount ?? spaceNumbers.length;
@@ -90,6 +134,8 @@ export default function AddSpaceScreen({ onBack, onSave }: AddSpaceScreenProps) 
       onBack();
     } catch {
       // The app-level save handler already displays the error.
+    } finally {
+      setIsSubmitting(false);
     }
   };
 
@@ -115,35 +161,47 @@ export default function AddSpaceScreen({ onBack, onSave }: AddSpaceScreenProps) 
             <Text style={styles.label}>Lot / Building</Text>
             <TextInput
               value={lotName}
-              onChangeText={setLotName}
-              style={styles.input}
-              placeholder="One Galle Face Mall"
+              onChangeText={(text) => {
+                setLotName(text);
+                if (lotError) setLotError('');
+              }}
+              style={[styles.input, lotError ? styles.inputError : null]}
+              placeholder="e.g. One Galle Face Mall"
               placeholderTextColor={Colors.placeholder}
               autoCapitalize="words"
             />
+            {lotError ? <Text style={styles.errorText}>{lotError}</Text> : null}
           </View>
 
           <View style={styles.fieldGroup}>
             <Text style={styles.label}>Level</Text>
             <TextInput
               value={level}
-              onChangeText={setLevel}
-              style={styles.input}
-              placeholder="Level 3"
+              onChangeText={(text) => {
+                setLevel(text);
+                if (levelError) setLevelError('');
+              }}
+              style={[styles.input, levelError ? styles.inputError : null]}
+              placeholder="e.g. Level 3 or B1"
               placeholderTextColor={Colors.placeholder}
             />
+            {levelError ? <Text style={styles.errorText}>{levelError}</Text> : null}
           </View>
 
           <View style={styles.fieldGroup}>
             <Text style={styles.label}>Space Capacity</Text>
             <TextInput
               value={capacity}
-              onChangeText={setCapacity}
-              style={styles.input}
-              placeholder="A1-A20"
+              onChangeText={(text) => {
+                setCapacity(text);
+                if (capacityError) setCapacityError('');
+              }}
+              style={[styles.input, capacityError ? styles.inputError : null]}
+              placeholder="e.g. A1-A20"
               placeholderTextColor={Colors.placeholder}
               autoCapitalize="characters"
             />
+            {capacityError ? <Text style={styles.errorText}>{capacityError}</Text> : null}
             <Text style={styles.helpText}>Enter a range with one letter prefix, such as A1-A20.</Text>
           </View>
 
@@ -176,12 +234,17 @@ export default function AddSpaceScreen({ onBack, onSave }: AddSpaceScreenProps) 
 
           <View style={styles.previewCard}>
             <Text style={styles.previewLabel}>Preview</Text>
-            <Text style={styles.previewTitle}>{capacityLabel || 'A1-A20'}</Text>
-            <Text style={styles.previewMeta}>{lotName || 'One Galle Face Mall'} · {level || 'Level 3'}</Text>
+            <Text style={styles.previewTitle}>{capacityLabel || 'Space Range'}</Text>
+            <Text style={styles.previewMeta}>{lotName || 'Parking Lot'} · {level || 'Floor / Level'}</Text>
           </View>
 
-          <TouchableOpacity style={styles.saveButton} onPress={handleSave} activeOpacity={0.9}>
-            <Text style={styles.saveButtonText}>Save Space</Text>
+          <TouchableOpacity
+            style={[styles.saveButton, isSubmitting ? styles.saveButtonDisabled : null]}
+            onPress={handleSave}
+            disabled={isSubmitting}
+            activeOpacity={0.9}
+          >
+            <Text style={styles.saveButtonText}>{isSubmitting ? 'Saving...' : 'Save Space'}</Text>
           </TouchableOpacity>
         </ScrollView>
       </KeyboardAvoidingView>
@@ -362,12 +425,24 @@ const styles = StyleSheet.create({
     fontSize: 13,
     marginTop: 6,
   },
+  inputError: {
+    borderColor: '#DC2626',
+  },
+  errorText: {
+    color: '#DC2626',
+    fontSize: 12,
+    marginTop: 4,
+    fontWeight: '500',
+  },
   saveButton: {
     backgroundColor: '#0F766E',
     borderRadius: 14,
     paddingVertical: 15,
     alignItems: 'center',
     justifyContent: 'center',
+  },
+  saveButtonDisabled: {
+    opacity: 0.6,
   },
   saveButtonText: {
     color: '#FFFFFF',

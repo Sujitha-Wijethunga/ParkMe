@@ -1,6 +1,7 @@
 const express = require('express');
 const router = express.Router();
 const { protect } = require('../middleware/auth');
+const { authorize } = require('../middleware/authorize');
 const { validate } = require('../middleware/validate');
 const {
   getLeaveRequests,
@@ -10,7 +11,7 @@ const {
   createLeaveValidation,
 } = require('../controllers/leaveRequestController');
 
-router.use(protect);
+router.use(protect, authorize('admin', 'staff'));
 
 router.get('/', getLeaveRequests);
 router.post('/', createLeaveValidation, validate, createLeaveRequest);

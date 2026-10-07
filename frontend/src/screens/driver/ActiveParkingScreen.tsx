@@ -20,7 +20,13 @@ import {
   isWithinScheduledWindow,
   ReleasedReservationReceipt,
   releaseActiveReservation,
+  cancelCheckInReservation,
+  requestCheckoutReservation,
 } from '../../services/reservationApi';
+import {
+  formatSriLankanDate,
+  formatSriLankanTime,
+} from '../../utils/timeFormat';
 
 interface ActiveParkingScreenProps {
   token: string | null;
@@ -86,20 +92,14 @@ function formatDuration(milliseconds: number, roundUp = false): string {
   return `${hours}h ${minutes.toString().padStart(2, '0')}m`;
 }
 
-function formatClock(value: string): string {
-  const date = new Date(value);
-  if (Number.isNaN(date.getTime())) return 'Time unavailable';
-  return date.toLocaleTimeString(undefined, { hour: 'numeric', minute: '2-digit' });
+function formatClock(value: string | undefined): string {
+  if (!value) return 'Time unavailable';
+  return formatSriLankanTime(value);
 }
 
-function formatDate(value: string): string {
-  const date = new Date(value);
-  if (Number.isNaN(date.getTime())) return 'Date unavailable';
-  return date.toLocaleDateString(undefined, {
-    day: 'numeric',
-    month: 'short',
-    year: 'numeric',
-  });
+function formatDate(value: string | undefined): string {
+  if (!value) return 'Date unavailable';
+  return formatSriLankanDate(value);
 }
 
 function getRatePerHour(reservation: DriverReservation): number {
@@ -110,9 +110,12 @@ function getRatePerHour(reservation: DriverReservation): number {
   ) {
     return reservation.parkingLot.pricePerHour;
   }
+  if (reservation.overtimeRatePerHour && reservation.overtimeRatePerHour > 0) {
+    return reservation.overtimeRatePerHour;
+  }
 
   const bookedDuration = new Date(reservation.endTime).getTime() - new Date(reservation.startTime).getTime();
-  return bookedDuration > 0 ? reservation.totalAmount / (bookedDuration / 3600000) : 0;
+  return bookedDuration > 0 ? reservation.totalAmount / (bookedDuration / 3600000) : 150;
 }
 
 function formatMoney(amount: number): string {
@@ -132,6 +135,44 @@ function getElapsedParts(elapsedMs: number) {
   };
 }
 
+function getQrCells(seed: string): boolean[] {
+  const N = 21;
+  let seedHash = 0;
+  for (let i = 0; i < seed.length; i++) seedHash = (seedHash * 31 + seed.charCodeAt(i)) >>> 0;
+  const finder = (r: number, c: number) =>
+    [[0, 0], [0, N - 7], [N - 7, 0]].some(([fr, fc]) => {
+      const rr = r - fr, cc = c - fc;
+      if (rr < 0 || rr > 6 || cc < 0 || cc > 6) return false;
+      return rr === 0 || rr === 6 || cc === 0 || cc === 6 || (rr >= 2 && rr <= 4 && cc >= 2 && cc <= 4);
+    });
+  const inFinderArea = (r: number, c: number) =>
+    (r < 8 && c < 8) || (r < 8 && c > N - 9) || (r > N - 9 && c < 8);
+  let h = seedHash;
+  const result: boolean[] = [];
+  for (let i = 0; i < N * N; i++) {
+    const r = Math.floor(i / N), c = i % N;
+    if (inFinderArea(r, c)) {
+      result.push(finder(r, c));
+    } else {
+      h = (h * 1103515245 + 12345) >>> 0;
+      result.push((h >> 16) % 2 === 0);
+    }
+  }
+  return result;
+}
+
+function FakeQR({ seed, size = 6.5 }: { seed: string; size?: number }) {
+  const N = 21;
+  const cells = useMemo(() => getQrCells(seed), [seed]);
+  return (
+    <View style={{ width: N * size, height: N * size, flexDirection: 'row', flexWrap: 'wrap' }}>
+      {cells.map((on, i) => (
+        <View key={i} style={{ width: size, height: size, backgroundColor: on ? DriverColors.navyDark : '#FFFFFF' }} />
+      ))}
+    </View>
+  );
+}
+
 export default function ActiveParkingScreen({
   token,
   userId,
@@ -144,23 +185,25 @@ export default function ActiveParkingScreen({
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [now, setNow] = useState<number | null>(null);
+  const [isCancellingCheckIn, setIsCancellingCheckIn] = useState(false);
+  const [isRequestingCheckout, setIsRequestingCheckout] = useState(false);
   const requestId = useRef(0);
 
   const loadActiveReservation = useCallback(async () => {
     const id = ++requestId.current;
-    setIsLoading(true);
     setError(null);
     try {
       const result = await getMyReservations(token || '', userId);
       if (requestId.current !== id) return;
-      const activeReservations = result.reservations.filter(
-        (item) => item.status === 'active' || isWithinScheduledWindow(item)
+      const relevantReservations = result.reservations.filter(
+        (item) => item.status === 'active' || item.checkInStatus === 'requested' || isWithinScheduledWindow(item)
       );
-      const selectedReservation = activeReservations.find((item) => item._id === selectedReservationId);
+      const selectedReservation = relevantReservations.find((item) => item._id === selectedReservationId);
       setActiveReservation(
         selectedReservation ||
-        activeReservations.find((item) => item.status === 'active') ||
-        activeReservations[0] ||
+        relevantReservations.find((item) => item.status === 'active') ||
+        relevantReservations.find((item) => item.checkInStatus === 'requested') ||
+        relevantReservations[0] ||
         null
       );
       if (result.warning) setError(`Could not refresh server bookings: ${result.warning}`);
@@ -181,6 +224,7 @@ export default function ActiveParkingScreen({
     };
   }, [loadActiveReservation]);
 
+  // Regular clock tick
   useEffect(() => {
     const initialTick = setTimeout(() => setNow(Date.now()), 0);
     const interval = setInterval(() => setNow(Date.now()), 1000);
@@ -190,17 +234,95 @@ export default function ActiveParkingScreen({
     };
   }, []);
 
+  // Reactive polling while waiting for staff confirmation
+  useEffect(() => {
+    if (!activeReservation) return;
+    const isWaitingEntry = activeReservation.status === 'pending' && activeReservation.checkInStatus === 'requested';
+    const isWaitingExit = activeReservation.status === 'active' && activeReservation.checkoutStatus === 'requested';
+    const isActive = activeReservation.status === 'active';
+    if (isWaitingEntry || isWaitingExit || isActive) {
+      const pollInterval = setInterval(() => {
+        void loadActiveReservation();
+      }, 3500);
+      return () => clearInterval(pollInterval);
+    }
+  }, [activeReservation, loadActiveReservation]);
+
+  const handleCancelCheckIn = () => {
+    if (!activeReservation) return;
+    Alert.alert(
+      'Cancel Check-in Request',
+      'Are you sure you want to cancel your entry check-in request? Your reserved space will remain saved for your scheduled time.',
+      [
+        { text: 'Keep Request', style: 'cancel' },
+        {
+          text: 'Yes, Cancel Request',
+          style: 'destructive',
+          onPress: async () => {
+            setIsCancellingCheckIn(true);
+            try {
+              const updated = await cancelCheckInReservation(token, userId, activeReservation._id);
+              setActiveReservation(updated);
+              Alert.alert('Request Cancelled', 'Check-in request was cancelled. You can start active parking when you arrive at the gate.');
+            } catch (err: any) {
+              Alert.alert('Cancellation Failed', err?.message || 'Could not cancel check-in request.');
+            } finally {
+              setIsCancellingCheckIn(false);
+            }
+          },
+        },
+      ]
+    );
+  };
+
+  const handleRequestCheckout = () => {
+    if (!activeReservation) return;
+    Alert.alert(
+      'Release Parking / Request Exit',
+      `Are you leaving Space ${getSpace(activeReservation)}? This requests exit verification from staff at the gate. Space remains occupied until staff confirms exit.`,
+      [
+        { text: 'Stay Parked', style: 'cancel' },
+        {
+          text: 'Request Exit',
+          onPress: async () => {
+            setIsRequestingCheckout(true);
+            try {
+              const updated = await requestCheckoutReservation(token, userId, activeReservation._id);
+              setActiveReservation(updated);
+              Alert.alert(
+                'Exit Verification Requested',
+                'Please proceed to the exit boom gate. Staff will confirm vehicle exit and finalize any overtime charges.'
+              );
+            } catch (err: any) {
+              Alert.alert('Checkout Request Failed', err?.message || 'Could not submit checkout request.');
+            } finally {
+              setIsRequestingCheckout(false);
+            }
+          },
+        },
+      ]
+    );
+  };
+
   const scheduledStartMs = activeReservation ? new Date(activeReservation.startTime).getTime() : 0;
+  const verifiedEntryTime = activeReservation?.checkedInAt || activeReservation?.verifiedAt;
   const sessionStartMs = activeReservation
-    ? new Date(activeReservation.verifiedAt || activeReservation.startTime).getTime()
+    ? new Date(verifiedEntryTime || activeReservation.startTime).getTime()
     : 0;
   const endMs = activeReservation ? new Date(activeReservation.endTime).getTime() : 0;
   const elapsedMs = activeReservation ? Math.max(0, (now ?? 0) - sessionStartMs) : 0;
   const bookedMs = activeReservation ? Math.max(0, endMs - scheduledStartMs) : 0;
   const remainingMs = activeReservation ? endMs - (now ?? 0) : 0;
+  const isOverdue = activeReservation ? (activeReservation.status === 'active' && (remainingMs < 0 || activeReservation.isOverdue)) : false;
   const elapsed = useMemo(() => getElapsedParts(elapsedMs), [elapsedMs]);
-  const ratePerHour = activeReservation ? getRatePerHour(activeReservation) : 0;
-  const currentCost = ratePerHour * (elapsedMs / 3600000);
+  const ratePerHour = activeReservation ? getRatePerHour(activeReservation) : 150;
+
+  // Overtime computation (10-minute grace period, per started hour)
+  const overtimeGraceMinutes = activeReservation?.overtimeGraceMinutes ?? 10;
+  const overdueDiffMinutes = isOverdue ? Math.ceil(Math.abs(remainingMs) / 60000) : 0;
+  const estimatedOvertimeHours = overdueDiffMinutes > overtimeGraceMinutes ? Math.ceil(overdueDiffMinutes / 60) : 0;
+  const estimatedOvertimeAmount = activeReservation?.estimatedOvertimeAmount ?? Math.round(estimatedOvertimeHours * ratePerHour);
+
   const progress = bookedMs > 0 ? Math.min(elapsedMs / bookedMs, 1) : 0;
   const progressColorStyles = [
     styles.progress0,
@@ -222,6 +344,9 @@ export default function ActiveParkingScreen({
     top: 100 + Math.sin(indicatorAngle) * indicatorOffset - 8,
   };
 
+  const isWaitingEntry = activeReservation?.status === 'pending' && activeReservation?.checkInStatus === 'requested';
+  const isCheckoutRequested = activeReservation?.status === 'active' && activeReservation?.checkoutStatus === 'requested';
+
   return (
     <SafeAreaView style={styles.safeArea}>
       <StatusBar barStyle="dark-content" backgroundColor={DriverColors.background} />
@@ -229,26 +354,28 @@ export default function ActiveParkingScreen({
         <TouchableOpacity accessibilityRole="button" accessibilityLabel="Go back" style={styles.headerButton} onPress={onBack}>
           <Text style={styles.backArrow}>‹</Text>
         </TouchableOpacity>
-        <Text style={styles.headerTitle}>Active Parking</Text>
+        <Text style={styles.headerTitle}>
+          {isWaitingEntry ? 'Entry Check-in' : 'Active Parking'}
+        </Text>
         <TouchableOpacity
           accessibilityRole="button"
           accessibilityLabel="Show booking reference"
           style={styles.headerButton}
-          onPress={() => activeReservation && Alert.alert('Booking reference', activeReservation._id)}
+          onPress={() => activeReservation && Alert.alert('Booking reference', activeReservation.reference || activeReservation._id)}
         >
           <Text style={styles.qrIcon}>▦</Text>
         </TouchableOpacity>
       </View>
 
-      {isLoading || (activeReservation !== null && now === null) ? (
+      {isLoading && !activeReservation ? (
         <View style={styles.stateContainer}>
           <ActivityIndicator size="large" color={DriverColors.orangePrimary} />
-          <Text style={styles.stateText}>Loading active parking…</Text>
+          <Text style={styles.stateText}>Loading parking session…</Text>
         </View>
       ) : error && !activeReservation ? (
         <View style={styles.stateContainer}>
           <Text style={styles.emptyIcon}>!</Text>
-          <Text style={styles.emptyTitle}>Could not load active parking</Text>
+          <Text style={styles.emptyTitle}>Could not load parking</Text>
           <Text style={styles.stateText}>{error}</Text>
           <TouchableOpacity style={styles.secondaryButton} onPress={() => void loadActiveReservation()}>
             <Text style={styles.secondaryButtonText}>Try again</Text>
@@ -266,24 +393,146 @@ export default function ActiveParkingScreen({
             <Text style={styles.secondaryButtonText}>View My Bookings</Text>
           </TouchableOpacity>
         </View>
+      ) : isWaitingEntry ? (
+        /* ── Driver initiated check-in: Waiting for staff verification ── */
+        <ScrollView contentContainerStyle={styles.content} showsVerticalScrollIndicator={false}>
+          <View style={styles.waitingHeaderCard}>
+            <View style={styles.waitingBadge}>
+              <View style={styles.pulseDot} />
+              <Text style={styles.waitingBadgeText}>Waiting for entry confirmation</Text>
+            </View>
+            <Text style={styles.waitingTitle}>Show Pass to Gate Staff</Text>
+            <Text style={styles.waitingSubtitle}>
+              Your check-in request is pending. Show this QR or reference code to parking staff at the gate. Session will activate once staff confirms entry.
+            </Text>
+          </View>
+
+          {/* QR Viewfinder Box */}
+          <View style={styles.qrCard}>
+            <View style={styles.qrBoxWrapper}>
+              <FakeQR seed={activeReservation.reference || activeReservation._id} size={7} />
+            </View>
+            <View style={styles.refPill}>
+              <Text style={styles.refPillLabel}>REFERENCE</Text>
+              <Text style={styles.refPillValue}>
+                {activeReservation.reference || activeReservation._id}
+              </Text>
+            </View>
+            <Text style={styles.qrHint}>
+              Physical parking space will be marked occupied upon staff verification.
+            </Text>
+          </View>
+
+          {/* Reserved Space Details */}
+          <View style={styles.sessionCard}>
+            <View style={styles.lotHeader}>
+              <View style={styles.lotDetails}>
+                <Text style={styles.locationName} numberOfLines={2}>
+                  {getLocationName(activeReservation)}
+                </Text>
+                {!!getLocationAddress(activeReservation) && (
+                  <Text style={styles.address} numberOfLines={2}>
+                    ⌖ {getLocationAddress(activeReservation)}
+                  </Text>
+                )}
+              </View>
+              <View style={styles.spaceBadge}>
+                <Text style={styles.spaceLabel}>SPACE</Text>
+                <Text style={styles.spaceValue}>{getSpace(activeReservation)}</Text>
+              </View>
+            </View>
+
+            <View style={styles.informationRow}>
+              <Info
+                label="ARRIVAL TIME"
+                value={formatSriLankanTime(activeReservation.startTime)}
+              />
+              <Info label="FLOOR" value={getFloor(activeReservation)} />
+              <Info
+                label="VEHICLE"
+                value={activeReservation.vehiclePlate || 'Car'}
+              />
+            </View>
+
+            <View style={styles.policyNoticeBox}>
+              <Text style={styles.policyNoticeIcon}>ℹ️</Text>
+              <Text style={styles.policyNoticeText}>
+                Entry must be confirmed by staff before parking. You can cancel this check-in request if you have not entered yet.
+              </Text>
+            </View>
+          </View>
+
+          {/* Cancel Check-in Request */}
+          <TouchableOpacity
+            style={styles.cancelRequestBtn}
+            disabled={isCancellingCheckIn}
+            onPress={handleCancelCheckIn}
+            activeOpacity={0.8}
+          >
+            {isCancellingCheckIn ? (
+              <ActivityIndicator color="#EF4444" />
+            ) : (
+              <Text style={styles.cancelRequestText}>Cancel Check-in Request</Text>
+            )}
+          </TouchableOpacity>
+
+          <TouchableOpacity style={styles.textButton} onPress={onViewBookings}>
+            <Text style={styles.textButtonLabel}>View My Bookings</Text>
+          </TouchableOpacity>
+        </ScrollView>
       ) : (
+        /* ── Active Parking Session (Verified by Staff) ── */
         <>
           <ScrollView contentContainerStyle={styles.content} showsVerticalScrollIndicator={false}>
             {error ? <Text style={styles.warningText}>{error}</Text> : null}
+
+            {/* Checkout Requested Banner */}
+            {isCheckoutRequested && (
+              <View style={styles.checkoutRequestedBanner}>
+                <Text style={styles.checkoutRequestedIcon}>🚗</Text>
+                <View style={{ flex: 1 }}>
+                  <Text style={styles.checkoutRequestedTitle}>Checkout Requested</Text>
+                  <Text style={styles.checkoutRequestedSubtitle}>
+                    Waiting for staff to verify exit at the barrier gate. Space remains occupied until confirmed.
+                  </Text>
+                </View>
+              </View>
+            )}
+
+            {/* Overdue Banner */}
+            {isOverdue && (
+              <View style={styles.overdueBanner}>
+                <Text style={styles.overdueBannerIcon}>⚠️</Text>
+                <View style={{ flex: 1 }}>
+                  <Text style={styles.overdueBannerTitle}>SESSION OVERDUE</Text>
+                  <Text style={styles.overdueBannerText}>
+                    Paid booking period ended at {formatSriLankanTime(activeReservation.endTime)}.
+                    {overdueDiffMinutes <= overtimeGraceMinutes
+                      ? ` Within 10-minute grace period (${overdueDiffMinutes}/${overtimeGraceMinutes}m).`
+                      : ` Estimated overtime: Rs. ${estimatedOvertimeAmount} (Estimate until exit confirmed).`}
+                  </Text>
+                </View>
+              </View>
+            )}
+
             <View style={styles.timerSection}>
               <View style={styles.timerCircle}>
-                <View style={[styles.timerTrack, progressStyle]} />
+                <View style={[styles.timerTrack, isOverdue ? styles.timerTrackOverdue : progressStyle]} />
                 <View style={styles.timerInner}>
-                  <Text style={styles.elapsedLabel}>ELAPSED</Text>
-                  <Text style={styles.elapsedValue}>{formatDuration(elapsedMs)}</Text>
+                  <Text style={styles.elapsedLabel}>
+                    {isOverdue ? 'TIME PARKED' : 'ELAPSED'}
+                  </Text>
+                  <Text style={[styles.elapsedValue, isOverdue && styles.overdueTimerValue]}>
+                    {formatDuration(elapsedMs)}
+                  </Text>
                   <Text style={styles.secondsValue}>:{elapsed.seconds.toString().padStart(2, '0')}</Text>
                 </View>
                 <View style={[styles.progressIndicator, indicatorPosition]} />
               </View>
-              <View style={styles.occupiedBadge}>
-                <View style={styles.occupiedDot} />
-                <Text style={styles.occupiedText}>
-                  {activeReservation.status === 'active' ? 'Occupied' : 'Scheduled'}
+              <View style={[styles.occupiedBadge, isOverdue && styles.occupiedBadgeOverdue]}>
+                <View style={[styles.occupiedDot, isOverdue && styles.occupiedDotOverdue]} />
+                <Text style={[styles.occupiedText, isOverdue && styles.occupiedTextOverdue]}>
+                  {isOverdue ? 'Overdue · Occupied' : 'Active · Verified Entry'}
                 </Text>
               </View>
             </View>
@@ -291,7 +540,9 @@ export default function ActiveParkingScreen({
             <View style={styles.sessionCard}>
               <View style={styles.lotHeader}>
                 <View style={styles.lotDetails}>
-                  <Text style={styles.reference} numberOfLines={1}>REF: {activeReservation._id}</Text>
+                  <Text style={styles.reference} numberOfLines={1}>
+                    REF: {activeReservation.reference || activeReservation._id}
+                  </Text>
                   <Text style={styles.locationName} numberOfLines={2}>{getLocationName(activeReservation)}</Text>
                   {!!getLocationAddress(activeReservation) && (
                     <Text style={styles.address} numberOfLines={2}>⌖ {getLocationAddress(activeReservation)}</Text>
@@ -305,55 +556,87 @@ export default function ActiveParkingScreen({
 
               <View style={styles.informationRow}>
                 <Info
-                  label={activeReservation.status === 'active' ? 'ARRIVED' : 'STARTED'}
-                  value={formatClock(activeReservation.verifiedAt || activeReservation.startTime)}
+                  label="VERIFIED ENTRY"
+                  value={formatSriLankanTime(verifiedEntryTime || activeReservation.startTime)}
                 />
-                <Info label="FLOOR" value={getFloor(activeReservation)} />
-                <Info label="BOOKED" value={formatDuration(bookedMs)} />
+                <Info
+                  label="BOOKED END"
+                  value={formatSriLankanTime(activeReservation.endTime)}
+                />
+                <Info label="SPACE / FL" value={`${getSpace(activeReservation)} (${getFloor(activeReservation)})`} />
               </View>
 
-              <View style={[styles.remainingPanel, remainingMs < 0 && styles.overtimePanel]}>
-                <Text style={styles.remainingIcon}>{remainingMs < 0 ? '!' : '◷'}</Text>
+              <View style={[styles.remainingPanel, isOverdue && styles.overtimePanel]}>
+                <Text style={styles.remainingIcon}>{isOverdue ? '!' : '◷'}</Text>
                 <View style={styles.remainingTextBlock}>
-                  <Text style={styles.remainingLabel}>{remainingMs < 0 ? 'OVERTIME' : 'TIME REMAINING'}</Text>
-                  <Text style={[styles.remainingValue, remainingMs < 0 && styles.overtimeText]}>
-                    {remainingMs < 0
-                      ? formatDuration(Math.abs(remainingMs), true)
+                  <Text style={styles.remainingLabel}>{isOverdue ? 'OVERDUE DURATION' : 'TIME REMAINING'}</Text>
+                  <Text style={[styles.remainingValue, isOverdue && styles.overtimeText]}>
+                    {isOverdue
+                      ? `${formatDuration(Math.abs(remainingMs), true)} past booked end`
                       : formatDuration(remainingMs, true)}
                   </Text>
                 </View>
               </View>
+
+              {/* Overdue Pricing & Billing Rule */}
+              {isOverdue && (
+                <View style={styles.overtimeBreakdownCard}>
+                  <View style={styles.overtimeRow}>
+                    <Text style={styles.overtimeLabel}>Estimated Overtime Fee</Text>
+                    <Text style={styles.overtimeValue}>
+                      {estimatedOvertimeAmount > 0 ? `Rs. ${estimatedOvertimeAmount}` : 'Rs. 0 (In Grace Period)'}
+                    </Text>
+                  </View>
+                  <Text style={styles.overtimeFootnote}>
+                    * Labeled as an estimate until exit is verified by staff. Rule: 10-minute grace period, then Rs. {ratePerHour}/hr per started hour.
+                  </Text>
+                </View>
+              )}
             </View>
 
             <View style={styles.costCard}>
               <View style={styles.costIcon}><Text style={styles.dollar}>$</Text></View>
               <View style={styles.costDetails}>
-                <Text style={styles.costLabel}>CURRENT COST</Text>
+                <Text style={styles.costLabel}>BOOKED RATE</Text>
                 <View style={styles.costLine}>
-                  <Text style={styles.costValue}>{formatMoney(currentCost)}</Text>
-                  <Text style={styles.soFar}>so far</Text>
+                  <Text style={styles.costValue}>{formatMoney(activeReservation.totalAmount || 0)}</Text>
+                  <Text style={styles.soFar}>paid</Text>
                 </View>
               </View>
               <View style={styles.rateDetails}>
-                <Text style={styles.costLabel}>RATE</Text>
-                <Text style={styles.rateValue}>{formatMoney(ratePerHour)}/hr</Text>
+                <Text style={styles.costLabel}>OVERTIME RATE</Text>
+                <Text style={styles.rateValue}>Rs. {ratePerHour}/hr</Text>
               </View>
             </View>
           </ScrollView>
 
-          {activeReservation.status === 'active' ||
-          (now !== null && isWithinScheduledWindow(activeReservation, now)) ? (
-            <View style={styles.footer}>
+          {/* Bottom Action Footer */}
+          <View style={styles.footer}>
+            {isCheckoutRequested ? (
+              <View style={styles.checkoutWaitingBox}>
+                <ActivityIndicator size="small" color="#D97706" style={{ marginRight: 8 }} />
+                <Text style={styles.checkoutWaitingText}>
+                  Waiting for staff exit verification…
+                </Text>
+              </View>
+            ) : (
               <TouchableOpacity
                 accessibilityRole="button"
                 style={styles.releaseButton}
-                onPress={() => onRelease(activeReservation)}
+                disabled={isRequestingCheckout}
+                onPress={handleRequestCheckout}
               >
-                <Text style={styles.releaseIcon}>↪</Text>
-                <Text style={styles.releaseText}>Release Space Now</Text>
+                {isRequestingCheckout ? (
+                  <ActivityIndicator color={DriverColors.navyDark} />
+                ) : (
+                  <>
+                    <Text style={styles.releaseIcon}>↪</Text>
+                    <Text style={styles.releaseText}>Release Parking (Request Exit)</Text>
+                  </>
+                )}
               </TouchableOpacity>
-            </View>
-          ) : null}
+            )}
+          </View>
         </>
       )}
     </SafeAreaView>
@@ -477,11 +760,27 @@ export function ExitConfirmationScreen({ receipt, userId, onDone }: ExitConfirma
             <Text style={styles.receiptRowLabel}>Payment Method</Text>
             <Text style={styles.receiptValueText}>{getPaymentMethodLabel(receipt.paymentMethod) || 'Not recorded'}</Text>
           </View>
+          {Number(reservation.overtimeAmount) > 0 && (
+            <View style={styles.receiptInfoRow}>
+              <Text style={styles.receiptRowIcon}>⚠️</Text>
+              <Text style={styles.receiptRowLabel}>Overtime Fee</Text>
+              <View style={styles.receiptRowValue}>
+                <Text style={[styles.receiptValueText, { color: '#C2410C', fontWeight: '800' }]}>
+                  {formatMoney(reservation.overtimeAmount || 0)}
+                </Text>
+                <Text style={styles.receiptDetailText}>
+                  {reservation.overtimePaymentStatus === 'paid'
+                    ? 'Paid in Cash at Exit'
+                    : `Pending: ${formatMoney(reservation.unpaidOvertimeAmount || reservation.overtimeAmount || 0)}`}
+                </Text>
+              </View>
+            </View>
+          )}
           <View style={styles.receiptDivider} />
           <View style={styles.receiptTotalRow}>
             <View>
               <Text style={styles.receiptTotalLabel}>Total Charged</Text>
-              <Text style={styles.receiptTaxNote}>No tax or service fee recorded</Text>
+              <Text style={styles.receiptTaxNote}>Itemized final balance</Text>
             </View>
             <Text style={styles.receiptTotalValue}>{formatMoney(finalAmount)}</Text>
           </View>
@@ -1078,4 +1377,240 @@ const styles = StyleSheet.create({
   receiptDoneText: { color: '#FFFFFF', fontSize: 13, fontWeight: '800' },
   downloadReceiptButton: { minHeight: 41, borderRadius: 22, borderWidth: 1.5, borderColor: DriverColors.navyHeading, alignItems: 'center', justifyContent: 'center' },
   downloadReceiptText: { color: DriverColors.navyHeading, fontSize: 13, fontWeight: '800' },
+
+  /* ── Waiting for Entry Confirmation Styles ── */
+  waitingHeaderCard: {
+    backgroundColor: '#0F172A',
+    borderRadius: 18,
+    padding: 16,
+    marginBottom: 12,
+  },
+  waitingBadge: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 7,
+    backgroundColor: 'rgba(20, 184, 166, 0.15)',
+    borderWidth: 1,
+    borderColor: '#14B8A6',
+    borderRadius: 20,
+    paddingHorizontal: 10,
+    paddingVertical: 5,
+    alignSelf: 'flex-start',
+    marginBottom: 10,
+  },
+  pulseDot: {
+    width: 8,
+    height: 8,
+    borderRadius: 4,
+    backgroundColor: '#14B8A6',
+  },
+  waitingBadgeText: {
+    color: '#2DD4BF',
+    fontSize: 11,
+    fontWeight: '700',
+  },
+  waitingTitle: {
+    color: '#FFFFFF',
+    fontSize: 18,
+    fontWeight: '800',
+    marginBottom: 6,
+  },
+  waitingSubtitle: {
+    color: '#94A3B8',
+    fontSize: 12,
+    lineHeight: 18,
+  },
+  qrCard: {
+    backgroundColor: '#FFFFFF',
+    borderRadius: 18,
+    borderWidth: 1,
+    borderColor: DriverColors.cardBorder,
+    padding: 18,
+    alignItems: 'center',
+    marginBottom: 12,
+    shadowColor: '#0F172A',
+    shadowOpacity: 0.05,
+    shadowRadius: 8,
+    elevation: 2,
+  },
+  qrBoxWrapper: {
+    padding: 12,
+    backgroundColor: '#FFFFFF',
+    borderRadius: 12,
+    borderWidth: 2,
+    borderColor: '#E2E8F0',
+    marginBottom: 12,
+  },
+  refPill: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    backgroundColor: '#F1F5F9',
+    paddingHorizontal: 12,
+    paddingVertical: 6,
+    borderRadius: 8,
+    marginBottom: 10,
+  },
+  refPillLabel: {
+    color: DriverColors.textSecondary,
+    fontSize: 10,
+    fontWeight: '700',
+  },
+  refPillValue: {
+    color: DriverColors.navyHeading,
+    fontSize: 13,
+    fontWeight: '800',
+    letterSpacing: 0.5,
+  },
+  qrHint: {
+    color: DriverColors.textSecondary,
+    fontSize: 11,
+    textAlign: 'center',
+    lineHeight: 16,
+  },
+  policyNoticeBox: {
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+    gap: 8,
+    backgroundColor: '#F8FAFC',
+    borderRadius: 10,
+    padding: 10,
+    marginTop: 10,
+  },
+  policyNoticeIcon: {
+    fontSize: 14,
+  },
+  policyNoticeText: {
+    flex: 1,
+    color: DriverColors.textSecondary,
+    fontSize: 11,
+    lineHeight: 16,
+  },
+  cancelRequestBtn: {
+    borderWidth: 1.5,
+    borderColor: '#EF4444',
+    backgroundColor: '#FEF2F2',
+    borderRadius: 24,
+    paddingVertical: 13,
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginVertical: 10,
+  },
+  cancelRequestText: {
+    color: '#EF4444',
+    fontSize: 13,
+    fontWeight: '800',
+  },
+
+  /* ── Overdue & Checkout Banners ── */
+  overdueBanner: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 10,
+    backgroundColor: '#FFF7ED',
+    borderWidth: 1.5,
+    borderColor: '#F97316',
+    borderRadius: 14,
+    padding: 12,
+    marginBottom: 10,
+  },
+  overdueBannerIcon: {
+    fontSize: 20,
+  },
+  overdueBannerTitle: {
+    color: '#C2410C',
+    fontSize: 12,
+    fontWeight: '800',
+    letterSpacing: 0.3,
+  },
+  overdueBannerText: {
+    color: '#9A3412',
+    fontSize: 11,
+    lineHeight: 16,
+    marginTop: 2,
+  },
+  timerTrackOverdue: {
+    borderColor: '#F97316',
+  },
+  overdueTimerValue: {
+    color: '#C2410C',
+  },
+  occupiedBadgeOverdue: {
+    borderColor: '#F97316',
+    backgroundColor: '#FFF7ED',
+  },
+  occupiedDotOverdue: {
+    backgroundColor: '#EA580C',
+  },
+  occupiedTextOverdue: {
+    color: '#EA580C',
+  },
+  overtimeBreakdownCard: {
+    marginTop: 10,
+    paddingTop: 10,
+    borderTopWidth: 1,
+    borderTopColor: DriverColors.borderLight,
+  },
+  overtimeRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    marginBottom: 4,
+  },
+  overtimeLabel: {
+    color: '#C2410C',
+    fontSize: 11,
+    fontWeight: '700',
+  },
+  overtimeValue: {
+    color: '#C2410C',
+    fontSize: 13,
+    fontWeight: '900',
+  },
+  overtimeFootnote: {
+    color: DriverColors.textSecondary,
+    fontSize: 9.5,
+    lineHeight: 14,
+  },
+  checkoutRequestedBanner: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 10,
+    backgroundColor: '#EFF6FF',
+    borderWidth: 1.5,
+    borderColor: '#3B82F6',
+    borderRadius: 14,
+    padding: 12,
+    marginBottom: 10,
+  },
+  checkoutRequestedIcon: {
+    fontSize: 20,
+  },
+  checkoutRequestedTitle: {
+    color: '#1D4ED8',
+    fontSize: 12,
+    fontWeight: '800',
+  },
+  checkoutRequestedSubtitle: {
+    color: '#1E40AF',
+    fontSize: 11,
+    lineHeight: 16,
+    marginTop: 2,
+  },
+  checkoutWaitingBox: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: '#FEF3C7',
+    borderWidth: 1,
+    borderColor: '#F59E0B',
+    borderRadius: 24,
+    paddingVertical: 12,
+    paddingHorizontal: 16,
+  },
+  checkoutWaitingText: {
+    color: '#92400E',
+    fontSize: 12.5,
+    fontWeight: '700',
+  },
 });
