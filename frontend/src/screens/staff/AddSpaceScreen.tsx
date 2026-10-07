@@ -82,6 +82,7 @@ export default function AddSpaceScreen({ onBack, onSave }: AddSpaceScreenProps) 
       level: cleanLevel,
       imageUri: spaceImage?.uri,
       imageMimeType,
+      imageFile: spaceImage.file,
       spaceNumbers,
     };
 

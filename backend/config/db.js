@@ -1,6 +1,8 @@
 const mongoose = require('mongoose');
 const dns = require('dns');
 
+// If standard system DNS fails to resolve SRV records on some networks, fallback will be used
+
 // Force Google DNS to resolve MongoDB SRV records in local environments
 // (bypasses network/hotspot DNS that may block SRV queries)
 if (!process.env.VERCEL) {

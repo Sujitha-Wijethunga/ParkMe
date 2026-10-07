@@ -26,6 +26,7 @@ export interface SpaceItem {
   imageUrl?: string;
   imageUri?: string;
   imageMimeType?: string;
+  imageFile?: Blob;
   spaceNumbers?: string[];
 }
 
