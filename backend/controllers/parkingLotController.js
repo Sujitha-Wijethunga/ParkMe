@@ -6,7 +6,7 @@ const ParkingLot = require('../models/ParkingLot');
 // @query   lat, lng, radius (metres), available (boolean)
 const getParkingLots = async (req, res, next) => {
   try {
-    const { lat, lng, radius, available, search } = req.query;
+    const { lat, lng, radius, available, search, city, vehicleType } = req.query;
     let query = { isActive: true };
 
     if (search && typeof search === 'string' && search.trim()) {
@@ -15,7 +15,26 @@ const getParkingLots = async (req, res, next) => {
       query.$or = [
         { name: searchRegex },
         { address: searchRegex },
+        { city: searchRegex },
       ];
+    }
+
+    if (city && typeof city === 'string' && city.trim()) {
+      const escapedCity = city.trim().replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+      const cityRegex = new RegExp(escapedCity, 'i');
+      const cityCondition = {
+        $or: [{ city: cityRegex }, { address: cityRegex }, { name: cityRegex }],
+      };
+      if (query.$or) {
+        query.$and = [{ $or: query.$or }, cityCondition];
+        delete query.$or;
+      } else {
+        query.$or = cityCondition.$or;
+      }
+    }
+
+    if (vehicleType && typeof vehicleType === 'string' && vehicleType.trim()) {
+      query.supportedVehicles = vehicleType.trim();
     }
 
     // Geospatial filter if coordinates provided
@@ -23,7 +42,7 @@ const getParkingLots = async (req, res, next) => {
       query.location = {
         $near: {
           $geometry: { type: 'Point', coordinates: [parseFloat(lng), parseFloat(lat)] },
-          $maxDistance: radius ? parseInt(radius) : 15000,
+          $maxDistance: radius ? parseInt(radius) : 25000,
         },
       };
     }

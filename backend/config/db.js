@@ -1,9 +1,15 @@
 const mongoose = require('mongoose');
 const dns = require('dns');
 
-// Force Google DNS to resolve MongoDB SRV records
+// Force Google DNS to resolve MongoDB SRV records in local environments
 // (bypasses network/hotspot DNS that may block SRV queries)
-dns.setServers(['8.8.8.8', '8.8.4.4']);
+if (!process.env.VERCEL) {
+  try {
+    dns.setServers(['8.8.8.8', '8.8.4.4']);
+  } catch (err) {
+    console.warn('DNS server override warning:', err.message);
+  }
+}
 
 let cachedPromise = null;
 

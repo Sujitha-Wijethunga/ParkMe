@@ -38,6 +38,14 @@ const reservationSchema = new mongoose.Schema(
       type: Number,
       min: [0, 'Final amount cannot be negative'],
     },
+    vehicleType: {
+      type: String,
+      enum: ['Car', 'Bike', 'SUV', 'EV'],
+      default: 'Car',
+    },
+    activatedAt: {
+      type: Date,
+    },
     status: {
       type: String,
       enum: ['pending', 'active', 'completed', 'cancelled'],

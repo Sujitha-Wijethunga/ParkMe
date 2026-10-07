@@ -20,7 +20,7 @@ const hasOverlap = async (parkingSpaceId, startTime, endTime, excludeId = null) 
 // @access  Driver
 const createReservation = async (req, res, next) => {
   try {
-    const { parkingSpaceId, startTime, endTime } = req.body;
+    const { parkingSpaceId, startTime, endTime, vehicleType } = req.body;
 
     const start = new Date(startTime);
     const end = new Date(endTime);
@@ -38,20 +38,40 @@ const createReservation = async (req, res, next) => {
       return res.status(409).json({ message: 'Parking space is not available' });
     }
 
+    // Vehicle-specific space compatibility check
+    if (vehicleType) {
+      const validTypes = ['Car', 'Bike', 'SUV', 'EV'];
+      if (!validTypes.includes(vehicleType)) {
+        return res.status(400).json({ message: 'Invalid vehicle type specified.' });
+      }
+      if (
+        space.vehicleType &&
+        space.vehicleType !== 'any' &&
+        space.vehicleType !== vehicleType
+      ) {
+        return res.status(409).json({
+          message: `This space is designated for ${space.vehicleType} vehicles only.`,
+        });
+      }
+    }
+
     const overlap = await hasOverlap(parkingSpaceId, start, end);
     if (overlap) {
       return res.status(409).json({ message: 'This space is already reserved for the selected time' });
     }
 
     const lot = await ParkingLot.findById(space.parkingLot);
+    const chosenVehicle = vehicleType || space.vehicleType || 'Car';
+    const ratePerHour = (lot.vehicleTariffs && lot.vehicleTariffs[chosenVehicle]) || lot.pricePerHour;
     const hours = (end - start) / (1000 * 60 * 60);
-    const totalAmount = parseFloat((hours * lot.pricePerHour).toFixed(2));
+    const totalAmount = parseFloat((hours * ratePerHour).toFixed(2));
 
     const reservation = await Reservation.create({
       reference: `PM-${crypto.randomBytes(4).toString('hex').toUpperCase()}`,
       driver: req.user._id,
       parkingSpace: parkingSpaceId,
       parkingLot: space.parkingLot,
+      vehicleType: chosenVehicle,
       startTime: start,
       endTime: end,
       totalAmount,
@@ -308,6 +328,44 @@ const getAllReservations = async (req, res, next) => {
   }
 };
 
+// @desc    Driver manually activates upcoming reservation ("I've Parked" / "Start Parking")
+// @route   PUT /api/reservations/:id/activate
+// @access  Driver (own reservation)
+const activateReservation = async (req, res, next) => {
+  try {
+    const reservation = await Reservation.findById(req.params.id);
+    if (!reservation) {
+      return res.status(404).json({ message: 'Reservation not found' });
+    }
+    if (reservation.driver.toString() !== req.user._id.toString()) {
+      return res.status(403).json({ message: 'Access denied' });
+    }
+    if (reservation.status === 'active') {
+      return res.json({
+        message: 'Reservation is already active',
+        reservation,
+        alreadyActive: true,
+      });
+    }
+    if (reservation.status !== 'pending') {
+      return res.status(400).json({
+        message: `Cannot activate reservation in "${reservation.status}" status. Only upcoming reservations can be activated.`,
+      });
+    }
+
+    reservation.status = 'active';
+    reservation.activatedAt = new Date();
+    await reservation.save();
+
+    res.json({
+      message: 'Parking session activated',
+      reservation,
+    });
+  } catch (error) {
+    next(error);
+  }
+};
+
 module.exports = {
   createReservation,
   getMyReservations,
@@ -316,5 +374,6 @@ module.exports = {
   completeReservation,
   releaseReservation,
   verifyReservation,
+  activateReservation,
   getAllReservations,
 };

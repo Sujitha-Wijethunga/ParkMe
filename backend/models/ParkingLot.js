@@ -59,6 +59,30 @@ const parkingLotSchema = new mongoose.Schema(
       type: [String],
       default: [],
     },
+    city: {
+      type: String,
+      trim: true,
+      default: '',
+    },
+    entranceName: {
+      type: String,
+      trim: true,
+    },
+    sourceCitation: {
+      type: String,
+      trim: true,
+    },
+    supportedVehicles: {
+      type: [String],
+      enum: ['Car', 'Bike', 'SUV', 'EV'],
+      default: ['Car', 'Bike', 'SUV', 'EV'],
+    },
+    vehicleTariffs: {
+      Car: { type: Number, min: 0 },
+      Bike: { type: Number, min: 0 },
+      SUV: { type: Number, min: 0 },
+      EV: { type: Number, min: 0 },
+    },
     managedBy: {
       type: mongoose.Schema.Types.ObjectId,
       ref: 'User',

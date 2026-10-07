@@ -17,6 +17,11 @@ const parkingSpaceSchema = new mongoose.Schema(
       enum: ['standard', 'disabled', 'EV'],
       default: 'standard',
     },
+    vehicleType: {
+      type: String,
+      enum: ['Car', 'Bike', 'SUV', 'EV', 'any'],
+      default: 'Car',
+    },
     status: {
       type: String,
       enum: ['available', 'occupied', 'maintenance'],
