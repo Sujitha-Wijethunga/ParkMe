@@ -114,6 +114,11 @@ const parkingLotSchema = new mongoose.Schema(
         'Sunday',
       ],
     },
+    imageUrl: {
+      type: String,
+      trim: true,
+      default: '',
+    },
     isActive: {
       type: Boolean,
       default: true,

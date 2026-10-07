@@ -37,6 +37,21 @@ const staffSchema = new mongoose.Schema(
       type: String,
       default: 'Parking Staff',
     },
+    avatarUrl: {
+      type: String,
+      trim: true,
+      default: '',
+    },
+    avatar: {
+      type: String,
+      trim: true,
+      default: '',
+    },
+    avatarBg: {
+      type: String,
+      trim: true,
+      default: '',
+    },
     isActive: {
       type: Boolean,
       default: true,

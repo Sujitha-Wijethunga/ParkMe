@@ -97,6 +97,9 @@ export default function AddSpaceScreen({ onBack, onSave }: AddSpaceScreenProps) 
       );
       return;
     }
+    const imageMimeType = spaceImage
+      ? resolveImageMimeType(spaceImage)
+      : undefined;
 
     if (!spaceImage) {
       Alert.alert('Image required', 'Please choose an image for these parking spaces.');
@@ -116,7 +119,7 @@ export default function AddSpaceScreen({ onBack, onSave }: AddSpaceScreenProps) 
       level: cleanLevel,
       imageUri: spaceImage?.uri,
       imageMimeType,
-      imageFile: spaceImage.file,
+      imageFile: spaceImage?.file,
       spaceNumbers,
     };
 
@@ -226,7 +229,7 @@ export default function AddSpaceScreen({ onBack, onSave }: AddSpaceScreenProps) 
                 {spaceImage ? 'Choose a different image' : 'Choose image from phone'}
               </Text>
             </TouchableOpacity>
-            <Text style={styles.helpText}>JPEG, PNG, or WebP · Maximum 5 MB</Text>
+            <Text style={styles.helpText}>JPEG, PNG, or WebP · Optional · Maximum 10 MB</Text>
           </View>
 
           <View style={styles.previewCard}>
@@ -266,24 +269,30 @@ const expandSpaceCapacity = (capacity: string) => {
 };
 
 const resolveImageMimeType = (asset: ImagePicker.ImagePickerAsset) => {
-  const uriExtension = asset.uri.split(/[?#]/, 1)[0].split('.').pop()?.toLowerCase();
   const mimeTypeByExtension: Record<string, string> = {
     jpg: 'image/jpeg',
     jpeg: 'image/jpeg',
     png: 'image/png',
     webp: 'image/webp',
+    gif: 'image/gif',
   };
+
+  const mimeType = asset.mimeType?.toLowerCase();
+  if (mimeType && (Object.values(mimeTypeByExtension).includes(mimeType) || mimeType.startsWith('image/'))) {
+    return mimeType === 'image/jpg' ? 'image/jpeg' : mimeType;
+  }
+
+  const uriExtension = asset.uri.split(/[?#]/, 1)[0].split('.').pop()?.toLowerCase();
   if (uriExtension && mimeTypeByExtension[uriExtension]) {
     return mimeTypeByExtension[uriExtension];
   }
 
-  const mimeType = asset.mimeType?.toLowerCase();
-  if (mimeType && Object.values(mimeTypeByExtension).includes(mimeType)) {
-    return mimeType;
+  const fileExtension = asset.fileName?.split('.').pop()?.toLowerCase();
+  if (fileExtension && mimeTypeByExtension[fileExtension]) {
+    return mimeTypeByExtension[fileExtension];
   }
 
-  const fileExtension = asset.fileName?.split('.').pop()?.toLowerCase();
-  return fileExtension ? mimeTypeByExtension[fileExtension] : undefined;
+  return 'image/jpeg';
 };
 
 const styles = StyleSheet.create({

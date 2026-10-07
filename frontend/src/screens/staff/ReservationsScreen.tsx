@@ -23,6 +23,7 @@ export interface ReservationItem {
   status: 'Reserved' | 'Active' | 'Completed' | 'Cancelled';
   driverNameMasked: string;
   plate: string;
+  vehicleModel?: string;
   bookingTime: string;
   assignedSpace: string;
   paymentAmount: string;
@@ -38,7 +39,14 @@ export interface ReservationItem {
 
 interface ReservationsScreenProps {
   onBack: () => void;
-  onAdmitVehicle?: (reservationId: string, reference: string, slot: string) => void;
+  onAdmitVehicle?: (
+    reservationId: string,
+    reference: string,
+    slot: string,
+    driverName?: string,
+    plate?: string,
+    vehicleModel?: string
+  ) => void;
   apiBaseUrl: string;
   authToken: string | null;
 }
@@ -74,6 +82,17 @@ export default function ReservationsScreen({
     return result.map((reservation: any): ReservationItem => {
       const slot = reservation.parkingSpace?.spaceNumber || '—';
       const driverName = reservation.driver?.name || 'Driver';
+      
+      const maskName = (name: string) => {
+        return name
+          .split(' ')
+          .map((word) => {
+            if (word.length <= 2) return word;
+            return `${word[0]}${'*'.repeat(word.length - 2)}${word[word.length - 1]}`;
+          })
+          .join(' ');
+      };
+
       const createdAt = new Date(reservation.createdAt);
       const startTime = new Date(reservation.startTime);
       const status = reservation.status === 'pending'
@@ -92,6 +111,13 @@ export default function ReservationsScreen({
         time: startTime.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
         eta: startTime > new Date() ? startTime.toLocaleDateString() : status,
         status,
+        driverNameMasked: maskName(driverName),
+        plate: reservation.vehiclePlate || '—',
+        vehicleModel: reservation.vehicleModel || '',
+        bookingTime: createdAt.toLocaleString(),
+        assignedSpace: `${slot} · ${reservation.parkingLot?.name || 'Parking lot'}`,
+        paymentAmount: `Rs. ${Number(reservation.totalAmount || 0).toFixed(2)}`,
+        paymentMethod: reservation.paymentStatus === 'paid' ? 'Online' : 'Not recorded',
         driverNameMasked: driverName,
         plate: reservation.vehiclePlate || '—',
         bookingTime: createdAt.toLocaleString(),
@@ -169,22 +195,27 @@ export default function ReservationsScreen({
   });
 
   const handleVerify = (item: ReservationItem) => {
-    Alert.alert('Verify reservation?', `Activate booking ${item.reference} for space ${item.slot}?`, [
-      { text: 'Cancel', style: 'cancel' },
-      {
-        text: 'Verify',
-        onPress: () => {
-          void updateReservation(item, 'verify').catch((error: unknown) =>
-            Alert.alert('Unable to verify reservation', error instanceof Error ? error.message : 'Please try again.')
-          );
+    // Navigate to QR scan verification screen for Reserved (pending) reservations
+    if (onAdmitVehicle) {
+      onAdmitVehicle(item.id, item.reference, item.slot, item.driverNameMasked, item.plate, item.vehicleModel);
+    } else {
+      Alert.alert('Verify reservation?', `Activate booking ${item.reference} for space ${item.slot}?`, [
+        { text: 'Cancel', style: 'cancel' },
+        {
+          text: 'Verify',
+          onPress: () => {
+            void updateReservation(item, 'verify').catch((error: unknown) =>
+              Alert.alert('Unable to verify reservation', error instanceof Error ? error.message : 'Please try again.')
+            );
+          },
         },
-      },
-    ]);
+      ]);
+    }
   };
 
   const handleAdmit = (item: ReservationItem) => {
     if (onAdmitVehicle) {
-      onAdmitVehicle(item.id, item.reference, item.slot);
+      onAdmitVehicle(item.id, item.reference, item.slot, item.driverNameMasked, item.plate, item.vehicleModel);
     } else {
       Alert.alert(
         'Admit Vehicle',

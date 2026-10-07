@@ -17,6 +17,7 @@ const {
 } = require('../controllers/authController');
 const { protect } = require('../middleware/auth');
 const { validate } = require('../middleware/validate');
+const uploadAvatar = require('../middleware/avatarUpload');
 
 // Staff auth routes (preserved)
 router.post('/register', ...registerValidation, validate, register);
@@ -29,7 +30,7 @@ router.post('/google', ...googleAuthValidation, validate, googleAuth);
 
 // Current user profile routes
 router.get('/me', protect, getMe);
-router.put('/me', protect, updateMe);
+router.put('/me', protect, uploadAvatar.single('avatar'), updateMe);
 router.put('/change-password', protect, changePassword);
 
 module.exports = router;

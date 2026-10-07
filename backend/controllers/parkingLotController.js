@@ -78,7 +78,11 @@ const getParkingLotById = async (req, res, next) => {
 // @access  Admin
 const createParkingLot = async (req, res, next) => {
   try {
-    const lot = await ParkingLot.create(req.body);
+    const lotData = { ...req.body };
+    if (req.file) {
+      lotData.imageUrl = `/uploads/parking-lots/${req.file.filename}`;
+    }
+    const lot = await ParkingLot.create(lotData);
     res.status(201).json(lot);
   } catch (error) {
     next(error);
@@ -90,7 +94,11 @@ const createParkingLot = async (req, res, next) => {
 // @access  Admin / Staff
 const updateParkingLot = async (req, res, next) => {
   try {
-    const lot = await ParkingLot.findByIdAndUpdate(req.params.id, req.body, {
+    const updates = { ...req.body };
+    if (req.file) {
+      updates.imageUrl = `/uploads/parking-lots/${req.file.filename}`;
+    }
+    const lot = await ParkingLot.findByIdAndUpdate(req.params.id, updates, {
       new: true,
       runValidators: true,
     });

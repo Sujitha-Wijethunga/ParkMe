@@ -59,6 +59,8 @@ export interface DriverReservation {
   createdAt?: string;
   updatedAt?: string;
   verifiedAt?: string;
+  vehiclePlate?: string;
+  vehicleModel?: string;
   driver?: { _id?: string; name?: string; email?: string; phone?: string } | string;
 }
 
@@ -87,6 +89,7 @@ export interface ConfirmedBookingInput {
   userId: string;
   booking: BookingDetails;
   startTime: Date;
+  token?: string | null;
 }
 
 const REQUEST_TIMEOUT_MS = 10000;
@@ -233,14 +236,31 @@ function mergeReservations(
 }
 
 export async function saveConfirmedBooking(input: ConfirmedBookingInput): Promise<DriverReservation> {
-  const { userId, booking, startTime } = input;
+  const { userId, booking, startTime, token } = input;
   if (!userId) throw new Error('Sign in is required to save a booking.');
   if (Number.isNaN(startTime.getTime())) throw new Error('The booking start time is invalid.');
+
+  const endTime = new Date(startTime.getTime() + booking.hours * 60 * 60 * 1000);
+
+  if (token) {
+    try {
+      const serverRes = await reservationRequest<DriverReservation>('', token, 'POST', {
+        parkingSpaceId: booking.spaceId,
+        startTime: startTime.toISOString(),
+        endTime: endTime.toISOString(),
+        vehicleType: booking.vehicleType,
+        vehiclePlate: booking.vehiclePlate || '',
+        vehicleModel: booking.vehicleModel || '',
+      });
+      return serverRes;
+    } catch (err) {
+      console.warn('[saveConfirmedBooking] Backend request failed, falling back to local:', err);
+    }
+  }
 
   const lot = SAMPLE_NEARBY_PARKING_LOTS.find((item) => item.id === booking.lotId);
   if (!lot) throw new Error('The selected parking location is no longer available.');
 
-  const endTime = new Date(startTime.getTime() + booking.hours * 60 * 60 * 1000);
   const now = Date.now();
   const reservation: DriverReservation = {
     _id: `local-${now}-${Math.random().toString(36).slice(2, 8)}`,
@@ -257,6 +277,8 @@ export async function saveConfirmedBooking(input: ConfirmedBookingInput): Promis
     totalAmount: booking.total,
     ...(booking.paymentMethod ? { paymentMethod: booking.paymentMethod } : {}),
     createdAt: new Date(now).toISOString(),
+    vehiclePlate: booking.vehiclePlate,
+    vehicleModel: booking.vehicleModel,
   };
 
   const reservations = await readLocalReservations(userId);

@@ -1,16 +1,9 @@
 const fs = require('fs');
 const path = require('path');
-const os = require('os');
 const { randomUUID } = require('crypto');
 const multer = require('multer');
 
-// In serverless environments (Vercel / AWS Lambda), the code directory is read-only.
-// Use os.tmpdir() for serverless execution to prevent ENOENT / read-only filesystem crash.
-const isServerless = Boolean(process.env.VERCEL || process.env.AWS_LAMBDA_FUNCTION_NAME);
-const uploadDirectory = isServerless
-  ? path.join(os.tmpdir(), 'uploads', 'parking-spaces')
-  : path.join(__dirname, '..', 'uploads', 'parking-spaces');
-
+const uploadDirectory = path.join(__dirname, '..', 'uploads', 'parking-lots');
 const extensionsByMimeType = {
   'image/jpeg': '.jpg',
   'image/jpg': '.jpg',
@@ -19,11 +12,7 @@ const extensionsByMimeType = {
   'image/gif': '.gif',
 };
 
-try {
-  fs.mkdirSync(uploadDirectory, { recursive: true });
-} catch (err) {
-  console.warn('Upload directory initialization warning:', err.message);
-}
+fs.mkdirSync(uploadDirectory, { recursive: true });
 
 const resolveExtension = (file) => {
   const mime = (file.mimetype || '').toLowerCase();
@@ -36,16 +25,10 @@ const resolveExtension = (file) => {
 };
 
 const storage = multer.diskStorage({
-  destination: (_req, _file, callback) => {
-    try {
-      fs.mkdirSync(uploadDirectory, { recursive: true });
-    } catch {}
-    callback(null, uploadDirectory);
-  },
+  destination: (_req, _file, callback) => callback(null, uploadDirectory),
   filename: (_req, file, callback) => {
     const ext = resolveExtension(file);
-    callback(null, `${randomUUID()}${ext}`);
-    callback(null, `${randomUUID()}${extensionsByMimeType[file.mimetype] || '.jpg'}`);
+    callback(null, `lot_${randomUUID()}${ext}`);
   },
 });
 

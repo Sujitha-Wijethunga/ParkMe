@@ -112,6 +112,9 @@ const login = async (req, res, next) => {
       email: user.email,
       role: user.role,
       staffId: user.staffId,
+      avatar: user.avatar || '',
+      avatarBg: user.avatarBg || '',
+      avatarUrl: user.avatarUrl || '',
       token: generateToken(user._id),
     });
   } catch (error) {
@@ -131,12 +134,18 @@ const getMe = async (req, res) => {
 // @access  Private
 const updateMe = async (req, res, next) => {
   try {
-    const { name, email, phone, vehicles } = req.body;
+    const { name, email, phone, vehicles, avatar, avatarBg, avatarUrl } = req.body;
     const updates = {};
     if (name !== undefined) updates.name = name.trim();
     if (phone !== undefined) updates.phone = phone.trim();
     if (email !== undefined) updates.email = email.trim().toLowerCase();
     if (vehicles !== undefined && Array.isArray(vehicles)) updates.vehicles = vehicles;
+    if (avatar !== undefined) updates.avatar = avatar;
+    if (avatarBg !== undefined) updates.avatarBg = avatarBg;
+    if (avatarUrl !== undefined) updates.avatarUrl = avatarUrl;
+    if (req.file) {
+      updates.avatarUrl = `/uploads/avatars/${req.file.filename}`;
+    }
 
     if (updates.email) {
       const duplicateStaff = await Staff.findOne({
