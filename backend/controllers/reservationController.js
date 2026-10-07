@@ -20,7 +20,7 @@ const hasOverlap = async (parkingSpaceId, startTime, endTime, excludeId = null) 
 // @access  Driver
 const createReservation = async (req, res, next) => {
   try {
-    const { parkingSpaceId, startTime, endTime, vehicleType } = req.body;
+    const { parkingSpaceId, startTime, endTime, vehicleType, vehiclePlate, vehicleModel } = req.body;
 
     const start = new Date(startTime);
     const end = new Date(endTime);
@@ -72,6 +72,10 @@ const createReservation = async (req, res, next) => {
       parkingSpace: parkingSpaceId,
       parkingLot: space.parkingLot,
       vehicleType: chosenVehicle,
+      vehiclePlate: vehiclePlate ? String(vehiclePlate).trim().toUpperCase() : '',
+      vehicleModel: vehicleModel ? String(vehicleModel).trim() : '',
+      hourlyRate: ratePerHour,
+      paymentStatus: 'unpaid',
       startTime: start,
       endTime: end,
       totalAmount,
@@ -221,7 +225,29 @@ const completeReservation = async (req, res, next) => {
       return res.status(400).json({ message: 'Only active reservations can be completed' });
     }
 
+    const now = new Date();
     reservation.status = 'completed';
+    reservation.completedBy = req.user._id;
+    reservation.completedAt = now;
+    if (!reservation.actualEndTime) {
+      reservation.actualEndTime = now;
+    }
+
+    // Check overtime past booked end time
+    if (now > new Date(reservation.endTime)) {
+      const overtimeMs = now.getTime() - new Date(reservation.endTime).getTime();
+      const lot = await ParkingLot.findById(reservation.parkingLot);
+      const gracePeriodMs = (lot?.overtimeGracePeriodMinutes ?? 15) * 60000;
+      if (overtimeMs > gracePeriodMs) {
+        const overtimeMinutes = Math.round(overtimeMs / 60000);
+        const overtimeHours = overtimeMs / 3600000;
+        const multiplier = lot?.overtimeRateMultiplier ?? 1.5;
+        const rate = reservation.hourlyRate || lot?.pricePerHour || 0;
+        reservation.overtimeMinutes = overtimeMinutes;
+        reservation.overtimeAmount = Number((overtimeHours * rate * multiplier).toFixed(2));
+      }
+    }
+
     await reservation.save();
 
     await ParkingSpace.findByIdAndUpdate(reservation.parkingSpace, { status: 'available' });
@@ -255,7 +281,7 @@ const releaseReservation = async (req, res, next) => {
     }
 
     const parkingLot = await ParkingLot.findById(reservation.parkingLot);
-    const ratePerHour = parkingLot?.pricePerHour;
+    const ratePerHour = reservation.hourlyRate || parkingLot?.pricePerHour;
     if (!Number.isFinite(ratePerHour) || ratePerHour <= 0) {
       return res.status(400).json({ message: 'Parking rate is unavailable; the session cannot be finalized.' });
     }
@@ -263,6 +289,19 @@ const releaseReservation = async (req, res, next) => {
     const durationMs = actualEndTime.getTime() - new Date(actualStartTime).getTime();
     if (!Number.isFinite(durationMs) || durationMs < 0) {
       return res.status(400).json({ message: 'The session start time is invalid; the session cannot be finalized.' });
+    }
+
+    // Check overtime past scheduled end time
+    if (actualEndTime > new Date(reservation.endTime)) {
+      const overtimeMs = actualEndTime.getTime() - new Date(reservation.endTime).getTime();
+      const gracePeriodMs = (parkingLot?.overtimeGracePeriodMinutes ?? 15) * 60000;
+      if (overtimeMs > gracePeriodMs) {
+        const overtimeMinutes = Math.round(overtimeMs / 60000);
+        const overtimeHours = overtimeMs / 3600000;
+        const multiplier = parkingLot?.overtimeRateMultiplier ?? 1.5;
+        reservation.overtimeMinutes = overtimeMinutes;
+        reservation.overtimeAmount = Number((overtimeHours * ratePerHour * multiplier).toFixed(2));
+      }
     }
 
     const payment = await Payment.findOne({ reservation: reservation._id, status: 'paid' }).select('method');
@@ -278,6 +317,64 @@ const releaseReservation = async (req, res, next) => {
       message: 'Parking space released',
       reservation,
       paymentMethod: payment?.method || null,
+    });
+  } catch (error) {
+    next(error);
+  }
+};
+
+// @desc    Extend an active or pending reservation
+// @route   PUT /api/reservations/:id/extend
+// @access  Driver (own reservation)
+const extendReservation = async (req, res, next) => {
+  try {
+    const { hours } = req.body;
+    const additionalHours = parseFloat(hours);
+    if (!Number.isFinite(additionalHours) || additionalHours <= 0 || additionalHours > 12) {
+      return res.status(400).json({ message: 'Extension duration must be between 1 and 12 hours.' });
+    }
+
+    const reservation = await Reservation.findById(req.params.id);
+    if (!reservation) return res.status(404).json({ message: 'Reservation not found' });
+    if (reservation.driver.toString() !== req.user._id.toString()) {
+      return res.status(403).json({ message: 'Access denied' });
+    }
+    if (!['pending', 'active'].includes(reservation.status)) {
+      return res.status(400).json({ message: `Cannot extend reservation with status "${reservation.status}".` });
+    }
+
+    const currentEndTime = new Date(reservation.endTime);
+    const newEndTime = new Date(currentEndTime.getTime() + additionalHours * 3600000);
+
+    // Overlap conflict detection for extension window
+    const overlap = await hasOverlap(reservation.parkingSpace, currentEndTime, newEndTime, reservation._id);
+    if (overlap) {
+      return res.status(409).json({
+        message: 'This space is reserved for another driver during the requested extension time.',
+      });
+    }
+
+    const lot = await ParkingLot.findById(reservation.parkingLot);
+    const rate = reservation.hourlyRate || (lot?.vehicleTariffs && lot.vehicleTariffs[reservation.vehicleType]) || lot?.pricePerHour || 0;
+    const additionalAmount = Number((additionalHours * rate).toFixed(2));
+
+    reservation.endTime = newEndTime;
+    reservation.totalAmount = Number((reservation.totalAmount + additionalAmount).toFixed(2));
+    reservation.extensionHistory.push({
+      extendedAt: new Date(),
+      previousEndTime: currentEndTime,
+      newEndTime: newEndTime,
+      additionalHours,
+      additionalAmount,
+      paymentStatus: 'paid',
+    });
+
+    await reservation.save();
+
+    res.json({
+      message: 'Reservation extended successfully',
+      reservation,
+      additionalAmount,
     });
   } catch (error) {
     next(error);
@@ -373,6 +470,7 @@ module.exports = {
   cancelReservation,
   completeReservation,
   releaseReservation,
+  extendReservation,
   verifyReservation,
   activateReservation,
   getAllReservations,
