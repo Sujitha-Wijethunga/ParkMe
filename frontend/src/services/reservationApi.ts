@@ -23,9 +23,32 @@ export interface DriverReservation {
   reference?: string;
   parkingLot: ReservationLocation | string;
   parkingSpace: ReservationSpace | string;
+  vehicleType?: string;
+  vehiclePlate?: string;
+  vehicleModel?: string;
   startTime: string;
   endTime: string;
   status: ReservationStatus;
+  checkInStatus?: 'none' | 'requested' | 'confirmed' | 'cancelled';
+  checkInRequestedAt?: string;
+  checkedInAt?: string;
+  checkedInBy?: string;
+  checkoutStatus?: 'none' | 'requested' | 'confirmed';
+  checkoutRequestedAt?: string;
+  checkedOutAt?: string;
+  checkedOutBy?: string;
+  isOverdue?: boolean;
+  estimatedOvertimeMinutes?: number;
+  estimatedOvertimeAmount?: number;
+  overtimeGraceMinutes?: number;
+  overtimeBillingRule?: string;
+  overtimeRatePerHour?: number;
+  overtimeMinutes?: number;
+  overtimeAmount?: number;
+  unpaidOvertimeAmount?: number;
+  overtimePaymentStatus?: 'none' | 'pending' | 'paid';
+  overtimePaidAt?: string;
+  overtimePaymentMethod?: string;
   totalAmount: number;
   paymentMethod?: string;
   actualEndTime?: string;
@@ -34,7 +57,9 @@ export interface DriverReservation {
   cancellationNote?: string;
   cancelledAt?: string;
   createdAt?: string;
+  updatedAt?: string;
   verifiedAt?: string;
+  driver?: { _id?: string; name?: string; email?: string; phone?: string } | string;
 }
 
 export function isWithinScheduledWindow(
@@ -467,4 +492,227 @@ export async function activateReservation(
 
   return result.reservation;
 }
+
+/**
+ * Driver initiates check-in request ("Start Active Parking").
+ * Sets checkInStatus to 'requested' without starting active parking or occupying space.
+ */
+export async function requestCheckInReservation(
+  token: string | null,
+  userId: string,
+  reservationId: string
+): Promise<DriverReservation> {
+  if (!reservationId) {
+    throw new Error('A booking ID is required to request check-in.');
+  }
+
+  if (reservationId.startsWith('local-')) {
+    const reservations = await readLocalReservations(userId);
+    const reservation = reservations.find((item) => item._id === reservationId);
+    if (!reservation) throw new Error('This saved booking could not be found.');
+    if (reservation.status === 'active') return reservation;
+    const updated: DriverReservation = {
+      ...reservation,
+      checkInStatus: 'requested',
+      checkInRequestedAt: new Date().toISOString(),
+    };
+    await saveDriverBookingData(
+      userId,
+      JSON.stringify(reservations.map((item) => (item._id === reservationId ? updated : item)))
+    );
+    return updated;
+  }
+
+  if (!token) throw new Error('Please sign in to request parking check-in.');
+
+  const result = await reservationRequest<{
+    message: string;
+    reservation: DriverReservation;
+  }>(
+    `/${encodeURIComponent(reservationId)}/checkin-request`,
+    token,
+    'PUT'
+  );
+
+  return result.reservation;
+}
+
+/**
+ * Driver cancels a pending check-in request before staff has verified entry.
+ */
+export async function cancelCheckInReservation(
+  token: string | null,
+  userId: string,
+  reservationId: string
+): Promise<DriverReservation> {
+  if (!reservationId) {
+    throw new Error('A booking ID is required to cancel check-in.');
+  }
+
+  if (reservationId.startsWith('local-')) {
+    const reservations = await readLocalReservations(userId);
+    const reservation = reservations.find((item) => item._id === reservationId);
+    if (!reservation) throw new Error('This saved booking could not be found.');
+    const updated: DriverReservation = {
+      ...reservation,
+      checkInStatus: 'none',
+      checkInRequestedAt: undefined,
+    };
+    await saveDriverBookingData(
+      userId,
+      JSON.stringify(reservations.map((item) => (item._id === reservationId ? updated : item)))
+    );
+    return updated;
+  }
+
+  if (!token) throw new Error('Please sign in to cancel check-in.');
+
+  const result = await reservationRequest<{
+    message: string;
+    reservation: DriverReservation;
+  }>(
+    `/${encodeURIComponent(reservationId)}/cancel-checkin`,
+    token,
+    'PUT'
+  );
+
+  return result.reservation;
+}
+
+/**
+ * Driver requests release/checkout ("Release Parking").
+ * Notifies staff for exit confirmation while keeping space occupied until verified.
+ */
+export async function requestCheckoutReservation(
+  token: string | null,
+  userId: string,
+  reservationId: string
+): Promise<DriverReservation> {
+  if (!reservationId) {
+    throw new Error('A booking ID is required to request release.');
+  }
+
+  if (reservationId.startsWith('local-')) {
+    const reservations = await readLocalReservations(userId);
+    const reservation = reservations.find((item) => item._id === reservationId);
+    if (!reservation) throw new Error('This saved booking could not be found.');
+    const updated: DriverReservation = {
+      ...reservation,
+      checkoutStatus: 'requested',
+      checkoutRequestedAt: new Date().toISOString(),
+    };
+    await saveDriverBookingData(
+      userId,
+      JSON.stringify(reservations.map((item) => (item._id === reservationId ? updated : item)))
+    );
+    return updated;
+  }
+
+  if (!token) throw new Error('Please sign in to request parking release.');
+
+  const result = await reservationRequest<{
+    message: string;
+    reservation: DriverReservation;
+  }>(
+    `/${encodeURIComponent(reservationId)}/checkout-request`,
+    token,
+    'PUT'
+  );
+
+  return result.reservation;
+}
+
+/**
+ * Staff looks up reservation by reference, QR, ID, or vehicle plate.
+ */
+export async function lookupReservationByQuery(
+  token: string,
+  query: string
+): Promise<DriverReservation> {
+  if (!token) throw new Error('Staff authentication required.');
+  if (!query || !query.trim()) throw new Error('Search query is required.');
+
+  return await reservationRequest<DriverReservation>(
+    `/lookup?query=${encodeURIComponent(query.trim())}`,
+    token,
+    'GET'
+  );
+}
+
+/**
+ * Staff verifies vehicle entry and activates parking session.
+ */
+export async function verifyEntryByStaff(
+  token: string,
+  reservationId: string
+): Promise<DriverReservation> {
+  if (!token) throw new Error('Staff authentication required.');
+
+  const result = await reservationRequest<{
+    message: string;
+    reservation: DriverReservation;
+  }>(
+    `/${encodeURIComponent(reservationId)}/verify`,
+    token,
+    'PUT'
+  );
+
+  return result.reservation;
+}
+
+/**
+ * Staff confirms vehicle exit, frees space, and finalizes overtime charges.
+ */
+export async function verifyExitByStaff(
+  token: string,
+  reservationId: string,
+  options?: { paymentMethod?: string; recordPayment?: boolean }
+): Promise<DriverReservation> {
+  if (!token) throw new Error('Staff authentication required.');
+
+  const result = await reservationRequest<{
+    message: string;
+    reservation: DriverReservation;
+  }>(
+    `/${encodeURIComponent(reservationId)}/complete`,
+    token,
+    'PUT',
+    options as any
+  );
+
+  return result.reservation;
+}
+
+/**
+ * Staff records cash payment for pending overtime balance.
+ */
+export async function recordCashPaymentByStaff(
+  token: string,
+  reservationId: string
+): Promise<DriverReservation> {
+  if (!token) throw new Error('Staff authentication required.');
+
+  const controller = new AbortController();
+  const timeoutId = setTimeout(() => controller.abort(), REQUEST_TIMEOUT_MS);
+  try {
+    const response = await fetch(`${getApiBaseUrl().replace(/\/+$/, '')}/api/reservations/${encodeURIComponent(reservationId)}/pay-overtime`, {
+      method: 'POST',
+      signal: controller.signal,
+      headers: {
+        Accept: 'application/json',
+        Authorization: `Bearer ${token}`,
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({ paymentMethod: 'cash' }),
+    });
+    const data = await response.json().catch(() => null);
+    if (!response.ok) {
+      throw new Error(data?.message || `Unable to record payment (${response.status}).`);
+    }
+    return (data as any).reservation;
+  } finally {
+    clearTimeout(timeoutId);
+  }
+}
+
 
