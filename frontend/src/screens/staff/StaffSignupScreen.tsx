@@ -29,6 +29,7 @@ export default function StaffSignupScreen({
   const [email, setEmail] = useState('');
   const [phone, setPhone] = useState('');
   const [staffId, setStaffId] = useState('');
+  const [staffCode, setStaffCode] = useState('');
   const [password, setPassword] = useState('');
   const [confirmPassword, setConfirmPassword] = useState('');
 
@@ -40,6 +41,7 @@ export default function StaffSignupScreen({
     email: '',
     phone: '',
     staffId: '',
+    staffCode: '',
     password: '',
     confirmPassword: '',
   });
@@ -49,6 +51,7 @@ export default function StaffSignupScreen({
   const [emailFocused, setEmailFocused] = useState(false);
   const [phoneFocused, setPhoneFocused] = useState(false);
   const [staffIdFocused, setStaffIdFocused] = useState(false);
+  const [staffCodeFocused, setStaffCodeFocused] = useState(false);
   const [passwordFocused, setPasswordFocused] = useState(false);
   const [confirmPasswordFocused, setConfirmPasswordFocused] = useState(false);
 
@@ -57,6 +60,7 @@ export default function StaffSignupScreen({
   const emailInputRef = useRef<TextInput>(null);
   const phoneInputRef = useRef<TextInput>(null);
   const staffIdInputRef = useRef<TextInput>(null);
+  const staffCodeInputRef = useRef<TextInput>(null);
   const passwordInputRef = useRef<TextInput>(null);
   const confirmPasswordInputRef = useRef<TextInput>(null);
 
@@ -83,6 +87,7 @@ export default function StaffSignupScreen({
       email: '',
       phone: '',
       staffId: '',
+      staffCode: '',
       password: '',
       confirmPassword: '',
     };
@@ -124,6 +129,11 @@ export default function StaffSignupScreen({
       nextErrors.staffId = 'Staff ID must be 3 to 20 characters and use only letters, numbers, or hyphens.';
     }
 
+    const cleanStaffCode = staffCode.trim();
+    if (!cleanStaffCode) {
+      nextErrors.staffCode = 'Please enter your authorized facility staff code.';
+    }
+
     if (!password) {
       nextErrors.password = 'Please enter a password.';
     } else if (password.length < 8) {
@@ -139,7 +149,7 @@ export default function StaffSignupScreen({
     }
 
     setFormErrors(nextErrors);
-    return !nextErrors.name && !nextErrors.email && !nextErrors.phone && !nextErrors.staffId && !nextErrors.password && !nextErrors.confirmPassword;
+    return !nextErrors.name && !nextErrors.email && !nextErrors.phone && !nextErrors.staffId && !nextErrors.staffCode && !nextErrors.password && !nextErrors.confirmPassword;
   };
 
   const handleRegister = async () => {
@@ -159,6 +169,7 @@ export default function StaffSignupScreen({
           email: email.trim().toLowerCase(),
           phone: phone.trim(),
           staffId: staffId.trim() ? staffId.trim().toUpperCase() : undefined,
+          staffCode: staffCode.trim(),
           password,
         }),
       });
@@ -175,6 +186,7 @@ export default function StaffSignupScreen({
         email: '',
         phone: '',
         staffId: '',
+        staffCode: '',
         password: '',
         confirmPassword: '',
       });
@@ -383,10 +395,45 @@ export default function StaffSignupScreen({
                   onFocus={() => setStaffIdFocused(true)}
                   onBlur={() => setStaffIdFocused(false)}
                   returnKeyType="next"
-                  onSubmitEditing={() => passwordInputRef.current?.focus()}
+                  onSubmitEditing={() => staffCodeInputRef.current?.focus()}
                 />
               </Pressable>
               {formErrors.staffId ? <Text style={styles.errorText}>{formErrors.staffId}</Text> : <Text style={styles.fieldHint}>If left blank, a unique Staff ID (e.g. STF-8492) will be auto-generated.</Text>}
+            </View>
+
+            {/* Staff Authorization Code Field */}
+            <View style={styles.fieldGroup}>
+              <Text style={styles.label}>
+                Staff Authorization Code <Text style={styles.required}>*</Text>
+              </Text>
+              <Pressable
+                style={[
+                  styles.inputWrapper,
+                  staffCodeFocused && styles.inputWrapperFocused,
+                  formErrors.staffCode ? styles.inputWrapperError : null,
+                ]}
+                onPress={() => staffCodeInputRef.current?.focus()}
+              >
+                <Text style={styles.inputIcon}>🔑</Text>
+                <TextInput
+                  ref={staffCodeInputRef}
+                  style={styles.input}
+                  placeholder="e.g. PARKME-STAFF-2026"
+                  placeholderTextColor={Colors.placeholder}
+                  value={staffCode}
+                  onChangeText={(value) => {
+                    setStaffCode(value);
+                    setFormErrors((prev) => ({ ...prev, staffCode: '' }));
+                  }}
+                  autoCapitalize="characters"
+                  autoCorrect={false}
+                  onFocus={() => setStaffCodeFocused(true)}
+                  onBlur={() => setStaffCodeFocused(false)}
+                  returnKeyType="next"
+                  onSubmitEditing={() => passwordInputRef.current?.focus()}
+                />
+              </Pressable>
+              {formErrors.staffCode ? <Text style={styles.errorText}>{formErrors.staffCode}</Text> : <Text style={styles.fieldHint}>Provided by facility parking management.</Text>}
             </View>
 
             {/* Password Field */}

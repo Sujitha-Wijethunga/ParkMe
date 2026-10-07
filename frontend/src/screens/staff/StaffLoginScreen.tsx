@@ -28,8 +28,6 @@ export default function StaffLoginScreen({
   onNavigateToSignup,
   onNavigateToDriverLogin,
 }: StaffLoginScreenProps) {
-
-export default function StaffLoginScreen({ onLoginSuccess, onNavigateToSignup }: StaffLoginScreenProps) {
   const insets = useSafeAreaInsets();
   const topPadding =
     Math.max(insets.top, Platform.OS === 'android' ? (StatusBar.currentHeight ?? 0) : 0) + 16;

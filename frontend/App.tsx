@@ -1,5 +1,4 @@
 import React, { useCallback, useEffect, useState } from 'react';
-import React, { useState, useEffect, useCallback } from 'react';
 import {
   View,
   TouchableOpacity,
@@ -11,7 +10,6 @@ import {
 } from 'react-native';
 import { StatusBar } from 'expo-status-bar';
 import * as SplashScreen from 'expo-splash-screen';
-import { File as ExpoFile } from 'expo-file-system';
 import { SafeAreaProvider } from 'react-native-safe-area-context';
 
 // Prevent native splash screen from autohiding while initial resources load
@@ -38,7 +36,17 @@ import ActiveParkingScreen, {
 } from './src/screens/driver/ActiveParkingScreen';
 import NavigationScreen from './src/screens/driver/NavigationScreen';
 import { BookingDetails } from './src/constants/bookingTypes';
-import { DriverUser, getDriverToken, clearDriverSession } from './src/services/storage';
+import {
+  DriverUser,
+  getDriverToken,
+  saveDriverSession,
+  clearDriverSession,
+  getStaffToken,
+  saveStaffSession,
+  clearStaffSession,
+  getActiveRole,
+  saveActiveRole,
+} from './src/services/storage';
 import {
   DriverReservation,
   isWithinScheduledWindow,
@@ -167,7 +175,47 @@ export default function App() {
   useEffect(() => {
     async function prepare() {
       try {
-        // Attempt to restore authenticated driver session from secure storage
+        const activeRole = await getActiveRole();
+
+        // 1. If active role was staff, attempt to restore staff session
+        if (activeRole === 'staff') {
+          const staffToken = await getStaffToken();
+          if (staffToken) {
+            try {
+              const res = await fetch(`${API_BASE_URL}/api/auth/me`, {
+                headers: { Authorization: `Bearer ${staffToken}` },
+              });
+              if (!res.ok) {
+                throw new Error('Staff token expired or invalid');
+              }
+              const user = await res.json();
+              if (user.role !== 'staff' && user.role !== 'admin') {
+                throw new Error('User does not hold staff authorization');
+              }
+              setAuthToken(staffToken);
+              setLoggedStaffId(user.staffId || user._id);
+              setStaffProfile((prev) => ({
+                ...prev,
+                staffId: user.staffId || user._id,
+                name: user.name,
+                email: user.email,
+                role: user.role === 'staff' ? 'Parking Staff' : user.role,
+              }));
+              setCurrentScreen('dashboard');
+              return;
+            } catch (err: any) {
+              console.warn('[App.prepare] Staff session validation failed:', err?.message);
+              await clearStaffSession();
+              setCurrentScreen('login');
+              return;
+            }
+          } else {
+            setCurrentScreen('login');
+            return;
+          }
+        }
+
+        // 2. Otherwise restore driver session
         const token = await getDriverToken();
         if (token) {
           try {
@@ -177,7 +225,6 @@ export default function App() {
             setCurrentScreen('driver-home');
           } catch (sessionErr: any) {
             console.warn('[App.prepare] Driver session restoration failed:', sessionErr?.message);
-            // Expired or invalid token: clear persistent credentials and present welcome screen
             if (sessionErr?.status === 401 || sessionErr?.status === 403) {
               await clearDriverSession();
             }
@@ -290,13 +337,9 @@ export default function App() {
             })
           );
           const persistedSpaces = spacesByLot.flat();
-          setSpaces((currentSpaces) => {
-            const persistedIds = new Set(persistedSpaces.map((space) => space.id));
-            return [
-              ...persistedSpaces,
-              ...currentSpaces.filter((space) => !persistedIds.has(space.id)),
-            ];
-          });
+          if (persistedSpaces.length > 0) {
+            setSpaces(persistedSpaces);
+          }
         }
       } catch (error) {
         console.warn('Failed to load parking lots from backend:', error);
@@ -510,7 +553,13 @@ export default function App() {
    * Called upon successful driver login or signup.
    * Sets the active driver state and transitions to Driver Home.
    */
-  const handleDriverAuthSuccess = (user: DriverUser, token: string) => {
+  const handleDriverAuthSuccess = async (user: DriverUser, token: string) => {
+    try {
+      await saveDriverSession(user, token);
+      await saveActiveRole('driver');
+    } catch (e) {
+      console.warn('Failed to save driver session:', e);
+    }
     setDriverUser(user);
     setDriverToken(token);
     setCurrentScreen('driver-home');
@@ -535,7 +584,13 @@ export default function App() {
     setCurrentScreen('driver-profile');
   };
 
-  const handleLoginSuccess = (user: any, token: string) => {
+  const handleLoginSuccess = async (user: any, token: string) => {
+    try {
+      await saveStaffSession(user, token);
+      await saveActiveRole('staff');
+    } catch (e) {
+      console.warn('Failed to save staff session:', e);
+    }
     setLoggedStaffId(user.staffId || user._id);
     setAuthToken(token);
     setStaffProfile((prev) => ({ 
@@ -672,7 +727,12 @@ export default function App() {
     });
   };
 
-  const handleLogout = () => {
+  const handleLogout = async () => {
+    try {
+      await clearStaffSession();
+    } catch (e) {
+      console.warn('Failed to clear staff session:', e);
+    }
     setAuthToken(null);
     setCurrentScreen('login');
   };
@@ -742,11 +802,11 @@ export default function App() {
           }
           formData.append('image', newSpace.imageFile);
         } else {
-          const imageFile = new ExpoFile(newSpace.imageUri);
-          if (!imageFile.exists || imageFile.size === 0) {
-            throw new Error('Unable to read the selected image. Please choose it again.');
-          }
-          formData.append('image', imageFile);
+          formData.append('image', {
+            uri: newSpace.imageUri,
+            name: `space_${Date.now()}.jpg`,
+            type: newSpace.imageMimeType || 'image/jpeg',
+          } as any);
         }
       }
 
@@ -861,26 +921,39 @@ export default function App() {
     setCurrentScreen('verify');
   };
 
+  useEffect(() => {
+    if (!appIsReady) return;
+    const staffProtectedScreens: ScreenType[] = [
+      'dashboard',
+      'spaces-list',
+      'spaces',
+      'add-space',
+      'reservations',
+      'verify',
+      'profile',
+      'change-password',
+      'attendance',
+      'leave-request',
+    ];
+    const driverProtectedScreens: ScreenType[] = [
+      'driver-home',
+      'driver-profile',
+      'driver-bookings',
+      'driver-booking-details',
+      'driver-active-parking',
+      'driver-release-parking',
+    ];
+
+    if (staffProtectedScreens.includes(currentScreen) && !authToken) {
+      setCurrentScreen('login');
+    } else if (driverProtectedScreens.includes(currentScreen) && !driverToken) {
+      setCurrentScreen('driver-welcome');
+    }
+  }, [currentScreen, authToken, driverToken, appIsReady]);
+
   if (!appIsReady) {
     return null;
   }
-
-  const isDriverScreen =
-    currentScreen === 'driver-welcome' ||
-    currentScreen === 'driver-login' ||
-    currentScreen === 'driver-signup' ||
-    currentScreen === 'driver-home' ||
-    currentScreen === 'driver-search' ||
-    currentScreen === 'driver-lot-details' ||
-    currentScreen === 'driver-space-selection' ||
-    currentScreen === 'driver-booking-summary' ||
-    currentScreen === 'driver-payment' ||
-    currentScreen === 'driver-booking-confirmed' ||
-    currentScreen === 'driver-navigation' ||
-    currentScreen === 'driver-bookings' ||
-    currentScreen === 'driver-booking-details' ||
-    currentScreen === 'driver-active-parking' ||
-    currentScreen === 'driver-release-parking';
 
   return (
     <SafeAreaProvider style={styles.rootContainer}>
@@ -1214,75 +1287,6 @@ export default function App() {
         />
       )}
 
-      {/* Dev Mode Role Switcher: Shown only in development and positioned clear of screen content */}
-      {__DEV__ && (
-        <View
-          style={[
-            styles.devSwitchContainer,
-            {
-              top:
-                currentScreen === 'driver-login' || currentScreen === 'driver-signup'
-                  ? (Platform.OS === 'android' ? (RNStatusBar.currentHeight || 24) + 52 : 92)
-                  : (Platform.OS === 'android' ? (RNStatusBar.currentHeight || 24) + 14 : 54),
-              right:
-                currentScreen === 'driver-welcome' ||
-                currentScreen === 'driver-login' ||
-                currentScreen === 'driver-signup'
-                  ? 16
-                  : isDriverScreen
-                  ? 68
-                  : 12,
-            },
-          ]}
-          pointerEvents="box-none"
-        >
-          <View style={styles.devSwitchGroup}>
-            {(currentScreen === 'driver-welcome' ||
-              currentScreen === 'driver-login' ||
-              currentScreen === 'driver-signup') && (
-              <TouchableOpacity
-                style={styles.devSwitchBtn}
-                activeOpacity={0.8}
-                onPress={() => setCurrentScreen('driver-home')}
-              >
-                <Text style={styles.devSwitchText}>🚗 Driver Home (Dev)</Text>
-              </TouchableOpacity>
-            )}
-            <TouchableOpacity
-              style={styles.devSwitchBtn}
-              activeOpacity={0.8}
-              onPress={() =>
-                setCurrentScreen((prev) => {
-                  if (
-                    prev === 'driver-welcome' ||
-                    prev === 'driver-login' ||
-                    prev === 'driver-signup' ||
-                    prev === 'driver-home' ||
-                    prev === 'driver-search' ||
-                    prev === 'driver-lot-details' ||
-                    prev === 'driver-space-selection' ||
-                    prev === 'driver-booking-summary' ||
-                    prev === 'driver-payment' ||
-                    prev === 'driver-booking-confirmed' ||
-                    prev === 'driver-navigation' ||
-                    prev === 'driver-bookings' ||
-                    prev === 'driver-booking-details' ||
-                    prev === 'driver-active-parking' ||
-                    prev === 'driver-release-parking'
-                  ) {
-                    return 'login';
-                  }
-                  return driverUser ? 'driver-home' : 'driver-welcome';
-                })
-              }
-            >
-              <Text style={styles.devSwitchText}>
-                {isDriverScreen ? '👔 Staff Flow' : '🚗 Driver Flow'}
-              </Text>
-            </TouchableOpacity>
-          </View>
-        </View>
-      )}
       </View>
     </SafeAreaProvider>
   );
@@ -1291,32 +1295,5 @@ export default function App() {
 const styles = StyleSheet.create({
   rootContainer: {
     flex: 1,
-  },
-  devSwitchContainer: {
-    position: 'absolute',
-    zIndex: 9999,
-  },
-  devSwitchGroup: {
-    flexDirection: 'row',
-    gap: 6,
-  },
-  devSwitchBtn: {
-    backgroundColor: 'rgba(15, 23, 42, 0.92)',
-    paddingHorizontal: 9,
-    paddingVertical: 5,
-    borderRadius: 14,
-    borderWidth: 1,
-    borderColor: 'rgba(255, 255, 255, 0.25)',
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.25,
-    shadowRadius: 3,
-    elevation: 8,
-  },
-  devSwitchText: {
-    color: '#FFFFFF',
-    fontSize: 10.5,
-    fontWeight: '700',
-    letterSpacing: 0.2,
   },
 });
