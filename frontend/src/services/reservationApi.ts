@@ -419,3 +419,52 @@ export async function releaseActiveReservation(
     paymentMethod: returnedPaymentMethod,
   };
 }
+
+/**
+ * Manually activates a confirmed/pending parking reservation.
+ * Calls PUT /api/reservations/:id/activate on the server.
+ * Ensures the session only enters 'active' status upon successful server confirmation.
+ */
+export async function activateReservation(
+  token: string | null,
+  userId: string,
+  reservationId: string
+): Promise<DriverReservation> {
+  if (!reservationId) {
+    throw new Error('A booking ID is required to activate parking.');
+  }
+
+  if (reservationId.startsWith('local-')) {
+    const reservations = await readLocalReservations(userId);
+    const reservation = reservations.find((item) => item._id === reservationId);
+    if (!reservation) throw new Error('This saved booking could not be found.');
+    if (reservation.status === 'active') return reservation;
+    if (reservation.status !== 'pending') {
+      throw new Error(`Cannot activate reservation in "${reservation.status}" status.`);
+    }
+    const activated: DriverReservation = {
+      ...reservation,
+      status: 'active',
+      verifiedAt: new Date().toISOString(),
+    };
+    await saveDriverBookingData(
+      userId,
+      JSON.stringify(reservations.map((item) => (item._id === reservationId ? activated : item)))
+    );
+    return activated;
+  }
+
+  if (!token) throw new Error('Please sign in to activate your parking session.');
+
+  const result = await reservationRequest<{
+    message: string;
+    reservation: DriverReservation;
+  }>(
+    `/${encodeURIComponent(reservationId)}/activate`,
+    token,
+    'PUT'
+  );
+
+  return result.reservation;
+}
+

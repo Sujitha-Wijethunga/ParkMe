@@ -1,6 +1,7 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   ActivityIndicator,
+  Alert,
   RefreshControl,
   SafeAreaView,
   ScrollView,
@@ -13,6 +14,7 @@ import {
 import DriverBottomNav, { DriverTabType } from '../../components/DriverBottomNav';
 import { DriverColors } from '../../constants/colors';
 import {
+  activateReservation,
   canCancelReservation,
   DriverReservation,
   getMyReservations,
@@ -20,12 +22,17 @@ import {
   isWithinScheduledWindow,
   ReservationStatus,
 } from '../../services/reservationApi';
+import {
+  getParkingLotEntranceInfo,
+  launchGoogleMapsNavigation,
+} from '../../services/parkingEntranceService';
 
 type BookingCategory = 'upcoming' | 'active' | 'past';
 
 interface MyBookingsScreenProps {
   token: string | null;
   userId: string;
+  highlightedBookingId?: string | null;
   onBack: () => void;
   onSelectBooking: (reservation: DriverReservation) => void;
   onCancelBooking: (reservation: DriverReservation) => void;
@@ -33,6 +40,7 @@ interface MyBookingsScreenProps {
   onNavigateHome: () => void;
   onNavigateMap: () => void;
   onNavigateProfile: () => void;
+  onBookingActivated?: (reservation: DriverReservation) => void;
 }
 
 interface BookingDetailsScreenProps {
@@ -43,6 +51,7 @@ interface BookingDetailsScreenProps {
   onNavigateHome: () => void;
   onNavigateMap: () => void;
   onNavigateProfile: () => void;
+  onBookingActivated?: (reservation: DriverReservation) => void;
 }
 
 const CATEGORY_TABS: { key: BookingCategory; label: string }[] = [
@@ -156,6 +165,7 @@ function BookingStatus({ status }: { status: ReservationStatus }) {
 export default function MyBookingsScreen({
   token,
   userId,
+  highlightedBookingId,
   onBack,
   onSelectBooking,
   onCancelBooking,
@@ -163,6 +173,7 @@ export default function MyBookingsScreen({
   onNavigateHome,
   onNavigateMap,
   onNavigateProfile,
+  onBookingActivated,
 }: MyBookingsScreenProps) {
   const [activeCategory, setActiveCategory] = useState<BookingCategory>('upcoming');
   const [reservations, setReservations] = useState<DriverReservation[]>([]);
@@ -171,6 +182,8 @@ export default function MyBookingsScreen({
   const [error, setError] = useState<string | null>(null);
   const [warning, setWarning] = useState<string | null>(null);
   const [now, setNow] = useState(() => Date.now());
+  const [navigatingId, setNavigatingId] = useState<string | null>(null);
+  const [activatingId, setActivatingId] = useState<string | null>(null);
   const requestId = useRef(0);
 
   const loadReservations = useCallback(async (refresh = false) => {
@@ -209,6 +222,81 @@ export default function MyBookingsScreen({
     const interval = setInterval(() => setNow(Date.now()), 30_000);
     return () => clearInterval(interval);
   }, []);
+
+  // When navigated with a newly confirmed booking ID, focus its category tab
+  useEffect(() => {
+    if (highlightedBookingId && reservations.length > 0) {
+      const match = reservations.find((r) => r._id === highlightedBookingId);
+      if (match) {
+        const cat = getBookingCategory(match, now);
+        const timer = setTimeout(() => {
+          setActiveCategory(cat);
+        }, 0);
+        return () => clearTimeout(timer);
+      }
+    }
+  }, [highlightedBookingId, reservations, now]);
+
+  const handleGetDirections = async (reservation: DriverReservation) => {
+    const lotId = typeof reservation.parkingLot === 'string' ? reservation.parkingLot : reservation.parkingLot._id;
+    const entranceInfo = getParkingLotEntranceInfo(
+      lotId,
+      typeof reservation.parkingLot !== 'string' ? reservation.parkingLot : undefined
+    );
+    if (!entranceInfo.hasVerifiedEntrance || entranceInfo.latitude === null || entranceInfo.longitude === null) {
+      Alert.alert(
+        'Entrance Location Missing',
+        entranceInfo.statusMessage || 'Verified vehicle entrance coordinates are missing for this lot.'
+      );
+      return;
+    }
+
+    setNavigatingId(reservation._id);
+    try {
+      await launchGoogleMapsNavigation({
+        destLat: entranceInfo.latitude,
+        destLng: entranceInfo.longitude,
+        lotName: entranceInfo.lotName,
+      });
+    } catch (err: any) {
+      Alert.alert('Unable to launch directions', err?.message || 'Could not open navigation app.');
+    } finally {
+      setNavigatingId(null);
+    }
+  };
+
+  const handleActivateParking = async (reservation: DriverReservation) => {
+    setActivatingId(reservation._id);
+    try {
+      const activated = await activateReservation(token, userId, reservation._id);
+      setReservations((prev) =>
+        prev.map((item) => (item._id === reservation._id ? { ...item, status: 'active' } : item))
+      );
+      Alert.alert(
+        'Parking Session Started',
+        `Your parking session at ${getLotName(reservation)} is now active!`,
+        [
+          {
+            text: 'View Active Parking',
+            onPress: () => {
+              if (onBookingActivated) {
+                onBookingActivated(activated);
+              } else {
+                onViewActiveParking();
+              }
+            },
+          },
+        ]
+      );
+    } catch (err: any) {
+      Alert.alert(
+        'Activation Failed',
+        err?.message || 'Could not start your active parking session. Please verify and try again.'
+      );
+    } finally {
+      setActivatingId(null);
+    }
+  };
 
   const categoryCounts = useMemo(() => {
     const counts: Record<BookingCategory, number> = { upcoming: 0, active: 0, past: 0 };
@@ -318,48 +406,91 @@ export default function MyBookingsScreen({
               )}
             </View>
           ) : (
-            visibleReservations.map((reservation) => (
-              <View key={reservation._id} style={styles.bookingItem}>
-                <TouchableOpacity
-                  accessibilityRole="button"
-                  accessibilityLabel={`Booking ${reservation.reference || reservation._id}, ${getLotName(reservation)}, ${getStatusLabel(reservation.status)}`}
-                  activeOpacity={0.85}
-                  style={styles.bookingCard}
-                  onPress={() => onSelectBooking(reservation)}
-                >
-                  <View style={styles.cardTopRow}>
-                    <Text style={styles.reference} numberOfLines={1}>REF: {reservation.reference || reservation._id}</Text>
-                    <BookingStatus status={reservation.status} />
-                  </View>
-                  <Text style={styles.lotName} numberOfLines={1}>{getLotName(reservation)}</Text>
-                  {!!getLotAddress(reservation) && (
-                    <Text style={styles.address} numberOfLines={2}>{getLotAddress(reservation)}</Text>
-                  )}
-                  <View style={styles.divider} />
-                  <View style={styles.infoGrid}>
-                    <BookingInfo label="Date & time" value={`${formatDate(reservation.startTime)} · ${formatTime(reservation.startTime)}`} />
-                    <BookingInfo label="Duration" value={formatDuration(reservation.startTime, reservation.endTime)} />
-                    <BookingInfo label="Space" value={getSpaceNumber(reservation)} />
-                    <BookingInfo label="Floor" value={getFloor(reservation) || '—'} />
-                  </View>
-                  <View style={styles.cardBottomRow}>
-                    <Text style={styles.priceLabel}>Total price</Text>
-                    <Text style={styles.priceValue}>{formatAmount(reservation.totalAmount)}</Text>
-                  </View>
-                  <Text style={styles.viewDetails}>View booking details  ›</Text>
-                </TouchableOpacity>
-                {activeCategory === 'upcoming' && canCancelReservation(reservation, now) ? (
+            visibleReservations.map((reservation) => {
+              const isHighlighted = highlightedBookingId === reservation._id;
+              return (
+                <View key={reservation._id} style={styles.bookingItem}>
                   <TouchableOpacity
                     accessibilityRole="button"
-                    accessibilityLabel={`Cancel booking ${reservation.reference || reservation._id}`}
-                    style={styles.cancelUpcomingButton}
-                    onPress={() => onCancelBooking(reservation)}
+                    accessibilityLabel={`Booking ${reservation.reference || reservation._id}, ${getLotName(reservation)}, ${getStatusLabel(reservation.status)}`}
+                    activeOpacity={0.85}
+                    style={[styles.bookingCard, isHighlighted && styles.highlightedCard]}
+                    onPress={() => onSelectBooking(reservation)}
                   >
-                    <Text style={styles.cancelUpcomingButtonText}>Cancel Booking</Text>
+                    {isHighlighted && (
+                      <View style={styles.highlightBadge}>
+                        <Text style={styles.highlightBadgeText}>✨ Newly Confirmed</Text>
+                      </View>
+                    )}
+                    <View style={styles.cardTopRow}>
+                      <Text style={styles.reference} numberOfLines={1}>REF: {reservation.reference || reservation._id}</Text>
+                      <BookingStatus status={reservation.status} />
+                    </View>
+                    <Text style={styles.lotName} numberOfLines={1}>{getLotName(reservation)}</Text>
+                    {!!getLotAddress(reservation) && (
+                      <Text style={styles.address} numberOfLines={2}>{getLotAddress(reservation)}</Text>
+                    )}
+                    <View style={styles.divider} />
+                    <View style={styles.infoGrid}>
+                      <BookingInfo label="Date & time" value={`${formatDate(reservation.startTime)} · ${formatTime(reservation.startTime)}`} />
+                      <BookingInfo label="Duration" value={formatDuration(reservation.startTime, reservation.endTime)} />
+                      <BookingInfo label="Space" value={getSpaceNumber(reservation)} />
+                      <BookingInfo label="Floor" value={getFloor(reservation) || '—'} />
+                    </View>
+                    <View style={styles.cardBottomRow}>
+                      <Text style={styles.priceLabel}>Total price</Text>
+                      <Text style={styles.priceValue}>{formatAmount(reservation.totalAmount)}</Text>
+                    </View>
+                    <Text style={styles.viewDetails}>View booking details  ›</Text>
                   </TouchableOpacity>
-                ) : null}
-              </View>
-            ))
+
+                  {activeCategory === 'upcoming' && (
+                    <View style={styles.upcomingButtonsContainer}>
+                      <View style={styles.upcomingPrimaryActionsRow}>
+                        <TouchableOpacity
+                          accessibilityRole="button"
+                          accessibilityLabel={`Get directions to ${getLotName(reservation)}`}
+                          style={styles.directionsButton}
+                          disabled={navigatingId === reservation._id}
+                          onPress={() => handleGetDirections(reservation)}
+                        >
+                          {navigatingId === reservation._id ? (
+                            <ActivityIndicator size="small" color="#FFFFFF" />
+                          ) : (
+                            <Text style={styles.directionsButtonText}>➤  Directions</Text>
+                          )}
+                        </TouchableOpacity>
+
+                        <TouchableOpacity
+                          accessibilityRole="button"
+                          accessibilityLabel={`Activate parking session for ${reservation.reference || reservation._id}`}
+                          style={styles.activateButton}
+                          disabled={activatingId === reservation._id}
+                          onPress={() => handleActivateParking(reservation)}
+                        >
+                          {activatingId === reservation._id ? (
+                            <ActivityIndicator size="small" color="#FFFFFF" />
+                          ) : (
+                            <Text style={styles.activateButtonText}>🚗  {"I've Parked"}</Text>
+                          )}
+                        </TouchableOpacity>
+                      </View>
+
+                      {canCancelReservation(reservation, now) && (
+                        <TouchableOpacity
+                          accessibilityRole="button"
+                          accessibilityLabel={`Cancel booking ${reservation.reference || reservation._id}`}
+                          style={styles.cancelUpcomingButton}
+                          onPress={() => onCancelBooking(reservation)}
+                        >
+                          <Text style={styles.cancelUpcomingButtonText}>Cancel Booking</Text>
+                        </TouchableOpacity>
+                      )}
+                    </View>
+                  )}
+                </View>
+              );
+            })
           )}
         </ScrollView>
       )}
@@ -385,11 +516,71 @@ export function BookingDetailsScreen({
   onNavigateHome,
   onNavigateMap,
   onNavigateProfile,
+  onBookingActivated,
 }: BookingDetailsScreenProps) {
   const [reservation, setReservation] = useState<DriverReservation | null>(null);
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [navigating, setNavigating] = useState(false);
+  const [activating, setActivating] = useState(false);
   const requestId = useRef(0);
+
+  const handleGetDirections = async (res: DriverReservation) => {
+    const lotId = typeof res.parkingLot === 'string' ? res.parkingLot : res.parkingLot._id;
+    const entranceInfo = getParkingLotEntranceInfo(
+      lotId,
+      typeof res.parkingLot !== 'string' ? res.parkingLot : undefined
+    );
+    if (!entranceInfo.hasVerifiedEntrance || entranceInfo.latitude === null || entranceInfo.longitude === null) {
+      Alert.alert(
+        'Entrance Location Missing',
+        entranceInfo.statusMessage || 'Verified vehicle entrance coordinates are missing for this lot.'
+      );
+      return;
+    }
+
+    setNavigating(true);
+    try {
+      await launchGoogleMapsNavigation({
+        destLat: entranceInfo.latitude,
+        destLng: entranceInfo.longitude,
+        lotName: entranceInfo.lotName,
+      });
+    } catch (err: any) {
+      Alert.alert('Unable to launch directions', err?.message || 'Could not open navigation app.');
+    } finally {
+      setNavigating(false);
+    }
+  };
+
+  const handleActivateParking = async (res: DriverReservation) => {
+    setActivating(true);
+    try {
+      const activated = await activateReservation(token, userId, res._id);
+      setReservation(activated);
+      Alert.alert(
+        'Parking Session Started',
+        `Your parking session at ${getLotName(res)} is now active!`,
+        [
+          {
+            text: 'View Active Parking',
+            onPress: () => {
+              if (onBookingActivated) {
+                onBookingActivated(activated);
+              }
+            },
+          },
+        ]
+      );
+    } catch (err: any) {
+      Alert.alert(
+        'Activation Failed',
+        err?.message || 'Could not start your active parking session. Please verify and try again.'
+      );
+    } finally {
+      setActivating(false);
+    }
+  };
 
   const loadReservation = useCallback(async () => {
     const id = ++requestId.current;
@@ -476,6 +667,39 @@ export function BookingDetailsScreen({
               <Text style={styles.priceValue}>{formatAmount(reservation.totalAmount)}</Text>
             </View>
           </View>
+
+          {reservation.status === 'pending' && (
+            <View style={styles.detailsActionsCard}>
+              <TouchableOpacity
+                accessibilityRole="button"
+                accessibilityLabel="Get driving directions"
+                style={styles.detailsDirectionsBtn}
+                disabled={navigating}
+                onPress={() => handleGetDirections(reservation)}
+              >
+                {navigating ? (
+                  <ActivityIndicator size="small" color="#FFFFFF" />
+                ) : (
+                  <Text style={styles.detailsDirectionsText}>➤  Get Directions</Text>
+                )}
+              </TouchableOpacity>
+
+              <TouchableOpacity
+                accessibilityRole="button"
+                accessibilityLabel="Activate parking session"
+                style={styles.detailsActivateBtn}
+                disabled={activating}
+                onPress={() => handleActivateParking(reservation)}
+              >
+                {activating ? (
+                  <ActivityIndicator size="small" color="#FFFFFF" />
+                ) : (
+                  <Text style={styles.detailsActivateText}>🚗  {"I've Parked"}</Text>
+                )}
+              </TouchableOpacity>
+            </View>
+          )}
+
           {!!error && <Text style={styles.inlineError}>{error}</Text>}
         </ScrollView>
       ) : null}
@@ -677,5 +901,98 @@ const styles = StyleSheet.create({
     fontSize: 12,
     lineHeight: 17,
     marginBottom: 10,
+  },
+  highlightedCard: {
+    borderColor: DriverColors.orangePrimary,
+    borderWidth: 2,
+    shadowColor: DriverColors.orangePrimary,
+    shadowOffset: { width: 0, height: 3 },
+    shadowOpacity: 0.15,
+    shadowRadius: 8,
+    elevation: 3,
+  },
+  highlightBadge: {
+    alignSelf: 'flex-start',
+    backgroundColor: '#FFF3E0',
+    borderColor: DriverColors.orangePrimary,
+    borderWidth: 1,
+    borderRadius: 8,
+    paddingHorizontal: 8,
+    paddingVertical: 3,
+    marginBottom: 8,
+  },
+  highlightBadgeText: {
+    color: DriverColors.orangeDark,
+    fontSize: 11,
+    fontWeight: '800',
+  },
+  upcomingButtonsContainer: {
+    marginTop: -4,
+    marginBottom: 10,
+    gap: 8,
+  },
+  upcomingPrimaryActionsRow: {
+    flexDirection: 'row',
+    gap: 8,
+  },
+  directionsButton: {
+    flex: 1,
+    minHeight: 44,
+    borderRadius: 12,
+    backgroundColor: DriverColors.navyDark,
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingHorizontal: 12,
+  },
+  directionsButtonText: {
+    color: '#FFFFFF',
+    fontSize: 13,
+    fontWeight: '700',
+  },
+  activateButton: {
+    flex: 1,
+    minHeight: 44,
+    borderRadius: 12,
+    backgroundColor: DriverColors.orangePrimary,
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingHorizontal: 12,
+  },
+  activateButtonText: {
+    color: '#FFFFFF',
+    fontSize: 13,
+    fontWeight: '800',
+  },
+  detailsActionsCard: {
+    backgroundColor: DriverColors.surface,
+    borderRadius: 16,
+    borderWidth: 1,
+    borderColor: DriverColors.cardBorder,
+    padding: 16,
+    gap: 10,
+  },
+  detailsDirectionsBtn: {
+    minHeight: 48,
+    borderRadius: 14,
+    backgroundColor: DriverColors.navyDark,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  detailsDirectionsText: {
+    color: '#FFFFFF',
+    fontSize: 15,
+    fontWeight: '700',
+  },
+  detailsActivateBtn: {
+    minHeight: 48,
+    borderRadius: 14,
+    backgroundColor: DriverColors.orangePrimary,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  detailsActivateText: {
+    color: '#FFFFFF',
+    fontSize: 15,
+    fontWeight: '800',
   },
 });

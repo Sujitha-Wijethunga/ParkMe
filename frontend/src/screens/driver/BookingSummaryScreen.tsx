@@ -132,9 +132,13 @@ function CalendarModal({ visible, selected, onSelect, onClose }: CalendarModalPr
 
   // Jump to the selected month each time the calendar opens
   useEffect(() => {
-    if (visible) setMonth(new Date(selected.getFullYear(), selected.getMonth(), 1));
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [visible]);
+    if (visible) {
+      const timer = setTimeout(() => {
+        setMonth(new Date(selected.getFullYear(), selected.getMonth(), 1));
+      }, 0);
+      return () => clearTimeout(timer);
+    }
+  }, [visible, selected]);
 
   const year = month.getFullYear();
   const mon = month.getMonth();
@@ -357,10 +361,18 @@ export default function BookingSummaryScreen({
   // Keep the typed fields in sync whenever the arrival time changes
   const arrivalMs = draft.arrivalTime.getTime();
   useEffect(() => {
-    setHourText(String(get12Hour(draft.arrivalTime)));
-    setMinText(pad2(draft.arrivalTime.getMinutes()));
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [arrivalMs]);
+    const timer = setTimeout(() => {
+      setHourText(String(get12Hour(draft.arrivalTime)));
+      setMinText(pad2(draft.arrivalTime.getMinutes()));
+    }, 0);
+    return () => clearTimeout(timer);
+  }, [arrivalMs, draft.arrivalTime]);
+
+  const [currentTimeMs, setCurrentTimeMs] = useState(() => Date.now());
+  useEffect(() => {
+    const timer = setInterval(() => setCurrentTimeMs(Date.now()), 15000);
+    return () => clearInterval(timer);
+  }, []);
 
   // Android hardware back handling
   useEffect(() => {
@@ -376,7 +388,7 @@ export default function BookingSummaryScreen({
   const validation = useMemo(() => validateDraft(draft), [draft]);
 
   const arrivalTooSoon =
-    draft.arrivalTime.getTime() < Date.now() + MIN_ARRIVAL_LEAD_MIN * 60 * 1000;
+    draft.arrivalTime.getTime() < currentTimeMs + MIN_ARRIVAL_LEAD_MIN * 60 * 1000;
 
   const fieldError = useCallback(
     (field: keyof BookingDraft) =>

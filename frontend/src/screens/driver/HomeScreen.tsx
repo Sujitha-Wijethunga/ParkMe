@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useMemo } from 'react';
 import {
   View,
   Text,
@@ -20,10 +20,20 @@ import {
 import DriverBottomNav, { DriverTabType } from '../../components/DriverBottomNav';
 import ParkingLotCard from '../../components/ParkingLotCard';
 import DriverNotificationsModal from '../../components/DriverNotificationsModal';
+import { VehicleType } from '../../constants/parkingSpaceData';
+
+export const VEHICLE_OPTIONS: { type: VehicleType; icon: string; label: string }[] = [
+  { type: 'Car', icon: '🚗', label: 'Car' },
+  { type: 'Bike', icon: '🏍️', label: 'Bike' },
+  { type: 'SUV', icon: '🚙', label: 'SUV' },
+  { type: 'EV', icon: '⚡', label: 'EV' },
+];
 
 interface HomeScreenProps {
   parkingLots?: ParkingLotCardItem[];
   userName?: string;
+  selectedVehicleType?: VehicleType;
+  onVehicleTypeChange?: (vehicleType: VehicleType) => void;
   onNavigateToMap?: () => void;
   onNavigateToLotDetails?: (lotId: string) => void;
   onNavigateToBookings?: () => void;
@@ -46,6 +56,8 @@ interface HomeScreenProps {
 export default function HomeScreen({
   parkingLots = SAMPLE_NEARBY_PARKING_LOTS,
   userName = 'Kasun',
+  selectedVehicleType = 'Car',
+  onVehicleTypeChange,
   onNavigateToMap,
   onNavigateToLotDetails,
   onNavigateToBookings,
@@ -66,6 +78,37 @@ export default function HomeScreen({
   const [searchQuery, setSearchQuery] = useState('');
   const [selectedChip, setSelectedChip] = useState<DriverFilterChip>('Nearest');
   const [notificationsVisible, setNotificationsVisible] = useState(false);
+
+  // Adapt lots and tariffs according to selectedVehicleType
+  const vehicleAdaptedLots = useMemo(() => {
+    return parkingLots.map((lot) => {
+      const supportsVehicle = !lot.supportedVehicles || lot.supportedVehicles.includes(selectedVehicleType);
+      const vehiclePrice = lot.vehicleTariffs?.[selectedVehicleType] ?? (
+        selectedVehicleType === 'Bike' ? Math.round(lot.pricePerHour * 0.45) :
+        selectedVehicleType === 'SUV' ? Math.round(lot.pricePerHour * 1.4) :
+        selectedVehicleType === 'EV' ? Math.round(lot.pricePerHour * 1.2) :
+        lot.pricePerHour
+      );
+
+      let availableSpaces = lot.availableSpaces;
+      if (!supportsVehicle) {
+        availableSpaces = 0;
+      } else if (selectedVehicleType === 'Bike') {
+        availableSpaces = Math.max(0, Math.floor(lot.availableSpaces * 0.4));
+      } else if (selectedVehicleType === 'EV') {
+        availableSpaces = lot.hasEVCharging ? Math.max(0, Math.min(lot.availableSpaces, 4)) : 0;
+      } else if (selectedVehicleType === 'SUV') {
+        availableSpaces = Math.max(0, Math.floor(lot.availableSpaces * 0.6));
+      }
+
+      return {
+        ...lot,
+        pricePerHour: vehiclePrice,
+        availableSpaces,
+        status: (availableSpaces > 0 ? 'Available' : 'Full') as 'Available' | 'Full' | 'Limited',
+      };
+    });
+  }, [parkingLots, selectedVehicleType]);
 
   // Handle bottom navigation tab switching
   const handleTabPress = (tab: DriverTabType) => {
@@ -117,6 +160,40 @@ export default function HomeScreen({
             {/* Red unread indicator dot */}
             <View style={styles.unreadBadgeDot} />
           </TouchableOpacity>
+        </View>
+
+        {/* 1b. Vehicle Type Selector */}
+        <View style={styles.vehicleSelectorCard}>
+          <Text style={styles.vehicleSelectorTitle}>VEHICLE TYPE</Text>
+          <View style={styles.vehicleOptionsRow}>
+            {VEHICLE_OPTIONS.map((opt) => {
+              const isSelected = selectedVehicleType === opt.type;
+              return (
+                <TouchableOpacity
+                  key={opt.type}
+                  accessibilityRole="button"
+                  accessibilityLabel={`${opt.label} parking spaces`}
+                  accessibilityState={{ selected: isSelected }}
+                  style={[
+                    styles.vehicleOptionBtn,
+                    isSelected && styles.vehicleOptionBtnSelected,
+                  ]}
+                  activeOpacity={0.75}
+                  onPress={() => onVehicleTypeChange?.(opt.type)}
+                >
+                  <Text style={styles.vehicleOptionIcon}>{opt.icon}</Text>
+                  <Text
+                    style={[
+                      styles.vehicleOptionLabel,
+                      isSelected && styles.vehicleOptionLabelSelected,
+                    ]}
+                  >
+                    {opt.label}
+                  </Text>
+                </TouchableOpacity>
+              );
+            })}
+          </View>
         </View>
 
         {/* 2. Search Bar Card */}
@@ -301,13 +378,13 @@ export default function HomeScreen({
               }
             }}
           >
-            <Text style={styles.seeAllText}>See All ({parkingLots.length})</Text>
+            <Text style={styles.seeAllText}>See All ({vehicleAdaptedLots.length})</Text>
           </TouchableOpacity>
         </View>
 
         {/* 6. Parking Cards List */}
         <View style={styles.cardsListContainer}>
-          {parkingLots.map((lot) => (
+          {vehicleAdaptedLots.map((lot) => (
             <ParkingLotCard
               key={lot.id}
               lot={lot}
@@ -483,6 +560,60 @@ const styles = StyleSheet.create({
     height: 7,
     borderRadius: 3.5,
     backgroundColor: DriverColors.orangePrimary,
+  },
+
+  // Vehicle Selector Card
+  vehicleSelectorCard: {
+    backgroundColor: '#FFFFFF',
+    borderRadius: 16,
+    padding: 12,
+    marginBottom: 14,
+    borderWidth: 1,
+    borderColor: '#E2E8F0',
+    shadowColor: '#0F172A',
+    shadowOffset: { width: 0, height: 1 },
+    shadowOpacity: 0.04,
+    shadowRadius: 3,
+    elevation: 1,
+  },
+  vehicleSelectorTitle: {
+    fontSize: 10.5,
+    fontWeight: '800',
+    color: '#64748B',
+    letterSpacing: 0.6,
+    marginBottom: 8,
+  },
+  vehicleOptionsRow: {
+    flexDirection: 'row',
+    gap: 8,
+  },
+  vehicleOptionBtn: {
+    flex: 1,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingVertical: 9,
+    paddingHorizontal: 6,
+    borderRadius: 10,
+    backgroundColor: '#F8FAFC',
+    borderWidth: 1.5,
+    borderColor: '#E2E8F0',
+    gap: 5,
+  },
+  vehicleOptionBtnSelected: {
+    backgroundColor: '#0F172A',
+    borderColor: '#0F172A',
+  },
+  vehicleOptionIcon: {
+    fontSize: 14,
+  },
+  vehicleOptionLabel: {
+    fontSize: 12,
+    fontWeight: '700',
+    color: '#334155',
+  },
+  vehicleOptionLabelSelected: {
+    color: '#FFFFFF',
   },
 
   // Search Card
