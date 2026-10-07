@@ -51,6 +51,7 @@ export const BOOKING_MIN_ADVANCE_MINUTES = 30;
 /** Minimum and maximum bookable duration in whole hours. */
 export const BOOKING_MIN_DURATION_HRS = 1;
 export const BOOKING_MAX_DURATION_HRS = 12;
+export const VEHICLE_PLATE_PATTERN = /^[A-Z]{2,3}\d{3,4}$/;
 
 /**
  * A mutable booking draft. All fields start unset or at defaults.
@@ -73,7 +74,7 @@ export interface BookingDraft {
   /** Duration the driver wants to park, in whole hours (1–12). */
   durationHours: number;
   /**
-   * Vehicle registration plate, e.g. 'WP CAB-7829'.
+   * Vehicle registration plate, e.g. 'WP7829'.
    * Not currently persisted by the backend Reservation model.
    */
   vehiclePlate: string;
@@ -158,8 +159,11 @@ export function validateDraft(draft: BookingDraft): BookingValidationResult {
   if (draft.durationHours < BOOKING_MIN_DURATION_HRS || draft.durationHours > BOOKING_MAX_DURATION_HRS) {
     errors.durationHours = `Duration must be between ${BOOKING_MIN_DURATION_HRS} and ${BOOKING_MAX_DURATION_HRS} hours.`;
   }
-  if (!draft.vehiclePlate.trim()) {
-    errors.vehiclePlate = 'Vehicle registration plate is required.';
+  const vehiclePlate = draft.vehiclePlate.trim().toUpperCase();
+  if (!vehiclePlate) {
+    errors.vehiclePlate = 'Vehicle number is required.';
+  } else if (!VEHICLE_PLATE_PATTERN.test(vehiclePlate)) {
+    errors.vehiclePlate = 'Enter 2–3 English letters followed by 3–4 numbers (e.g. WP7829).';
   }
   if (!draft.vehicleModel.trim()) {
     errors.vehicleModel = 'Vehicle model is required.';

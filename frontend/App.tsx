@@ -1072,7 +1072,6 @@ export default function App() {
           booking={confirmedBooking}
           reservation={confirmedReservation}
           onGetDirections={() => setCurrentScreen('driver-navigation')}
-          onConfirmBooking={resetBookingFlow}
           onCancel={() => {
             setReservationToCancel(confirmedReservation);
             setCancellationReturnScreen('driver-booking-confirmed');
