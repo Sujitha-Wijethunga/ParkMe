@@ -24,6 +24,7 @@ import DriverProfileScreen from './src/screens/driver/DriverProfileScreen';
 import SearchResultsScreen, { SearchResultsViewMode } from './src/screens/driver/SearchResultsScreen';
 import LotDetailsScreen from './src/screens/driver/LotDetailsScreen';
 import SelectSpaceScreen, { SpaceSelectionResult } from './src/screens/driver/SelectSpaceScreen';
+import { VehicleType } from './src/constants/parkingSpaceData';
 import BookingSummaryScreen from './src/screens/driver/BookingSummaryScreen';
 import PaymentScreen from './src/screens/driver/PaymentScreen';
 import BookingConfirmedScreen from './src/screens/driver/BookingConfirmedScreen';
@@ -251,6 +252,8 @@ export default function App() {
   const [reservationToCancel, setReservationToCancel] = useState<DriverReservation | null>(null);
   const [reservationToRelease, setReservationToRelease] = useState<DriverReservation | null>(null);
   const [releaseReceipt, setReleaseReceipt] = useState<ReleasedReservationReceipt | null>(null);
+  const [selectedVehicleType, setSelectedVehicleType] = useState<VehicleType>('Car');
+  const [highlightedBookingId, setHighlightedBookingId] = useState<string | null>(null);
 
   useEffect(() => {
     const fetchDriverLots = async () => {
@@ -392,7 +395,8 @@ export default function App() {
     setCurrentScreen(lotDetailsOrigin);
   };
 
-  const handleOpenBookings = () => {
+  const handleOpenBookings = (highlightId?: string | null) => {
+    setHighlightedBookingId(highlightId ?? null);
     setCurrentScreen('driver-bookings');
   };
 
@@ -400,7 +404,7 @@ export default function App() {
     setSelectedReservationId(reservation._id);
     setBookingDetailsReturnScreen(currentScreen);
     setCurrentScreen(
-      reservation.status === 'active' || isWithinScheduledWindow(reservation)
+      reservation.status === 'active'
         ? 'driver-active-parking'
         : 'driver-booking-details'
     );
@@ -903,6 +907,8 @@ export default function App() {
         <HomeScreen
           parkingLots={driverParkingLots}
           userName={driverUser?.name ? driverUser.name.split(' ')[0] : 'Kasun'}
+          selectedVehicleType={selectedVehicleType}
+          onVehicleTypeChange={setSelectedVehicleType}
           onNavigateToMap={() => handleOpenSearch('', 'map', 'Nearest')}
           onNavigateToLotDetails={(lotId) =>
             handleOpenLotDetails(lotId, 'driver-home')
@@ -945,6 +951,8 @@ export default function App() {
           initialFilter={searchParams.filterChip}
           initialSelectedLotId={searchParams.selectedLotId}
           initialNearbyFiveMinMode={searchParams.nearbyFiveMinMode}
+          selectedVehicleType={selectedVehicleType}
+          onVehicleTypeChange={setSelectedVehicleType}
           onBack={() => setCurrentScreen('driver-home')}
           onNavigateHome={() => setCurrentScreen('driver-home')}
           onSelectLot={(lotId, snapshot) =>
@@ -958,6 +966,7 @@ export default function App() {
         <MyBookingsScreen
           token={driverToken}
           userId={driverUser?._id || 'guest'}
+          highlightedBookingId={highlightedBookingId}
           onBack={() => setCurrentScreen('driver-home')}
           onSelectBooking={handleSelectReservation}
           onCancelBooking={(reservation) => {
@@ -1045,6 +1054,8 @@ export default function App() {
         <SelectSpaceScreen
           lotId={spaceSelectionLotId}
           initialSelection={bookingSelection}
+          selectedVehicleType={selectedVehicleType}
+          onVehicleTypeChange={setSelectedVehicleType}
           onBack={() => setCurrentScreen('driver-lot-details')}
           onContinue={handleSpaceSelectionContinue}
         />
@@ -1072,10 +1083,13 @@ export default function App() {
           booking={confirmedBooking}
           reservation={confirmedReservation}
           onGetDirections={() => setCurrentScreen('driver-navigation')}
-          onCancel={() => {
-            setReservationToCancel(confirmedReservation);
-            setCancellationReturnScreen('driver-booking-confirmed');
-            setCurrentScreen('driver-cancel-booking');
+          onViewBookingDetails={() => {
+            setHighlightedBookingId(confirmedReservation._id);
+            setCurrentScreen('driver-bookings');
+          }}
+          onReturnHome={() => {
+            resetBookingFlow();
+            setCurrentScreen('driver-home');
           }}
         />
       )}

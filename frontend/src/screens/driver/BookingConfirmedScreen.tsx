@@ -21,7 +21,8 @@ interface BookingConfirmedScreenProps {
   booking: BookingDetails;
   reservation: DriverReservation;
   onGetDirections: () => void;
-  onCancel: () => void;
+  onViewBookingDetails: () => void;
+  onReturnHome?: () => void;
 }
 
 /* Placeholder QR: deterministic 21x21 pattern. Replace with react-native-qrcode-svg later. */
@@ -97,7 +98,8 @@ export default function BookingConfirmedScreen({
   booking,
   reservation,
   onGetDirections,
-  onCancel,
+  onViewBookingDetails,
+  onReturnHome,
 }: BookingConfirmedScreenProps) {
   const insets = useSafeAreaInsets();
   const topPadding = Math.max(
@@ -202,13 +204,37 @@ export default function BookingConfirmedScreen({
         </View>
 
         {/* Actions */}
-        <TouchableOpacity style={styles.primaryBtn} activeOpacity={0.88} onPress={onGetDirections}>
+        <TouchableOpacity
+          style={styles.primaryBtn}
+          activeOpacity={0.88}
+          onPress={onGetDirections}
+          accessibilityRole="button"
+          accessibilityLabel="Get driving directions"
+        >
           <Text style={styles.primaryText}>➤  Get Directions</Text>
         </TouchableOpacity>
 
-        <TouchableOpacity style={styles.dangerBtn} activeOpacity={0.88} onPress={onCancel}>
-          <Text style={styles.primaryText}>✕  Cancel</Text>
+        <TouchableOpacity
+          style={styles.secondaryBtn}
+          activeOpacity={0.88}
+          onPress={onViewBookingDetails}
+          accessibilityRole="button"
+          accessibilityLabel="View booking details in bookings list"
+        >
+          <Text style={styles.secondaryText}>📋  View Booking Details</Text>
         </TouchableOpacity>
+
+        {!!onReturnHome && (
+          <TouchableOpacity
+            style={styles.outlineBtn}
+            activeOpacity={0.88}
+            onPress={onReturnHome}
+            accessibilityRole="button"
+            accessibilityLabel="Return to home screen"
+          >
+            <Text style={styles.outlineText}>🏠  Return Home</Text>
+          </TouchableOpacity>
+        )}
       </ScrollView>
     </View>
   );
@@ -301,10 +327,20 @@ const styles = StyleSheet.create({
     alignItems: 'center',
   },
   primaryText: { color: '#FFFFFF', fontSize: 15, fontWeight: '800' },
-  dangerBtn: {
-    backgroundColor: '#E5383B',
+  secondaryBtn: {
+    backgroundColor: DriverColors.navyDark,
     borderRadius: 28,
     paddingVertical: 15,
     alignItems: 'center',
   },
+  secondaryText: { color: '#FFFFFF', fontSize: 15, fontWeight: '800' },
+  outlineBtn: {
+    backgroundColor: '#FFFFFF',
+    borderRadius: 28,
+    paddingVertical: 14,
+    borderWidth: 1.5,
+    borderColor: '#CBD5E1',
+    alignItems: 'center',
+  },
+  outlineText: { color: DriverColors.navyHeading, fontSize: 14, fontWeight: '700' },
 });

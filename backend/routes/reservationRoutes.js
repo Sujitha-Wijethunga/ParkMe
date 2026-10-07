@@ -8,6 +8,7 @@ const {
   completeReservation,
   releaseReservation,
   verifyReservation,
+  activateReservation,
   getAllReservations,
 } = require('../controllers/reservationController');
 const { protect } = require('../middleware/auth');
@@ -17,6 +18,7 @@ router.post('/', protect, authorize('driver'), createReservation);
 router.get('/my', protect, authorize('driver'), getMyReservations);
 router.get('/', protect, authorize('admin', 'staff'), getAllReservations);
 router.get('/:id', protect, getReservationById);
+router.put('/:id/activate', protect, authorize('driver'), activateReservation);
 router.put('/:id/cancel', protect, authorize('driver'), cancelReservation);
 router.put('/:id/verify', protect, authorize('admin', 'staff'), verifyReservation);
 router.put('/:id/complete', protect, authorize('admin', 'staff'), completeReservation);

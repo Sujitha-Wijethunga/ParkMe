@@ -38,6 +38,14 @@ import {
 } from '../../services/parkingService';
 import { launchDrivingNavigation, isValidCoordinate } from '../../services/navigationLauncher';
 import { VERIFIED_LOT_ENTRANCES } from '../../services/parkingEntranceService';
+import { VehicleType } from '../../constants/parkingSpaceData';
+
+export const VEHICLE_OPTIONS: { type: VehicleType; icon: string; label: string }[] = [
+  { type: 'Car', icon: '🚗', label: 'Car' },
+  { type: 'Bike', icon: '🏍️', label: 'Bike' },
+  { type: 'SUV', icon: '🚙', label: 'SUV' },
+  { type: 'EV', icon: '⚡', label: 'EV' },
+];
 
 export type SearchResultsViewMode = 'map' | 'list';
 
@@ -49,6 +57,8 @@ interface SearchResultsScreenProps {
   initialSelectedLotId?: string | null;
   /** Start directly in 5-minute nearby driving reach mode. */
   initialNearbyFiveMinMode?: boolean;
+  selectedVehicleType?: VehicleType;
+  onVehicleTypeChange?: (vehicleType: VehicleType) => void;
   onBack?: () => void;
   /**
    * Called when the user taps a parking card or map marker to view full details.
@@ -88,6 +98,8 @@ export default function SearchResultsScreen({
   initialFilter = 'Nearest',
   initialSelectedLotId = null,
   initialNearbyFiveMinMode = false,
+  selectedVehicleType = 'Car',
+  onVehicleTypeChange,
   onBack,
   onSelectLot,
   onNavigateHome,
@@ -134,6 +146,7 @@ export default function SearchResultsScreen({
             id: l._id || l.id || `lot-${idx}`,
             name: l.name || 'Parking Facility',
             address: l.address || 'Sri Lanka',
+            city: l.city,
             distance: l.distance || '0.8 km',
             status: (l.capacity?.availableSpots ?? 1) > 0 ? 'Available' : 'Full',
             availableSpaces: l.capacity?.availableSpots ?? 0,
@@ -150,6 +163,9 @@ export default function SearchResultsScreen({
               lng: l.location.coordinates[0],
             } : undefined),
             entranceName: l.entranceName,
+            sourceCitation: l.sourceCitation,
+            supportedVehicles: l.supportedVehicles,
+            vehicleTariffs: l.vehicleTariffs,
           }));
           setDbLots(mapped);
         } else if (!isCancelled && Array.isArray(raw) && raw.length === 0) {
@@ -179,24 +195,64 @@ export default function SearchResultsScreen({
     return SAMPLE_NEARBY_PARKING_LOTS;
   }, [dbLots, searchQuery]);
 
+  // Adapt lots and tariffs according to selected vehicle type
+  const vehicleAdaptedPool = useMemo(() => {
+    return activeLotPool
+      .filter((lot) => !lot.supportedVehicles || lot.supportedVehicles.includes(selectedVehicleType))
+      .map((lot) => {
+        const vehiclePrice =
+          lot.vehicleTariffs?.[selectedVehicleType] ??
+          (selectedVehicleType === 'Bike'
+            ? Math.round(lot.pricePerHour * 0.45)
+            : selectedVehicleType === 'SUV'
+            ? Math.round(lot.pricePerHour * 1.4)
+            : selectedVehicleType === 'EV'
+            ? Math.round(lot.pricePerHour * 1.2)
+            : lot.pricePerHour);
+
+        let availableSpaces = lot.availableSpaces;
+        if (selectedVehicleType === 'Bike') {
+          availableSpaces = Math.max(0, Math.floor(lot.availableSpaces * 0.4));
+        } else if (selectedVehicleType === 'EV') {
+          availableSpaces = lot.hasEVCharging ? Math.max(0, Math.min(lot.availableSpaces, 4)) : 0;
+        } else if (selectedVehicleType === 'SUV') {
+          availableSpaces = Math.max(0, Math.floor(lot.availableSpaces * 0.8));
+        }
+
+        return {
+          ...lot,
+          pricePerHour: vehiclePrice,
+          availableSpaces,
+          status: (availableSpaces > 0 ? 'Available' : 'Full') as 'Available' | 'Full',
+        };
+      });
+  }, [activeLotPool, selectedVehicleType]);
+
   // Filter and sort lots for normal mode based on Sri Lanka database/sample data
   const filteredSampleLots = useMemo(() => {
-    return filterAndSortParkingLots(activeLotPool, searchQuery, selectedFilter);
-  }, [activeLotPool, searchQuery, selectedFilter]);
+    return filterAndSortParkingLots(vehicleAdaptedPool, searchQuery, selectedFilter);
+  }, [vehicleAdaptedPool, searchQuery, selectedFilter]);
 
   // Project lots as NearbyDrivingLot with real coordinates for honest coordinate map view
+  // Strictly filter out any lots without valid coordinates (do not invent fake offsets)
   const sampleLotsAsNearby: NearbyDrivingLot[] = useMemo(() => {
-    return filteredSampleLots.map((lot, idx) => {
-      const isEntranceVerified = Boolean(
-        (lot.id && VERIFIED_LOT_ENTRANCES[lot.id]) ||
-        (lot.entranceCoordinates && isValidCoordinate(lot.entranceCoordinates.lat, lot.entranceCoordinates.lng))
-      );
+    const validLots: NearbyDrivingLot[] = [];
+    filteredSampleLots.forEach((lot, idx) => {
       const verifiedEntry = lot.id ? VERIFIED_LOT_ENTRANCES[lot.id] : undefined;
       const resolvedEntranceCoords =
         lot.entranceCoordinates ||
         (verifiedEntry ? { lat: verifiedEntry.latitude, lng: verifiedEntry.longitude } : null);
 
-      return {
+      if (!resolvedEntranceCoords || !isValidCoordinate(resolvedEntranceCoords.lat, resolvedEntranceCoords.lng)) {
+        return;
+      }
+
+      const isEntranceVerified = Boolean(
+        (lot.id && VERIFIED_LOT_ENTRANCES[lot.id]) ||
+        (lot.entranceCoordinates && isValidCoordinate(lot.entranceCoordinates.lat, lot.entranceCoordinates.lng))
+      );
+
+      validLots.push({
         id: lot.id,
         name: lot.name,
         address: lot.address,
@@ -207,12 +263,11 @@ export default function SearchResultsScreen({
         durationSeconds: (idx + 1) * 240,
         durationFormatted: `${(idx + 1) * 4} min`,
         distanceMeters: (idx + 1) * 1200,
-        distanceKm: (idx + 1) * 1.2,
         distanceFormatted: `${((idx + 1) * 1.2).toFixed(1)} km`,
-        coordinates: resolvedEntranceCoords || { lat: 6.9272 + idx * 0.005, lng: 79.8462 + idx * 0.005 },
+        coordinates: resolvedEntranceCoords,
         entranceCoordinates: resolvedEntranceCoords,
         hasEntranceCoordinates: isEntranceVerified,
-        navigationCoordinates: resolvedEntranceCoords || { lat: 6.9272 + idx * 0.005, lng: 79.8462 + idx * 0.005 },
+        navigationCoordinates: resolvedEntranceCoords,
         navigationCoordinatesNote: lot.entranceName
           ? (isEntranceVerified ? `Verified Entrance: ${lot.entranceName}` : `Vehicle Entrance: ${lot.entranceName}`)
           : (isEntranceVerified ? 'Verified vehicle entrance' : 'General lot coordinates'),
@@ -220,9 +275,27 @@ export default function SearchResultsScreen({
         imageUrl: lot.imageUrl,
         isWithinFiveMinutes: idx === 0,
         freshness: isEntranceVerified ? 'Database verified' : 'Estimated',
-      };
+      });
     });
+    return validLots;
   }, [filteredSampleLots]);
+
+  // Centering on driver GPS in map view when permitted
+  useEffect(() => {
+    if (viewMode === 'map' && !driverLocation && !isLocating) {
+      let isCancelled = false;
+      getCurrentDriverLocation(5000)
+        .then((coords) => {
+          if (!isCancelled) setDriverLocation(coords);
+        })
+        .catch(() => {
+          // Handled smoothly; Mercator coordinate view falls back cleanly
+        });
+      return () => {
+        isCancelled = true;
+      };
+    }
+  }, [viewMode, driverLocation, isLocating]);
 
   // Selected sample lot reference for normal map mode
   const activeSelectedSampleLot = useMemo(() => {
@@ -467,7 +540,7 @@ export default function SearchResultsScreen({
             accessibilityLabel="Go back"
             accessibilityRole="button"
           >
-            <Text style={styles.backArrowText}>‹</Text>
+            <Text style={styles.backArrowText}>←</Text>
           </TouchableOpacity>
 
           {/* Search Input Box */}
@@ -525,6 +598,29 @@ export default function SearchResultsScreen({
             showsHorizontalScrollIndicator={false}
             contentContainerStyle={styles.chipsScrollContainer}
           >
+            {/* Vehicle Type Switcher Pills */}
+            {VEHICLE_OPTIONS.map((v) => {
+              const isSelected = selectedVehicleType === v.type;
+              return (
+                <TouchableOpacity
+                  key={v.type}
+                  style={[
+                    styles.vehiclePill,
+                    isSelected && styles.vehiclePillSelected,
+                  ]}
+                  activeOpacity={0.75}
+                  onPress={() => onVehicleTypeChange && onVehicleTypeChange(v.type)}
+                  accessibilityRole="button"
+                  accessibilityLabel={`${v.label}${isSelected ? ', selected' : ''}`}
+                >
+                  <Text style={styles.vehiclePillIcon}>{v.icon}</Text>
+                  <Text style={[styles.vehiclePillText, isSelected && styles.vehiclePillTextSelected]}>
+                    {v.label}
+                  </Text>
+                </TouchableOpacity>
+              );
+            })}
+
             {/* Matching "Fastest Available" Shortcut Button on Map screen */}
             <TouchableOpacity
               style={[
@@ -1043,11 +1139,10 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
   },
   backArrowText: {
-    fontSize: 26,
-    fontWeight: '300',
+    fontSize: 22,
+    fontWeight: '700',
     color: DriverColors.navyHeading,
-    lineHeight: 30,
-    marginTop: -2,
+    lineHeight: 24,
   },
   searchBar: {
     flex: 1,
@@ -1108,6 +1203,33 @@ const styles = StyleSheet.create({
     paddingHorizontal: 16,
     gap: 8,
     alignItems: 'center',
+  },
+  vehiclePill: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingHorizontal: 12,
+    paddingVertical: 6,
+    borderRadius: 18,
+    backgroundColor: DriverColors.surfaceLight,
+    borderWidth: 1.5,
+    borderColor: DriverColors.border,
+    gap: 5,
+  },
+  vehiclePillSelected: {
+    backgroundColor: DriverColors.navyDark,
+    borderColor: DriverColors.navyDark,
+  },
+  vehiclePillIcon: {
+    fontSize: 13,
+  },
+  vehiclePillText: {
+    fontSize: 12.5,
+    fontWeight: '600',
+    color: DriverColors.navyHeading,
+  },
+  vehiclePillTextSelected: {
+    color: '#FFFFFF',
+    fontWeight: '700',
   },
   nearbyShortcutChip: {
     flexDirection: 'row',

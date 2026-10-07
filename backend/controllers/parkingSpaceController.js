@@ -8,9 +8,16 @@ const path = require('path');
 // @access  Public
 const getSpaces = async (req, res, next) => {
   try {
-    const { status } = req.query;
+    const { status, vehicleType } = req.query;
     const query = { parkingLot: req.params.lotId };
     if (status) query.status = status;
+    if (vehicleType && typeof vehicleType === 'string' && vehicleType.trim()) {
+      query.$or = [
+        { vehicleType: vehicleType.trim() },
+        { vehicleType: 'any' },
+        { vehicleType: { $exists: false } },
+      ];
+    }
 
     const spaces = await ParkingSpace.find(query);
     res.json(spaces);
