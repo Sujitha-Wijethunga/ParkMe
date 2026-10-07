@@ -35,6 +35,10 @@ interface SelectSpaceScreenProps {
   lotId: string;
   /** Previously selected space result to preserve when returning from Booking Summary. */
   initialSelection?: SpaceSelectionResult | null;
+  /** Selected vehicle type carried from flow. */
+  selectedVehicleType?: VehicleType;
+  /** Called when driver changes vehicle type. */
+  onVehicleTypeChange?: (vehicleType: VehicleType) => void;
   /** Returns to LotDetailsScreen for this lot. */
   onBack: () => void;
   /**
@@ -54,6 +58,19 @@ const VEHICLE_ICONS: Record<VehicleType, string> = {
   EV: '⚡',
 };
 
+export function isCompatibleWithVehicle(space: SampleParkingSpace, vt: VehicleType): boolean {
+  if (vt === 'EV') {
+    return space.isEV === true || space.vehicleType === 'EV';
+  }
+  if (space.isEV) {
+    return false;
+  }
+  if (!space.vehicleType || space.vehicleType === 'any') {
+    return true;
+  }
+  return space.vehicleType === vt;
+}
+
 /* ── Status colours (matches design legend) ─────────────────────────────── */
 
 type SpaceCellTheme = {
@@ -63,9 +80,17 @@ type SpaceCellTheme = {
   labelColor: string;
 };
 
-function getTheme(status: SpaceUIStatus, isSelected: boolean, isEV: boolean): SpaceCellTheme {
+function getTheme(
+  status: SpaceUIStatus,
+  isSelected: boolean,
+  isEV: boolean,
+  isCompatible: boolean
+): SpaceCellTheme {
   if (isSelected) {
     return { border: DriverColors.navyDark, bg: DriverColors.navyDark, iconOrLabel: '✓', labelColor: '#FFFFFF' };
+  }
+  if (!isCompatible && status === 'available') {
+    return { border: '#E2E8F0', bg: '#F8FAFC', iconOrLabel: '⛔', labelColor: '#94A3B8' };
   }
   switch (status) {
     case 'available':
@@ -91,17 +116,12 @@ function isSelectable(status: SpaceUIStatus): boolean {
  * SelectSpaceScreen
  *
  * Implements ParkMe-07-SelectSpace design milestone.
- *
- * Selection behaviour:
- *   - Only 'available' spaces are tappable.
- *   - One space selected at a time; tapping another updates selection.
- *   - Switching floors clears selection (floor's spaces are independent).
- *   - Continue is disabled until a valid space is selected.
- *   - No state is written to the backend; selection is local to this screen.
  * ────────────────────────────────────────────────────────────────────────── */
 export default function SelectSpaceScreen({
   lotId,
   initialSelection,
+  selectedVehicleType,
+  onVehicleTypeChange,
   onBack,
   onContinue,
 }: SelectSpaceScreenProps) {
@@ -130,7 +150,9 @@ export default function SelectSpaceScreen({
     initialSelection && initialSelection.lotId === lotId ? initialSelection.spaceId : null
   );
   const [vehicleType, setVehicleType] = useState<VehicleType>(
-    initialSelection && initialSelection.lotId === lotId ? initialSelection.vehicleType : 'Car'
+    initialSelection && initialSelection.lotId === lotId
+      ? initialSelection.vehicleType
+      : selectedVehicleType ?? 'Car'
   );
 
   // Android hardware back handler
@@ -147,9 +169,12 @@ export default function SelectSpaceScreen({
   const currentTariff = tariffs[vehicleType];
   const selectedSpace = activeFloor?.spaces.find((s) => s.id === selectedSpaceId) ?? null;
 
-  const availableOnFloor = useMemo(
-    () => activeFloor?.spaces.filter((s) => s.uiStatus === 'available').length ?? 0,
-    [activeFloor]
+  const compatibleOnFloor = useMemo(
+    () =>
+      activeFloor?.spaces.filter(
+        (s) => s.uiStatus === 'available' && isCompatibleWithVehicle(s, vehicleType)
+      ).length ?? 0,
+    [activeFloor, vehicleType]
   );
 
   const handleFloorChange = useCallback(
@@ -160,15 +185,26 @@ export default function SelectSpaceScreen({
     []
   );
 
+  const handleVehicleTypeChange = (vt: VehicleType) => {
+    setVehicleType(vt);
+    if (onVehicleTypeChange) {
+      onVehicleTypeChange(vt);
+    }
+    // Deselect space if incompatible with the new vehicle type
+    if (selectedSpace && !isCompatibleWithVehicle(selectedSpace, vt)) {
+      setSelectedSpaceId(null);
+    }
+  };
+
   const handleSpaceTap = useCallback(
     (space: SampleParkingSpace) => {
-      if (!isSelectable(space.uiStatus)) return;
+      if (!isSelectable(space.uiStatus) || !isCompatibleWithVehicle(space, vehicleType)) return;
       setSelectedSpaceId((prev) => (prev === space.id ? null : space.id));
     },
-    []
+    [vehicleType]
   );
 
-  const handleContinue = useCallback(() => {
+  const handleContinue = () => {
     if (!selectedSpace || !activeFloor || !lot) return;
     onContinue({
       lotId,
@@ -177,7 +213,7 @@ export default function SelectSpaceScreen({
       vehicleType,
       tariffPerHour: currentTariff,
     });
-  }, [selectedSpace, activeFloor, lot, lotId, vehicleType, currentTariff, onContinue]);
+  };
 
   const topPadding = Math.max(
     insets.top,
@@ -254,7 +290,7 @@ export default function SelectSpaceScreen({
           accessibilityLabel="Go back to lot details"
           accessibilityRole="button"
         >
-          <Text style={styles.backArrow}>‹</Text>
+          <Text style={styles.backArrow}>←</Text>
         </TouchableOpacity>
         <View style={styles.headerTitles}>
           <Text style={styles.headerTitle}>Select a Space</Text>
@@ -285,8 +321,8 @@ export default function SelectSpaceScreen({
           })}
         </View>
         <Text style={styles.floorAvailCount}>
-          <Text style={styles.floorAvailBold}>{availableOnFloor}</Text>
-          /{activeFloor.spaces.length} free
+          <Text style={styles.floorAvailBold}>{compatibleOnFloor}</Text>
+          /{activeFloor.spaces.length} {vehicleType} spots
         </Text>
       </View>
 
@@ -334,7 +370,7 @@ export default function SelectSpaceScreen({
                   key={vt}
                   style={[styles.vehicleBtn, isActive && styles.vehicleBtnActive]}
                   activeOpacity={0.8}
-                  onPress={() => setVehicleType(vt)}
+                  onPress={() => handleVehicleTypeChange(vt)}
                   accessibilityRole="button"
                   accessibilityLabel={`${vt}, Rs. ${tariffs[vt]}/hr${isActive ? ', selected' : ''}`}
                 >
@@ -351,6 +387,16 @@ export default function SelectSpaceScreen({
           </View>
         </View>
 
+        {/* Incompatible Floor Warning Banner */}
+        {compatibleOnFloor === 0 && (
+          <View style={styles.incompatibleFloorBanner}>
+            <Text style={styles.incompatibleFloorEmoji}>⚠️</Text>
+            <Text style={styles.incompatibleFloorText}>
+              No available spaces for {vehicleType}s on Floor {activeFloor.label}. Please switch floors or change vehicle type.
+            </Text>
+          </View>
+        )}
+
         {/* Space Grid */}
         <View style={styles.gridSection}>
           {activeFloor.rows.map((rowLabel, rowIndex) => {
@@ -363,8 +409,9 @@ export default function SelectSpaceScreen({
                   <View style={styles.spacesRow}>
                     {rowSpaces.map((space) => {
                       const isSelected = selectedSpaceId === space.id;
-                      const theme = getTheme(space.uiStatus, isSelected, space.isEV);
-                      const canTap = isSelectable(space.uiStatus);
+                      const isCompatible = isCompatibleWithVehicle(space, vehicleType);
+                      const theme = getTheme(space.uiStatus, isSelected, space.isEV, isCompatible);
+                      const canTap = isSelectable(space.uiStatus) && isCompatible;
                       return (
                         <TouchableOpacity
                           key={space.id}
@@ -376,6 +423,7 @@ export default function SelectSpaceScreen({
                             },
                             isSelected && styles.spaceCellSelected,
                             !canTap && styles.spaceCellDisabled,
+                            !isCompatible && space.uiStatus === 'available' && { opacity: 0.5 },
                           ]}
                           activeOpacity={canTap ? 0.75 : 1}
                           onPress={() => handleSpaceTap(space)}
@@ -383,6 +431,7 @@ export default function SelectSpaceScreen({
                           accessibilityRole="button"
                           accessibilityLabel={
                             `Space ${space.id}, ${space.uiStatus}${space.isEV ? ', EV charging' : ''}` +
+                            (!isCompatible ? `, not designated for ${vehicleType}` : '') +
                             (isSelected ? ', selected' : '')
                           }
                           accessibilityState={{ disabled: !canTap, selected: isSelected }}
@@ -566,10 +615,32 @@ const styles = StyleSheet.create({
     marginRight: 12,
   },
   backArrow: {
-    fontSize: 26,
-    lineHeight: 28,
+    fontSize: 22,
+    lineHeight: 24,
     color: DriverColors.navyHeading,
+    fontWeight: '700',
+  },
+  incompatibleFloorBanner: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: '#FFFBEB',
+    borderColor: '#FCD34D',
+    borderWidth: 1,
+    borderRadius: 12,
+    paddingHorizontal: 14,
+    paddingVertical: 10,
+    marginBottom: 16,
+    gap: 10,
+  },
+  incompatibleFloorEmoji: {
+    fontSize: 18,
+  },
+  incompatibleFloorText: {
+    flex: 1,
+    fontSize: 13,
+    color: '#92400E',
     fontWeight: '600',
+    lineHeight: 18,
   },
   headerTitles: { flex: 1 },
   headerTitle: {

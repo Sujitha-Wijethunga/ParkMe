@@ -17,6 +17,11 @@ const parkingSpaceSchema = new mongoose.Schema(
       enum: ['standard', 'disabled', 'EV'],
       default: 'standard',
     },
+    vehicleType: {
+      type: String,
+      enum: ['Car', 'Bike', 'SUV', 'EV', 'any'],
+      default: 'Car',
+    },
     status: {
       type: String,
       enum: ['available', 'occupied', 'maintenance'],
@@ -36,5 +41,6 @@ const parkingSpaceSchema = new mongoose.Schema(
 
 // Each space number must be unique within a parking lot
 parkingSpaceSchema.index({ parkingLot: 1, spaceNumber: 1 }, { unique: true });
+parkingSpaceSchema.index({ parkingLot: 1, status: 1, vehicleType: 1 });
 
 module.exports = mongoose.model('ParkingSpace', parkingSpaceSchema);

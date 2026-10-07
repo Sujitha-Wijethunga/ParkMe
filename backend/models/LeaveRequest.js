@@ -37,4 +37,7 @@ const leaveRequestSchema = new mongoose.Schema(
   { timestamps: true }
 );
 
+// Query index for user leave history
+leaveRequestSchema.index({ user: 1, status: 1, startDate: -1 });
+
 module.exports = mongoose.model('LeaveRequest', leaveRequestSchema);

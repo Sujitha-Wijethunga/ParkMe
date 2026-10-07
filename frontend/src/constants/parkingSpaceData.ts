@@ -36,6 +36,8 @@
  * This data will be replaced by /api/parking-lots/:id/spaces responses.
  */
 
+import { SAMPLE_NEARBY_PARKING_LOTS } from './driverSampleData';
+
 /** Persisted space statuses matching backend enum. */
 export type SpacePersistedStatus = 'available' | 'occupied' | 'maintenance';
 
@@ -72,6 +74,8 @@ export interface SampleParkingSpace {
   uiStatus: SpaceUIStatus;
   /** Whether the space is EV-charging capable (drives EV icon display). */
   isEV: boolean;
+  /** Vehicle type compatibility ('Car' | 'Bike' | 'SUV' | 'EV' | 'any') */
+  vehicleType?: VehicleType | 'any';
 }
 
 /** A floor layout within a lot — groups spaces by floor label. */
@@ -102,9 +106,11 @@ function sp(
   row: string,
   col: number,
   uiStatus: SpaceUIStatus,
-  type: SpaceType = 'standard'
+  type: SpaceType = 'standard',
+  vehicleType: VehicleType | 'any' = 'any'
 ): SampleParkingSpace {
-  return { id, row, col, type, uiStatus, isEV: type === 'EV' };
+  const isEV = type === 'EV' || vehicleType === 'EV';
+  return { id, row, col, type, uiStatus, isEV, vehicleType };
 }
 
 /* ────────────────────────────────────────────────────────────────────────────
@@ -308,8 +314,70 @@ export const SAMPLE_LOT_SPACE_LAYOUTS: LotSpaceLayout[] = [
 
 /**
  * Look up the space layout for a given lot ID.
- * Returns undefined if the lot has no sample layout defined.
+ * Returns a static layout or dynamically creates a vehicle-designated layout based on lot metadata.
  */
 export function getSpaceLayoutForLot(lotId: string): LotSpaceLayout | undefined {
-  return SAMPLE_LOT_SPACE_LAYOUTS.find((l) => l.lotId === lotId);
+  const existing = SAMPLE_LOT_SPACE_LAYOUTS.find((l) => l.lotId === lotId);
+  if (existing) return existing;
+
+  const lot = SAMPLE_NEARBY_PARKING_LOTS.find((l) => l.id === lotId);
+  if (!lot) return undefined;
+
+  const tariffs: Record<VehicleType, number> = {
+    Car: lot.vehicleTariffs?.Car ?? lot.pricePerHour,
+    Bike: lot.vehicleTariffs?.Bike ?? Math.round(lot.pricePerHour * 0.45),
+    SUV: lot.vehicleTariffs?.SUV ?? Math.round(lot.pricePerHour * 1.4),
+    EV: lot.vehicleTariffs?.EV ?? Math.round(lot.pricePerHour * 1.2),
+  };
+
+  const rows = ['A', 'B', 'C', 'D'];
+  const cols = 6;
+  const spaces: SampleParkingSpace[] = [];
+
+  // Row A: Bikes & EVs
+  for (let c = 1; c <= cols; c++) {
+    const isEvSpace = c >= 4;
+    spaces.push(
+      sp(
+        `A${c}`,
+        'A',
+        c,
+        c % 5 === 0 ? 'occupied' : 'available',
+        isEvSpace ? 'EV' : 'standard',
+        isEvSpace ? 'EV' : 'Bike'
+      )
+    );
+  }
+  // Row B: Standard Cars
+  for (let c = 1; c <= cols; c++) {
+    spaces.push(
+      sp(`B${c}`, 'B', c, c === 2 ? 'occupied' : 'available', 'standard', 'Car')
+    );
+  }
+  // Row C: Standard Cars
+  for (let c = 1; c <= cols; c++) {
+    spaces.push(
+      sp(`C${c}`, 'C', c, c === 3 ? 'occupied' : 'available', 'standard', 'Car')
+    );
+  }
+  // Row D: SUVs
+  for (let c = 1; c <= cols; c++) {
+    spaces.push(
+      sp(`D${c}`, 'D', c, c === 4 ? 'occupied' : 'available', 'standard', 'SUV')
+    );
+  }
+
+  const generatedFloor: LotFloor = {
+    label: 'G',
+    name: 'Ground Floor',
+    rows,
+    cols,
+    spaces,
+  };
+
+  return {
+    lotId,
+    tariffs,
+    floors: [generatedFloor],
+  };
 }

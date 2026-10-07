@@ -9,6 +9,7 @@ import {
   BackHandler,
   ScrollView,
   ActivityIndicator,
+  Alert,
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { DriverColors } from '../../constants/colors';
@@ -20,22 +21,30 @@ import {
   shareDirectionsUrl,
   buildGoogleMapsUniversalUrl,
 } from '../../services/parkingEntranceService';
+import { activateReservation, DriverReservation } from '../../services/reservationApi';
 
 interface NavigationScreenProps {
   booking: BookingDetails;
+  reservation?: DriverReservation | null;
+  token?: string | null;
+  userId?: string;
   /** Go back to Booking Confirmed or previous screen. */
   onCancel: () => void;
-  /** User arrived at the lot. */
+  /** User arrived at the lot and confirmed parking. */
   onArrived: () => void;
 }
 
 export default function NavigationScreen({
   booking,
+  reservation,
+  token,
+  userId,
   onCancel,
   onArrived,
 }: NavigationScreenProps) {
   const insets = useSafeAreaInsets();
   const [isLaunchingNav, setIsLaunchingNav] = useState(false);
+  const [isActivating, setIsActivating] = useState(false);
 
   // Look up lot details and verified vehicle entrance coordinates
   const lot = SAMPLE_NEARBY_PARKING_LOTS.find((l) => l.id === booking.lotId);
@@ -309,12 +318,35 @@ export default function NavigationScreen({
 
         <TouchableOpacity
           accessibilityRole="button"
-          accessibilityLabel="Confirm arrival at parking lot"
+          accessibilityLabel="I've Parked - start parking session"
           style={[styles.footerBtn, styles.btnArrival]}
           activeOpacity={0.88}
-          onPress={onArrived}
+          disabled={isActivating}
+          onPress={async () => {
+            const resId = reservation?._id;
+            if (resId && token && userId) {
+              setIsActivating(true);
+              try {
+                await activateReservation(token, userId, resId);
+                onArrived();
+              } catch (err: any) {
+                Alert.alert(
+                  'Activation Failed',
+                  err?.message || 'Could not activate your parking session. Please try again.'
+                );
+              } finally {
+                setIsActivating(false);
+              }
+            } else {
+              onArrived();
+            }
+          }}
         >
-          <Text style={styles.btnArrivalText}>{"📍 I've Arrived"}</Text>
+          {isActivating ? (
+            <ActivityIndicator size="small" color="#FFFFFF" />
+          ) : (
+            <Text style={styles.btnArrivalText}>{"🚗 I've Parked"}</Text>
+          )}
         </TouchableOpacity>
       </View>
     </View>

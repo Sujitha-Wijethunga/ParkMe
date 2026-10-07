@@ -1,4 +1,5 @@
 import React, { useCallback, useEffect, useState } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import {
   View,
   TouchableOpacity,
@@ -21,13 +22,16 @@ import WelcomeScreen from './src/screens/driver/WelcomeScreen';
 import DriverLoginScreen from './src/screens/driver/DriverLoginScreen';
 import DriverSignUpScreen from './src/screens/driver/DriverSignUpScreen';
 import HomeScreen from './src/screens/driver/HomeScreen';
+import DriverProfileScreen from './src/screens/driver/DriverProfileScreen';
 import SearchResultsScreen, { SearchResultsViewMode } from './src/screens/driver/SearchResultsScreen';
 import LotDetailsScreen from './src/screens/driver/LotDetailsScreen';
 import SelectSpaceScreen, { SpaceSelectionResult } from './src/screens/driver/SelectSpaceScreen';
+import { VehicleType } from './src/constants/parkingSpaceData';
 import BookingSummaryScreen from './src/screens/driver/BookingSummaryScreen';
 import PaymentScreen from './src/screens/driver/PaymentScreen';
 import BookingConfirmedScreen from './src/screens/driver/BookingConfirmedScreen';
 import MyBookingsScreen, { BookingDetailsScreen } from './src/screens/driver/MyBookingsScreen';
+import CancelBookingScreen from './src/screens/driver/CancelBookingScreen';
 import ActiveParkingScreen, {
   ExitConfirmationScreen,
   ReleaseParkingScreen,
@@ -74,6 +78,7 @@ type ScreenType =
   | 'driver-login'
   | 'driver-signup'
   | 'driver-home'
+  | 'driver-profile'
   | 'driver-search'
   | 'driver-lot-details'
   | 'driver-space-selection'
@@ -83,6 +88,7 @@ type ScreenType =
   | 'driver-navigation'
   | 'driver-bookings'
   | 'driver-booking-details'
+  | 'driver-cancel-booking'
   | 'driver-active-parking'
   | 'driver-release-parking'
   | 'driver-exit-confirmation'
@@ -150,6 +156,11 @@ const mapLotToDriverCard = (lot: any): ParkingLotCardItem => ({
 export default function App() {
   const [appIsReady, setAppIsReady] = useState(false);
   const [currentScreen, setCurrentScreen] = useState<ScreenType>('driver-welcome');
+  const [profileReturnScreen, setProfileReturnScreen] = useState<ScreenType>('driver-home');
+  const [bookingDetailsReturnScreen, setBookingDetailsReturnScreen] =
+    useState<ScreenType>('driver-bookings');
+  const [cancellationReturnScreen, setCancellationReturnScreen] =
+    useState<ScreenType>('driver-bookings');
   const [driverUser, setDriverUser] = useState<DriverUser | null>(null);
   const [driverToken, setDriverToken] = useState<string | null>(null);
 
@@ -196,6 +207,13 @@ export default function App() {
     }
   }, [appIsReady]);
 
+  // Fallback safety: ensure splash screen hides as soon as readiness completes
+  useEffect(() => {
+    if (appIsReady) {
+      SplashScreen.hideAsync().catch(() => {});
+    }
+  }, [appIsReady]);
+
   const [searchParams, setSearchParams] = useState<{
     query: string;
     viewMode: SearchResultsViewMode;
@@ -231,9 +249,13 @@ export default function App() {
   const [bookingDraft, setBookingDraft] = useState<BookingDraft | null>(null);
   /** NEW: booking used by Payment, Booking Confirmed and Navigation screens. */
   const [confirmedBooking, setConfirmedBooking] = useState<BookingDetails | null>(null);
+  const [confirmedReservation, setConfirmedReservation] = useState<DriverReservation | null>(null);
   const [selectedReservationId, setSelectedReservationId] = useState<string | null>(null);
+  const [reservationToCancel, setReservationToCancel] = useState<DriverReservation | null>(null);
   const [reservationToRelease, setReservationToRelease] = useState<DriverReservation | null>(null);
   const [releaseReceipt, setReleaseReceipt] = useState<ReleasedReservationReceipt | null>(null);
+  const [selectedVehicleType, setSelectedVehicleType] = useState<VehicleType>('Car');
+  const [highlightedBookingId, setHighlightedBookingId] = useState<string | null>(null);
 
   useEffect(() => {
     const fetchDriverLots = async () => {
@@ -375,14 +397,16 @@ export default function App() {
     setCurrentScreen(lotDetailsOrigin);
   };
 
-  const handleOpenBookings = () => {
+  const handleOpenBookings = (highlightId?: string | null) => {
+    setHighlightedBookingId(highlightId ?? null);
     setCurrentScreen('driver-bookings');
   };
 
   const handleSelectReservation = (reservation: DriverReservation) => {
     setSelectedReservationId(reservation._id);
+    setBookingDetailsReturnScreen(currentScreen);
     setCurrentScreen(
-      reservation.status === 'active' || isWithinScheduledWindow(reservation)
+      reservation.status === 'active'
         ? 'driver-active-parking'
         : 'driver-booking-details'
     );
@@ -449,11 +473,12 @@ export default function App() {
       throw new Error('Your booking details are incomplete. Please go back and try again.');
     }
 
-    await saveConfirmedBooking({
+    const savedReservation = await saveConfirmedBooking({
       userId: driverUser?._id || 'guest',
       booking: paid,
       startTime: bookingDraft.arrivalTime,
     });
+    setConfirmedReservation(savedReservation);
     setConfirmedBooking(paid);
     setCurrentScreen('driver-booking-confirmed');
   };
@@ -461,6 +486,7 @@ export default function App() {
   /** NEW: Cancel / finish: clear the booking and go Home */
   const resetBookingFlow = () => {
     setConfirmedBooking(null);
+    setConfirmedReservation(null);
     setBookingSelection(null);
     setBookingDraft(null);
     setCurrentScreen('driver-home');
@@ -505,16 +531,8 @@ export default function App() {
   };
 
   const handleDriverProfilePress = () => {
-    const displayName = driverUser?.name || 'Driver';
-    const displayEmail = driverUser?.email || '';
-    Alert.alert(
-      displayName,
-      `Email: ${displayEmail}\nRole: Driver`,
-      [
-        { text: 'Cancel', style: 'cancel' },
-        { text: 'Log Out', style: 'destructive', onPress: handleDriverLogout },
-      ]
-    );
+    setProfileReturnScreen(currentScreen);
+    setCurrentScreen('driver-profile');
   };
 
   const handleLoginSuccess = (user: any, token: string) => {
@@ -896,6 +914,8 @@ export default function App() {
         <HomeScreen
           parkingLots={driverParkingLots}
           userName={driverUser?.name ? driverUser.name.split(' ')[0] : 'Kasun'}
+          selectedVehicleType={selectedVehicleType}
+          onVehicleTypeChange={setSelectedVehicleType}
           onNavigateToMap={() => handleOpenSearch('', 'map', 'Nearest')}
           onNavigateToLotDetails={(lotId) =>
             handleOpenLotDetails(lotId, 'driver-home')
@@ -918,6 +938,19 @@ export default function App() {
           }}
         />
       )}
+      {currentScreen === 'driver-profile' && driverUser && driverToken && (
+        <DriverProfileScreen
+          token={driverToken}
+          userId={driverUser._id}
+          initialUser={driverUser}
+          onBack={() => setCurrentScreen(profileReturnScreen)}
+          onNavigateHome={() => setCurrentScreen('driver-home')}
+          onNavigateMap={() => handleOpenSearch('', 'map', 'Nearest')}
+          onNavigateBookings={handleOpenBookings}
+          onLogout={() => void handleDriverLogout()}
+          onSessionExpired={() => void handleDriverLogout()}
+        />
+      )}
       {currentScreen === 'driver-search' && (
         <SearchResultsScreen
           initialQuery={searchParams.query}
@@ -925,6 +958,8 @@ export default function App() {
           initialFilter={searchParams.filterChip}
           initialSelectedLotId={searchParams.selectedLotId}
           initialNearbyFiveMinMode={searchParams.nearbyFiveMinMode}
+          selectedVehicleType={selectedVehicleType}
+          onVehicleTypeChange={setSelectedVehicleType}
           onBack={() => setCurrentScreen('driver-home')}
           onNavigateHome={() => setCurrentScreen('driver-home')}
           onSelectLot={(lotId, snapshot) =>
@@ -938,8 +973,14 @@ export default function App() {
         <MyBookingsScreen
           token={driverToken}
           userId={driverUser?._id || 'guest'}
+          highlightedBookingId={highlightedBookingId}
           onBack={() => setCurrentScreen('driver-home')}
           onSelectBooking={handleSelectReservation}
+          onCancelBooking={(reservation) => {
+            setReservationToCancel(reservation);
+            setCancellationReturnScreen('driver-bookings');
+            setCurrentScreen('driver-cancel-booking');
+          }}
           onViewActiveParking={() => {
             setSelectedReservationId(null);
             setCurrentScreen('driver-active-parking');
@@ -949,16 +990,27 @@ export default function App() {
           onNavigateProfile={handleDriverProfilePress}
         />
       )}
+      {currentScreen === 'driver-cancel-booking' && reservationToCancel && (
+        <CancelBookingScreen
+          token={driverToken}
+          userId={driverUser?._id || 'guest'}
+          reservation={reservationToCancel}
+          onBack={() => setCurrentScreen(bookingDetailsReturnScreen)}
+          onDone={() => {
+            setReservationToCancel(null);
+            setCurrentScreen('driver-bookings');
+          }}
+        />
+      )}
       {currentScreen === 'driver-booking-details' && selectedReservationId && (
         <BookingDetailsScreen
           token={driverToken}
           userId={driverUser?._id || 'guest'}
           reservationId={selectedReservationId}
-          onBack={() => setCurrentScreen('driver-bookings')}
+          onBack={() => setCurrentScreen(cancellationReturnScreen)}
           onNavigateHome={() => setCurrentScreen('driver-home')}
           onNavigateMap={() => handleOpenSearch('', 'map', 'Nearest')}
           onNavigateProfile={handleDriverProfilePress}
-          onReservationCancelled={() => setCurrentScreen('driver-bookings')}
         />
       )}
       {currentScreen === 'driver-active-parking' && (
@@ -990,7 +1042,8 @@ export default function App() {
       {currentScreen === 'driver-exit-confirmation' && releaseReceipt && (
         <ExitConfirmationScreen
           receipt={releaseReceipt}
-          onViewBookings={() => {
+          userId={driverUser?._id || 'guest'}
+          onDone={() => {
             setReleaseReceipt(null);
             setSelectedReservationId(null);
             setCurrentScreen('driver-bookings');
@@ -1008,6 +1061,8 @@ export default function App() {
         <SelectSpaceScreen
           lotId={spaceSelectionLotId}
           initialSelection={bookingSelection}
+          selectedVehicleType={selectedVehicleType}
+          onVehicleTypeChange={setSelectedVehicleType}
           onBack={() => setCurrentScreen('driver-lot-details')}
           onContinue={handleSpaceSelectionContinue}
         />
@@ -1030,11 +1085,19 @@ export default function App() {
           onPay={handlePaid}
         />
       )}
-      {currentScreen === 'driver-booking-confirmed' && confirmedBooking && (
+      {currentScreen === 'driver-booking-confirmed' && confirmedBooking && confirmedReservation && (
         <BookingConfirmedScreen
           booking={confirmedBooking}
+          reservation={confirmedReservation}
           onGetDirections={() => setCurrentScreen('driver-navigation')}
-          onCancel={resetBookingFlow}
+          onViewBookingDetails={() => {
+            setHighlightedBookingId(confirmedReservation._id);
+            setCurrentScreen('driver-bookings');
+          }}
+          onReturnHome={() => {
+            resetBookingFlow();
+            setCurrentScreen('driver-home');
+          }}
         />
       )}
       {currentScreen === 'driver-navigation' && confirmedBooking && (

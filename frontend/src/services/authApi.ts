@@ -194,8 +194,12 @@ export async function authWithGoogle(idToken: string): Promise<GoogleAuthRespons
   const data = await response.json().catch(() => ({}));
 
   if (!response.ok) {
+    const defaultMsg =
+      response.status >= 500
+        ? `Server error (${response.status}) connecting to backend (${baseUrl}). Please ensure backend is reachable.`
+        : 'Google authentication failed. Please try again.';
     const err: ApiError & { code?: string } = {
-      message: data.message || 'Google authentication failed. Please try again.',
+      message: data.message || defaultMsg,
       errors: data.errors,
       status: response.status,
       code: data.code,

@@ -30,4 +30,7 @@ const notificationSchema = new mongoose.Schema(
   { timestamps: true }
 );
 
+// Fast query index for user notifications feed and badge count
+notificationSchema.index({ user: 1, isUnread: 1, createdAt: -1 });
+
 module.exports = mongoose.model('Notification', notificationSchema);

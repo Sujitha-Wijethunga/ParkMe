@@ -1,5 +1,7 @@
-import React, { useEffect, useMemo, useState } from 'react';
+import React, { useEffect, useMemo } from 'react';
 import {
+  Alert,
+  Share,
   View,
   Text,
   StyleSheet,
@@ -8,48 +10,51 @@ import {
   StatusBar,
   Platform,
   BackHandler,
-  Alert,
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { DriverColors } from '../../constants/colors';
 import { SAMPLE_NEARBY_PARKING_LOTS } from '../../constants/driverSampleData';
 import { BookingDetails } from '../../constants/bookingTypes';
+import { DriverReservation } from '../../services/reservationApi';
 
 interface BookingConfirmedScreenProps {
   booking: BookingDetails;
+  reservation: DriverReservation;
   onGetDirections: () => void;
-  /** Cancel the booking and return to Home. */
-  onCancel: () => void;
+  onViewBookingDetails: () => void;
+  onReturnHome?: () => void;
 }
 
 /* Placeholder QR: deterministic 21x21 pattern. Replace with react-native-qrcode-svg later. */
+function getQrCells(seed: string): boolean[] {
+  const N = 21;
+  let seedHash = 0;
+  for (let i = 0; i < seed.length; i++) seedHash = (seedHash * 31 + seed.charCodeAt(i)) >>> 0;
+  const finder = (r: number, c: number) =>
+    [[0, 0], [0, N - 7], [N - 7, 0]].some(([fr, fc]) => {
+      const rr = r - fr, cc = c - fc;
+      if (rr < 0 || rr > 6 || cc < 0 || cc > 6) return false;
+      return rr === 0 || rr === 6 || cc === 0 || cc === 6 || (rr >= 2 && rr <= 4 && cc >= 2 && cc <= 4);
+    });
+  const inFinderArea = (r: number, c: number) =>
+    (r < 8 && c < 8) || (r < 8 && c > N - 9) || (r > N - 9 && c < 8);
+  let h = seedHash;
+  const result: boolean[] = [];
+  for (let i = 0; i < N * N; i++) {
+    const r = Math.floor(i / N), c = i % N;
+    if (inFinderArea(r, c)) {
+      result.push(finder(r, c));
+    } else {
+      h = (h * 1103515245 + 12345) >>> 0;
+      result.push((h >> 16) % 2 === 0);
+    }
+  }
+  return result;
+}
+
 function FakeQR({ seed }: { seed: string }) {
   const N = 21;
-  const cells = useMemo(() => {
-    let seedHash = 0;
-    for (let i = 0; i < seed.length; i++) seedHash = (seedHash * 31 + seed.charCodeAt(i)) >>> 0;
-    const finder = (r: number, c: number) =>
-      [[0, 0], [0, N - 7], [N - 7, 0]].some(([fr, fc]) => {
-        const rr = r - fr, cc = c - fc;
-        if (rr < 0 || rr > 6 || cc < 0 || cc > 6) return false;
-        return rr === 0 || rr === 6 || cc === 0 || cc === 6 || (rr >= 2 && rr <= 4 && cc >= 2 && cc <= 4);
-      });
-    const inFinderArea = (r: number, c: number) =>
-      (r < 8 && c < 8) || (r < 8 && c > N - 9) || (r > N - 9 && c < 8);
-    let h = seedHash;
-    const result: boolean[] = [];
-    for (let i = 0; i < N * N; i++) {
-      const r = Math.floor(i / N), c = i % N;
-      if (inFinderArea(r, c)) {
-        result.push(finder(r, c));
-      } else {
-        h = (h * 1103515245 + 12345) >>> 0;
-        result.push((h >> 16) % 2 === 0);
-      }
-    }
-    return result;
-  }, [seed]);
-
+  const cells = useMemo(() => getQrCells(seed), [seed]);
   const size = 7;
   return (
     <View style={{ width: N * size, height: N * size, flexDirection: 'row', flexWrap: 'wrap' }}>
@@ -60,10 +65,41 @@ function FakeQR({ seed }: { seed: string }) {
   );
 }
 
+function escapeXml(value: string): string {
+  return value.replace(/[<>&'"]/g, (character) => (
+    { '<': '&lt;', '>': '&gt;', '&': '&amp;', "'": '&apos;', '"': '&quot;' }[character] ?? character
+  ));
+}
+
+function createBookingQrSvg(
+  seed: string,
+  details: { reference: string; lot: string; space: string; floor: string; vehicle: string; hours: number; total: number }
+): string {
+  const moduleSize = 12;
+  const qrRects = getQrCells(seed)
+    .map((on, index) => {
+      if (!on) return '';
+      const row = Math.floor(index / 21);
+      const column = index % 21;
+      return `<rect x="${column * moduleSize}" y="${row * moduleSize}" width="${moduleSize}" height="${moduleSize}"/>`;
+    })
+    .join('');
+  const lines = [
+    `Reference: ${details.reference}`,
+    `Parking lot: ${details.lot}`,
+    `Space: ${details.space} | Floor: ${details.floor}`,
+    `Vehicle: ${details.vehicle} | Duration: ${details.hours} hours`,
+    `Total paid: Rs. ${details.total}`,
+  ];
+  return `<svg xmlns="http://www.w3.org/2000/svg" width="420" height="390" viewBox="0 0 420 390"><rect width="100%" height="100%" fill="white"/><text x="210" y="28" text-anchor="middle" font-family="sans-serif" font-size="20" font-weight="bold">ParkMe Booking</text><g transform="translate(84 45)" fill="#0F172A">${qrRects}</g>${lines.map((line, index) => `<text x="24" y="${295 + index * 18}" font-family="sans-serif" font-size="12">${escapeXml(line)}</text>`).join('')}</svg>`;
+}
+
 export default function BookingConfirmedScreen({
   booking,
+  reservation,
   onGetDirections,
-  onCancel,
+  onViewBookingDetails,
+  onReturnHome,
 }: BookingConfirmedScreenProps) {
   const insets = useSafeAreaInsets();
   const topPadding = Math.max(
@@ -73,19 +109,35 @@ export default function BookingConfirmedScreen({
   const bottomPadding = Math.max(insets.bottom, 16) + 24;
 
   const lot = SAMPLE_NEARBY_PARKING_LOTS.find((l) => l.id === booking.lotId);
-  const [ref] = useState(() => `PE-${Math.floor(10000 + Math.random() * 89999)}`);
+  const ref = reservation.reference || reservation._id;
+  const handleDownloadQr = async () => {
+    try {
+      const svg = createBookingQrSvg(ref + booking.spaceId, {
+        reference: ref,
+        lot: lot?.name ?? 'Parking Lot',
+        space: booking.spaceId,
+        floor: booking.floor,
+        vehicle: booking.vehicleType,
+        hours: booking.hours,
+        total: booking.total,
+      });
+      const dataUri = `data:image/svg+xml;charset=utf-8,${encodeURIComponent(svg)}`;
+      await Share.share({
+        title: 'Download ParkMe QR',
+        message: `ParkMe booking QR code - ${ref}`,
+        url: dataUri,
+      });
+    } catch (error) {
+      console.error('Failed to download booking QR code', error);
+      Alert.alert('Download failed', 'The QR code could not be shared. Please try again.');
+    }
+  };
 
   // Back button on this screen should not return to payment
   useEffect(() => {
     const sub = BackHandler.addEventListener('hardwareBackPress', () => true);
     return () => sub.remove();
   }, []);
-
-  const confirmCancel = () =>
-    Alert.alert('Cancel booking?', 'Your reserved space will be released.', [
-      { text: 'Keep booking', style: 'cancel' },
-      { text: 'Cancel booking', style: 'destructive', onPress: onCancel },
-    ]);
 
   return (
     <View style={[styles.safeArea, { paddingTop: topPadding }]}>
@@ -140,37 +192,49 @@ export default function BookingConfirmedScreen({
             <FakeQR seed={ref + booking.spaceId} />
           </View>
           <Text style={styles.small}>Scan at barrier scanner for automatic gate lift</Text>
+          <TouchableOpacity
+            style={styles.downloadQrButton}
+            activeOpacity={0.85}
+            onPress={handleDownloadQr}
+            accessibilityRole="button"
+            accessibilityLabel="Download the QR code"
+          >
+            <Text style={styles.downloadQrText}>Download the QR</Text>
+          </TouchableOpacity>
         </View>
 
-        <TouchableOpacity
-          style={styles.calendarBtn}
-          activeOpacity={0.7}
-          onPress={() => Alert.alert('Calendar', 'Added to your calendar (demo)')}
-        >
-          <Text style={styles.calendarText}>📅  Add to Calendar</Text>
-        </TouchableOpacity>
-
         {/* Actions */}
-        <TouchableOpacity style={styles.primaryBtn} activeOpacity={0.88} onPress={onGetDirections}>
+        <TouchableOpacity
+          style={styles.primaryBtn}
+          activeOpacity={0.88}
+          onPress={onGetDirections}
+          accessibilityRole="button"
+          accessibilityLabel="Get driving directions"
+        >
           <Text style={styles.primaryText}>➤  Get Directions</Text>
         </TouchableOpacity>
 
         <TouchableOpacity
-          style={styles.outlineBtn}
-          activeOpacity={0.85}
-          onPress={() =>
-            Alert.alert(
-              'Booking Details',
-              `Ref: ${ref}\nSpace ${booking.spaceId} · Floor ${booking.floor}\n${booking.vehicleType} · ${booking.hours} hrs\nTotal: Rs. ${booking.total}`
-            )
-          }
+          style={styles.secondaryBtn}
+          activeOpacity={0.88}
+          onPress={onViewBookingDetails}
+          accessibilityRole="button"
+          accessibilityLabel="View booking details in bookings list"
         >
-          <Text style={styles.outlineText}>View Booking Details</Text>
+          <Text style={styles.secondaryText}>📋  View Booking Details</Text>
         </TouchableOpacity>
 
-        <TouchableOpacity style={styles.dangerBtn} activeOpacity={0.88} onPress={confirmCancel}>
-          <Text style={styles.primaryText}>✕  Cancel</Text>
-        </TouchableOpacity>
+        {!!onReturnHome && (
+          <TouchableOpacity
+            style={styles.outlineBtn}
+            activeOpacity={0.88}
+            onPress={onReturnHome}
+            accessibilityRole="button"
+            accessibilityLabel="Return to home screen"
+          >
+            <Text style={styles.outlineText}>🏠  Return Home</Text>
+          </TouchableOpacity>
+        )}
       </ScrollView>
     </View>
   );
@@ -246,10 +310,16 @@ const styles = StyleSheet.create({
     marginVertical: 12,
     backgroundColor: '#FFFFFF',
   },
-
-  calendarBtn: { alignItems: 'center', paddingVertical: 4 },
-  calendarText: { color: DriverColors.navyHeading, fontWeight: '700', fontSize: 13 },
-
+  downloadQrButton: {
+    marginTop: 4,
+    borderRadius: 22,
+    paddingVertical: 11,
+    paddingHorizontal: 24,
+    borderWidth: 1.5,
+    borderColor: DriverColors.navyHeading,
+    alignItems: 'center',
+  },
+  downloadQrText: { color: DriverColors.navyHeading, fontSize: 13, fontWeight: '800' },
   primaryBtn: {
     backgroundColor: DriverColors.orangePrimary,
     borderRadius: 28,
@@ -257,19 +327,20 @@ const styles = StyleSheet.create({
     alignItems: 'center',
   },
   primaryText: { color: '#FFFFFF', fontSize: 15, fontWeight: '800' },
-  outlineBtn: {
-    borderRadius: 28,
-    paddingVertical: 14,
-    alignItems: 'center',
-    borderWidth: 1.5,
-    borderColor: DriverColors.navyDark,
-    backgroundColor: '#FFFFFF',
-  },
-  outlineText: { color: DriverColors.navyDark, fontSize: 15, fontWeight: '800' },
-  dangerBtn: {
-    backgroundColor: '#E5383B',
+  secondaryBtn: {
+    backgroundColor: DriverColors.navyDark,
     borderRadius: 28,
     paddingVertical: 15,
     alignItems: 'center',
   },
+  secondaryText: { color: '#FFFFFF', fontSize: 15, fontWeight: '800' },
+  outlineBtn: {
+    backgroundColor: '#FFFFFF',
+    borderRadius: 28,
+    paddingVertical: 14,
+    borderWidth: 1.5,
+    borderColor: '#CBD5E1',
+    alignItems: 'center',
+  },
+  outlineText: { color: DriverColors.navyHeading, fontSize: 14, fontWeight: '700' },
 });

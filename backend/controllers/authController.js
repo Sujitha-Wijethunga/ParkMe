@@ -120,11 +120,12 @@ const getMe = async (req, res) => {
 // @access  Private
 const updateMe = async (req, res, next) => {
   try {
-    const { name, email, phone } = req.body;
+    const { name, email, phone, vehicles } = req.body;
     const updates = {};
     if (name !== undefined) updates.name = name.trim();
     if (phone !== undefined) updates.phone = phone.trim();
     if (email !== undefined) updates.email = email.trim().toLowerCase();
+    if (vehicles !== undefined && Array.isArray(vehicles)) updates.vehicles = vehicles;
 
     if (updates.email) {
       const duplicateStaff = await Staff.findOne({

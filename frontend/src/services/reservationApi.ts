@@ -20,6 +20,7 @@ export interface ReservationSpace {
 
 export interface DriverReservation {
   _id: string;
+  reference?: string;
   parkingLot: ReservationLocation | string;
   parkingSpace: ReservationSpace | string;
   startTime: string;
@@ -30,6 +31,7 @@ export interface DriverReservation {
   actualEndTime?: string;
   finalAmount?: number;
   cancellationReason?: string;
+  cancellationNote?: string;
   cancelledAt?: string;
   createdAt?: string;
   verifiedAt?: string;
@@ -88,6 +90,7 @@ function isDriverReservation(value: unknown): value is DriverReservation {
   return (
     typeof value._id === 'string' &&
     value._id.length > 0 &&
+    (value.reference === undefined || typeof value.reference === 'string') &&
     typeof value.startTime === 'string' &&
     !Number.isNaN(Date.parse(value.startTime)) &&
     typeof value.endTime === 'string' &&
@@ -108,7 +111,12 @@ function isDriverReservation(value: unknown): value is DriverReservation {
   );
 }
 
-async function reservationRequest<T>(path: string, token: string, method = 'GET'): Promise<T> {
+async function reservationRequest<T>(
+  path: string,
+  token: string,
+  method = 'GET',
+  body?: Record<string, string>
+): Promise<T> {
   const controller = new AbortController();
   const timeoutId = setTimeout(() => controller.abort(), REQUEST_TIMEOUT_MS);
 
@@ -121,7 +129,7 @@ async function reservationRequest<T>(path: string, token: string, method = 'GET'
         Authorization: `Bearer ${token}`,
         'Content-Type': 'application/json',
       },
-      ...(method === 'PUT' ? { body: JSON.stringify({}) } : {}),
+      ...(method === 'PUT' ? { body: JSON.stringify(body || {}) } : {}),
     });
     const data = await response.json().catch(() => null);
 
@@ -254,10 +262,29 @@ export async function getReservationById(
   return reservation;
 }
 
+export const CANCELLATION_REASONS = [
+  'Change of plans / Schedule changed',
+  'Found alternative parking spot',
+  'Vehicle breakdown or issue',
+  'Booked wrong location, date, or time',
+  'Other reason',
+] as const;
+
+export type CancellationReason = (typeof CANCELLATION_REASONS)[number];
+
+export function canCancelReservation(
+  reservation: Pick<DriverReservation, 'status' | 'startTime'>,
+  now = Date.now()
+): boolean {
+  return reservation.status === 'pending' && Date.parse(reservation.startTime) > now;
+}
+
 export async function cancelReservation(
   token: string,
   userId: string,
-  reservationId: string
+  reservationId: string,
+  reason: CancellationReason,
+  note?: string
 ): Promise<void> {
   if (!reservationId) {
     throw new Error('A booking ID is required to cancel a booking.');
@@ -267,11 +294,19 @@ export async function cancelReservation(
     const reservations = await readLocalReservations(userId);
     const reservation = reservations.find((item) => item._id === reservationId);
     if (!reservation) throw new Error('This saved booking could not be found.');
-    if (reservation.status !== 'pending') throw new Error('Only upcoming bookings can be cancelled.');
+    if (!canCancelReservation(reservation)) throw new Error('Only future upcoming bookings can be cancelled.');
     await saveDriverBookingData(
       userId,
       JSON.stringify(reservations.map((item) =>
-        item._id === reservationId ? { ...item, status: 'cancelled' as const, cancelledAt: new Date().toISOString() } : item
+        item._id === reservationId
+          ? {
+              ...item,
+              status: 'cancelled' as const,
+              cancellationReason: reason,
+              cancellationNote: reason === 'Other reason' ? note?.trim() || undefined : undefined,
+              cancelledAt: new Date().toISOString(),
+            }
+          : item
       ))
     );
     return;
@@ -281,7 +316,11 @@ export async function cancelReservation(
   await reservationRequest<{ message: string }>(
     `/${encodeURIComponent(reservationId)}/cancel`,
     token,
-    'PUT'
+    'PUT',
+    {
+      reason,
+      ...(reason === 'Other reason' && note?.trim() ? { note: note.trim() } : {}),
+    }
   );
 }
 
@@ -380,3 +419,52 @@ export async function releaseActiveReservation(
     paymentMethod: returnedPaymentMethod,
   };
 }
+
+/**
+ * Manually activates a confirmed/pending parking reservation.
+ * Calls PUT /api/reservations/:id/activate on the server.
+ * Ensures the session only enters 'active' status upon successful server confirmation.
+ */
+export async function activateReservation(
+  token: string | null,
+  userId: string,
+  reservationId: string
+): Promise<DriverReservation> {
+  if (!reservationId) {
+    throw new Error('A booking ID is required to activate parking.');
+  }
+
+  if (reservationId.startsWith('local-')) {
+    const reservations = await readLocalReservations(userId);
+    const reservation = reservations.find((item) => item._id === reservationId);
+    if (!reservation) throw new Error('This saved booking could not be found.');
+    if (reservation.status === 'active') return reservation;
+    if (reservation.status !== 'pending') {
+      throw new Error(`Cannot activate reservation in "${reservation.status}" status.`);
+    }
+    const activated: DriverReservation = {
+      ...reservation,
+      status: 'active',
+      verifiedAt: new Date().toISOString(),
+    };
+    await saveDriverBookingData(
+      userId,
+      JSON.stringify(reservations.map((item) => (item._id === reservationId ? activated : item)))
+    );
+    return activated;
+  }
+
+  if (!token) throw new Error('Please sign in to activate your parking session.');
+
+  const result = await reservationRequest<{
+    message: string;
+    reservation: DriverReservation;
+  }>(
+    `/${encodeURIComponent(reservationId)}/activate`,
+    token,
+    'PUT'
+  );
+
+  return result.reservation;
+}
+
