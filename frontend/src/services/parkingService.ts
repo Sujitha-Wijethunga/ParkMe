@@ -1,5 +1,5 @@
-import Constants from 'expo-constants';
-import { Platform } from 'react-native';
+import { getApiBaseUrl } from '../constants/api';
+export { getApiBaseUrl };
 
 export interface NearbyDrivingLot {
   id: string;
@@ -69,34 +69,7 @@ export interface LotAvailabilityCheck {
   disclaimer: string;
 }
 
-/**
- * Determine the backend API URL.
- * Supports:
- * - EXPO_PUBLIC_API_URL environment variable
- * - Dynamic LAN IP when running on physical device via Expo development
- * - Android emulator loopback (10.0.2.2)
- * - Localhost fallback for web / iOS simulator
- */
-export function getApiBaseUrl(): string {
-  if (process.env.EXPO_PUBLIC_API_URL) {
-    return process.env.EXPO_PUBLIC_API_URL;
-  }
 
-  // Attempt to extract development host IP from Expo Constants
-  const hostUri = Constants.expoConfig?.hostUri;
-  if (hostUri) {
-    const ip = hostUri.split(':')[0];
-    if (ip && ip !== 'localhost' && ip !== '127.0.0.1') {
-      return `http://${ip}:5000`;
-    }
-  }
-
-  if (Platform.OS === 'android') {
-    return 'http://10.0.2.2:5000';
-  }
-
-  return 'http://localhost:5000';
-}
 
 /**
  * Fetches parking lots within driving time limit (e.g. 300s = 5 min)

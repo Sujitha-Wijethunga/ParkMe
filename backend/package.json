@@ -8,7 +8,7 @@
     "dev": "nodemon server.js",
     "seed:lots": "node seeds/parkingLotsSeed.js",
     "migrate:models": "node seeds/backfillDatabaseModels.js",
-    "test": "node --test test/nearbyParking.test.js tests/reservationRelease.test.js tests/reservationCancellation.test.js tests/reservationActivation.test.js tests/vehicleSpaceValidation.test.js tests/databaseSchemaAndExtensions.test.js tests/verifiedActiveParking.test.js && node tests/driverAuth.test.js && node tests/driverGoogleAuth.test.js"
+    "test": "node --test test/nearbyParking.test.js tests/reservationRelease.test.js tests/reservationCancellation.test.js tests/reservationActivation.test.js tests/vehicleSpaceValidation.test.js tests/databaseSchemaAndExtensions.test.js tests/verifiedActiveParking.test.js && node tests/driverAuth.test.js && node tests/driverGoogleAuth.test.js && node tests/staffRoleSecurity.test.js"
   },
   "keywords": [],
   "author": "",
