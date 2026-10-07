@@ -29,6 +29,17 @@ const uploadsDirectory = isServerless
   : path.join(__dirname, 'uploads');
 app.use('/uploads', express.static(uploadsDirectory));
 
+// Normalize incoming path when running under Vercel serverless rewrites
+app.use((req, res, next) => {
+  const matchedPath = req.headers['x-matched-path'] || req.headers['x-vercel-matched-path'];
+  if (matchedPath) {
+    req.url = matchedPath;
+  } else if (req.url === '/server.js' || req.url === '/backend/server.js') {
+    req.url = '/';
+  }
+  next();
+});
+
 // Health check endpoints (instant response, no DB dependency)
 app.get('/api/health', (req, res) => {
   res.json({ status: 'ok', message: 'ParkMe API is running' });
