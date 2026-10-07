@@ -17,12 +17,17 @@ if (process.env.MONGO_URI) {
   });
 }
 
+const os = require('os');
 const app = express();
 
 // Middleware
 app.use(cors());
 app.use(express.json());
-app.use('/uploads', express.static(path.join(__dirname, 'uploads')));
+const isServerless = Boolean(process.env.VERCEL || process.env.AWS_LAMBDA_FUNCTION_NAME);
+const uploadsDirectory = isServerless
+  ? path.join(os.tmpdir(), 'uploads')
+  : path.join(__dirname, 'uploads');
+app.use('/uploads', express.static(uploadsDirectory));
 
 // Health check endpoints (instant response, no DB dependency)
 app.get('/api/health', (req, res) => {

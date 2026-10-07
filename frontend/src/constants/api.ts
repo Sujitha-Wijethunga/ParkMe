@@ -1,7 +1,7 @@
 import Constants from 'expo-constants';
 import { Platform } from 'react-native';
 
-export const LIVE_BACKEND_URL = 'https://parkme-backend.vercel.app';
+export const LIVE_BACKEND_URL = 'https://parkme1-nine.vercel.app';
 
 const configuredApiUrl = process.env.EXPO_PUBLIC_API_URL?.trim().replace(/\/+$/, '').replace(/\/api$/, '');
 
