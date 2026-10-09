@@ -1,4 +1,4 @@
-import React, { useState, useMemo } from 'react';
+import React, { useState, useMemo, useEffect, useRef } from 'react';
 import {
   View,
   Text,
@@ -20,6 +20,8 @@ import {
 import DriverBottomNav, { DriverTabType } from '../../components/DriverBottomNav';
 import ParkingLotCard from '../../components/ParkingLotCard';
 import DriverNotificationsModal from '../../components/DriverNotificationsModal';
+import SearchSuggestionsDropdown from '../../components/SearchSuggestionsDropdown';
+import { fetchSearchSuggestions, SearchSuggestionItem } from '../../services/parkingService';
 import { VehicleType } from '../../constants/parkingSpaceData';
 
 export const VEHICLE_OPTIONS: { type: VehicleType; icon: string; label: string }[] = [
@@ -78,6 +80,63 @@ export default function HomeScreen({
   const [searchQuery, setSearchQuery] = useState('');
   const [selectedChip, setSelectedChip] = useState<DriverFilterChip>('Nearest');
   const [notificationsVisible, setNotificationsVisible] = useState(false);
+
+  // Search Suggestions State
+  const [suggestions, setSuggestions] = useState<SearchSuggestionItem[]>([]);
+  const [isSuggestionsLoading, setIsSuggestionsLoading] = useState(false);
+  const [suggestionsError, setSuggestionsError] = useState(false);
+  const [showSuggestions, setShowSuggestions] = useState(false);
+  const searchRequestIdRef = useRef(0);
+
+  useEffect(() => {
+    const trimmed = searchQuery.trim();
+    if (!trimmed) {
+      setSuggestions([]);
+      setIsSuggestionsLoading(false);
+      setShowSuggestions(false);
+      return;
+    }
+
+    setShowSuggestions(true);
+    setIsSuggestionsLoading(true);
+    setSuggestionsError(false);
+
+    const reqId = ++searchRequestIdRef.current;
+    const controller = new AbortController();
+
+    const timer = setTimeout(async () => {
+      try {
+        const results = await fetchSearchSuggestions(trimmed, controller.signal);
+        if (reqId === searchRequestIdRef.current) {
+          setSuggestions(results);
+          setIsSuggestionsLoading(false);
+        }
+      } catch (err: any) {
+        if (err.name !== 'AbortError' && reqId === searchRequestIdRef.current) {
+          setSuggestionsError(true);
+          setIsSuggestionsLoading(false);
+        }
+      }
+    }, 280);
+
+    return () => {
+      clearTimeout(timer);
+      controller.abort();
+    };
+  }, [searchQuery]);
+
+  const handleSelectSuggestion = (item: SearchSuggestionItem) => {
+    setSearchQuery(item.name);
+    setShowSuggestions(false);
+    if (item.type === 'lot' && onNavigateToLotDetails) {
+      const matchedLot = parkingLots.find((l) => l.id === item.id);
+      onNavigateToLotDetails(item.id, matchedLot);
+    } else if (onSearchSubmit) {
+      onSearchSubmit(item.name, selectedChip);
+    } else if (onSeeAllPress) {
+      onSeeAllPress(item.name, selectedChip);
+    }
+  };
 
   // Adapt lots and tariffs according to selectedVehicleType
   const vehicleAdaptedLots = useMemo(() => {
@@ -238,6 +297,17 @@ export default function HomeScreen({
             <FilterSlidersIcon />
           </TouchableOpacity>
         </View>
+
+        {/* 2b. Search Suggestions Dropdown */}
+        <SearchSuggestionsDropdown
+          visible={showSuggestions}
+          suggestions={suggestions}
+          isLoading={isSuggestionsLoading}
+          searchQuery={searchQuery}
+          hasError={suggestionsError}
+          onSelectSuggestion={handleSelectSuggestion}
+          onDismiss={() => setShowSuggestions(false)}
+        />
 
         {/* 3. Category Filter Chips (Horizontally Scrollable) */}
         <ScrollView
