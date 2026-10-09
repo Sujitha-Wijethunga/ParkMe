@@ -67,8 +67,13 @@ export async function loginDriver(identifier: string, password: string): Promise
   const data = await response.json().catch(() => ({}));
 
   if (!response.ok) {
+    const isServerError = response.status >= 500;
+    const defaultMsg = isServerError
+      ? `Server error (${response.status}). Please try again later.`
+      : 'Login failed. Please check your credentials.';
+
     const err: ApiError = {
-      message: data.message || 'Login failed. Please check your credentials.',
+      message: data.message || defaultMsg,
       errors: data.errors,
       status: response.status,
     };
@@ -105,8 +110,13 @@ export async function registerDriver(payload: {
   const data = await response.json().catch(() => ({}));
 
   if (!response.ok) {
+    const isServerError = response.status >= 500;
+    const defaultMsg = isServerError
+      ? `Server error (${response.status}). Please try again later.`
+      : 'Registration failed. Please check your inputs.';
+
     const err: ApiError = {
-      message: data.message || 'Registration failed. Please check your inputs.',
+      message: data.message || defaultMsg,
       errors: data.errors,
       status: response.status,
     };

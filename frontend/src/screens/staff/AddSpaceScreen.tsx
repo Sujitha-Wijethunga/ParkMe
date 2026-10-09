@@ -97,10 +97,6 @@ export default function AddSpaceScreen({ onBack, onSave }: AddSpaceScreenProps) 
       );
       return;
     }
-    const imageMimeType = spaceImage
-      ? resolveImageMimeType(spaceImage)
-      : undefined;
-
     if (!spaceImage) {
       Alert.alert('Image required', 'Please choose an image for these parking spaces.');
       return;

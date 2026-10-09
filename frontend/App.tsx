@@ -787,7 +787,6 @@ export default function App() {
     setCurrentScreen('verify');
   };
 
-  const handleLogout = () => {
   const handleLogout = async () => {
     try {
       await clearStaffSession();
@@ -851,29 +850,17 @@ export default function App() {
       formData.append('floor', newSpace.level || 'Level 3');
       formData.append('type', 'standard');
       if (newSpace.imageUri) {
-  console.log('Uploading image:', newSpace.imageUri);
+        console.log('Uploading image:', newSpace.imageUri);
 
-  await appendImageToFormData(
-    formData,
-    'image',
-    newSpace.imageUri,
-    {
-      mimeType: newSpace.imageMimeType || 'image/jpeg',
-    }
-  );
-}
-        if (Platform.OS === 'web') {
-          if (!newSpace.imageFile || newSpace.imageFile.size === 0) {
-            throw new Error('Unable to read the selected image. Please choose it again.');
+        await appendImageToFormData(
+          formData,
+          'image',
+          newSpace.imageUri,
+          {
+            mimeType: newSpace.imageMimeType || 'image/jpeg',
+            fileBlob: newSpace.imageFile,
           }
-          formData.append('image', newSpace.imageFile);
-        } else {
-          formData.append('image', {
-            uri: newSpace.imageUri,
-            name: `space_${Date.now()}.jpg`,
-            type: newSpace.imageMimeType || 'image/jpeg',
-          } as any);
-        }
+        );
       }
 
       const createSpaceResponse = await fetch(`${API_BASE_URL}/api/parking-lots/${lotId}/spaces`, {
@@ -980,11 +967,6 @@ export default function App() {
     if (selectedSpaceId === space.id) {
       setSelectedSpaceId(null);
     }
-  };
-
-  const handleAdmitVehicle = (id: string, ref: string, slot: string) => {
-    setActiveReservation({ id, ref, slot });
-    setCurrentScreen('verify');
   };
 
   useEffect(() => {

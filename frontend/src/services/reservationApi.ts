@@ -59,8 +59,6 @@ export interface DriverReservation {
   createdAt?: string;
   updatedAt?: string;
   verifiedAt?: string;
-  vehiclePlate?: string;
-  vehicleModel?: string;
   driver?: { _id?: string; name?: string; email?: string; phone?: string } | string;
 }
 
