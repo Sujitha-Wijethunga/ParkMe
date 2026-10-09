@@ -9,6 +9,8 @@ import {
   StatusBar,
   TextInput,
   Alert,
+  RefreshControl,
+  ActivityIndicator,
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
@@ -49,6 +51,8 @@ interface ReservationsScreenProps {
   ) => void;
   apiBaseUrl: string;
   authToken: string | null;
+  lotName?: string;
+  onNavigateTab?: (tab: 'Dashboard' | 'Spaces' | 'Reservations' | 'Profile') => void;
 }
 
 export default function ReservationsScreen({
@@ -56,14 +60,19 @@ export default function ReservationsScreen({
   onAdmitVehicle,
   apiBaseUrl,
   authToken,
+  lotName = 'One Galle Face Mall — Ground Floor',
+  onNavigateTab,
 }: ReservationsScreenProps) {
   const [reservations, setReservations] = useState<ReservationItem[]>([]);
+  const [isRefreshing, setIsRefreshing] = useState(false);
   const insets = useSafeAreaInsets();
   const topPadding = Math.max(
     insets.top,
     Platform.OS === 'android' ? (StatusBar.currentHeight ?? 0) : 0
   );
-  const bottomPadding = Math.max(insets.bottom, 16) + 24;
+  const bottomNavPadding =
+    Math.max(insets.bottom, Platform.OS === 'ios' ? 12 : 8) + (insets.bottom > 0 ? 4 : 2);
+  const bottomPadding = onNavigateTab ? bottomNavPadding + 70 : Math.max(insets.bottom, 16) + 24;
 
   const [searchQuery, setSearchQuery] = useState('');
   const [activeTab, setActiveTab] = useState<'Upcoming' | 'Active' | 'Completed' | 'Cancelled'>('Upcoming');
@@ -131,6 +140,17 @@ export default function ReservationsScreen({
 
   const loadReservations = async () => {
     setReservations(await fetchReservations());
+  };
+
+  const handleRefresh = async () => {
+    setIsRefreshing(true);
+    try {
+      setReservations(await fetchReservations());
+    } catch (err: unknown) {
+      Alert.alert('Unable to refresh reservations', err instanceof Error ? err.message : 'Please try again.');
+    } finally {
+      setIsRefreshing(false);
+    }
   };
 
   useEffect(() => {
@@ -233,7 +253,7 @@ export default function ReservationsScreen({
         </TouchableOpacity>
         <View style={styles.headerTitleContainer}>
           <Text style={styles.headerTitle}>Reservations</Text>
-          <Text style={styles.headerSubtitle}>One Galle Face Mall — Ground Floor</Text>
+          <Text style={styles.headerSubtitle} numberOfLines={1}>{lotName}</Text>
         </View>
       </View>
 
@@ -336,9 +356,18 @@ export default function ReservationsScreen({
         style={styles.scrollList}
         contentContainerStyle={[styles.scrollContent, { paddingBottom: bottomPadding }]}
         showsVerticalScrollIndicator={false}
+        refreshControl={
+          <RefreshControl refreshing={isRefreshing} onRefresh={handleRefresh} colors={['#0F766E']} />
+        }
       >
+        {isLoading && (
+          <View style={{ paddingVertical: 40, alignItems: 'center' }}>
+            <ActivityIndicator size="large" color="#0F766E" />
+            <Text style={{ marginTop: 8, color: '#64748B', fontSize: 13 }}>Loading live reservations…</Text>
+          </View>
+        )}
         {!isLoading && filteredReservations.length === 0 && (
-          <Text style={styles.emptyText}>No reservations to show.</Text>
+          <Text style={styles.emptyText}>No reservations found in this section.</Text>
         )}
         {filteredReservations.map((item) => {
           const isExpanded = expandedId === item.id;
@@ -482,7 +511,7 @@ export default function ReservationsScreen({
                       style={[styles.admitButton, { backgroundColor: '#F26419' }]}
                       onPress={() => {
                         if (onAdmitVehicle) {
-                          onAdmitVehicle(item.id, item.reference, item.slot);
+                          onAdmitVehicle(item.id, item.reference, item.slot, item.driverNameMasked, item.plate, item.vehicleModel);
                         } else {
                           handleVerify(item);
                         }
@@ -513,6 +542,47 @@ export default function ReservationsScreen({
           );
         })}
       </ScrollView>
+
+      {/* Bottom Navigation Bar */}
+      {onNavigateTab && (
+        <View style={[styles.bottomNav, { paddingBottom: bottomNavPadding }]}>
+          <TouchableOpacity
+            style={styles.navItem}
+            onPress={() => onNavigateTab('Dashboard')}
+            activeOpacity={0.7}
+          >
+            <Text style={styles.navIcon}>📊</Text>
+            <Text style={styles.navLabel}>Dashboard</Text>
+          </TouchableOpacity>
+
+          <TouchableOpacity
+            style={styles.navItem}
+            onPress={() => onNavigateTab('Spaces')}
+            activeOpacity={0.7}
+          >
+            <Text style={styles.navIcon}>🎛️</Text>
+            <Text style={styles.navLabel}>Spaces</Text>
+          </TouchableOpacity>
+
+          <TouchableOpacity
+            style={styles.navItem}
+            onPress={() => onNavigateTab('Reservations')}
+            activeOpacity={0.7}
+          >
+            <Text style={[styles.navIcon, styles.navIconActive]}>📋</Text>
+            <Text style={[styles.navLabel, styles.navLabelActive]}>Reservations</Text>
+          </TouchableOpacity>
+
+          <TouchableOpacity
+            style={styles.navItem}
+            onPress={() => onNavigateTab('Profile')}
+            activeOpacity={0.7}
+          >
+            <Text style={styles.navIcon}>👤</Text>
+            <Text style={styles.navLabel}>Profile</Text>
+          </TouchableOpacity>
+        </View>
+      )}
     </View>
   );
 }
@@ -969,5 +1039,45 @@ const styles = StyleSheet.create({
     fontWeight: '600',
     color: '#DC2626',
     lineHeight: 16,
+  },
+  bottomNav: {
+    flexDirection: 'row',
+    justifyContent: 'space-around',
+    alignItems: 'center',
+    backgroundColor: '#FFFFFF',
+    borderTopWidth: 1,
+    borderTopColor: '#F1F5F9',
+    paddingTop: 10,
+    position: 'absolute',
+    bottom: 0,
+    left: 0,
+    right: 0,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: -2 },
+    shadowOpacity: 0.05,
+    shadowRadius: 4,
+    elevation: 8,
+  },
+  navItem: {
+    alignItems: 'center',
+    justifyContent: 'center',
+    flex: 1,
+  },
+  navIcon: {
+    fontSize: 20,
+    marginBottom: 2,
+    opacity: 0.5,
+  },
+  navIconActive: {
+    opacity: 1,
+  },
+  navLabel: {
+    fontSize: 11,
+    color: '#64748B',
+    fontWeight: '500',
+  },
+  navLabelActive: {
+    color: '#0F766E',
+    fontWeight: '700',
   },
 });
