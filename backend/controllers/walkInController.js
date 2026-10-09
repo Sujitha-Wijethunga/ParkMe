@@ -48,15 +48,25 @@ function calculateWalkInCharges(session, asOfDate = new Date()) {
   };
 }
 
+async function resolveStaffLotId(user) {
+  if (!user) return null;
+  if (user.parkingLot || user.assignedLot) {
+    return (user.parkingLot || user.assignedLot).toString();
+  }
+  const lot = await ParkingLot.findOne({ managedBy: user._id, isActive: true });
+  if (lot) return lot._id.toString();
+  return null;
+}
+
 // @desc    Get compatible available spaces in staff's assigned lot (excluding reservations & active walk-ins)
 // @route   GET /api/walk-in/spaces
 // @access  Staff / Admin
 const getAvailableSpaces = async (req, res, next) => {
   try {
-    let targetLotId = req.query.lotId || (req.user && (req.user.parkingLot || req.user.assignedLot));
+    let targetLotId = req.query.lotId;
 
     if (req.user && req.user.role === 'staff') {
-      const staffLot = req.user.parkingLot || req.user.assignedLot;
+      const staffLot = await resolveStaffLotId(req.user);
       if (!staffLot) {
         return res.status(403).json({ message: 'Staff member is not assigned to any parking location' });
       }
@@ -64,6 +74,8 @@ const getAvailableSpaces = async (req, res, next) => {
         return res.status(403).json({ message: 'Access denied: You are not authorized for this parking location' });
       }
       targetLotId = staffLot;
+    } else if (!targetLotId && req.user) {
+      targetLotId = req.user.parkingLot || req.user.assignedLot;
     }
 
     if (!targetLotId) {
@@ -162,10 +174,10 @@ const createWalkInEntry = async (req, res, next) => {
   let targetLotId = null;
 
   try {
-    targetLotId = req.body.parkingLotId || (req.user && (req.user.parkingLot || req.user.assignedLot));
+    targetLotId = req.body.parkingLotId;
 
     if (req.user && req.user.role === 'staff') {
-      const staffLot = req.user.parkingLot || req.user.assignedLot;
+      const staffLot = await resolveStaffLotId(req.user);
       if (!staffLot) {
         return res.status(403).json({ message: 'Staff member is not assigned to any parking location' });
       }
@@ -173,6 +185,8 @@ const createWalkInEntry = async (req, res, next) => {
         return res.status(403).json({ message: 'Access denied: You cannot assign slots in another parking location' });
       }
       targetLotId = staffLot;
+    } else if (!targetLotId && req.user) {
+      targetLotId = req.user.parkingLot || req.user.assignedLot;
     }
 
     if (!targetLotId) {
@@ -423,7 +437,7 @@ const getWalkInSession = async (req, res, next) => {
 
     // Verify staff location
     if (req.user && req.user.role === 'staff') {
-      const staffLot = req.user.parkingLot || req.user.assignedLot;
+      const staffLot = await resolveStaffLotId(req.user);
       const sessionLotId = session.parkingLot?._id || session.parkingLot;
       if (staffLot && sessionLotId.toString() !== staffLot.toString()) {
         return res.status(403).json({
@@ -448,14 +462,16 @@ const getWalkInSession = async (req, res, next) => {
 // @access  Staff / Admin
 const getActiveWalkIns = async (req, res, next) => {
   try {
-    let targetLotId = req.query.lotId || (req.user && (req.user.parkingLot || req.user.assignedLot));
+    let targetLotId = req.query.lotId;
 
     if (req.user && req.user.role === 'staff') {
-      const staffLot = req.user.parkingLot || req.user.assignedLot;
+      const staffLot = await resolveStaffLotId(req.user);
       if (!staffLot) {
         return res.status(403).json({ message: 'Staff member is not assigned to any parking location' });
       }
       targetLotId = staffLot;
+    } else if (!targetLotId && req.user) {
+      targetLotId = req.user.parkingLot || req.user.assignedLot;
     }
 
     const query = {
@@ -539,7 +555,7 @@ const checkoutWalkIn = async (req, res, next) => {
 
     // Verify staff location
     if (req.user && req.user.role === 'staff') {
-      const staffLot = req.user.parkingLot || req.user.assignedLot;
+      const staffLot = await resolveStaffLotId(req.user);
       const sessionLotId = session.parkingLot?._id || session.parkingLot;
       if (staffLot && sessionLotId.toString() !== staffLot.toString()) {
         return res.status(403).json({
