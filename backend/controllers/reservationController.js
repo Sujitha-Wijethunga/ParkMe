@@ -54,19 +54,88 @@ const attachOvertimeEstimate = (reservationDoc) => {
 // @access  Driver
 const createReservation = async (req, res, next) => {
   try {
-    const { parkingSpaceId, startTime, endTime, vehicleType, vehiclePlate, vehicleModel } = req.body;
+    const {
+      parkingSpaceId,
+      parkingLotId,
+      lotId,
+      startTime,
+      endTime,
+      vehicleType,
+      vehiclePlate,
+      vehicleModel,
+      paymentMethod,
+      floor,
+    } = req.body;
 
-    const start = new Date(startTime);
+    const now = new Date();
+    let start = new Date(startTime);
     const end = new Date(endTime);
 
-    if (start <= new Date()) {
+    // Allow 15-minute grace period for immediate bookings or slight device/server clock drift
+    const GRACE_PERIOD_MS = 15 * 60 * 1000;
+    if (isNaN(start.getTime()) || start.getTime() < now.getTime() - GRACE_PERIOD_MS) {
       return res.status(400).json({ message: 'Start time must be in the future' });
     }
-    if (end <= start) {
+    if (start < now) {
+      start = now;
+    }
+    if (isNaN(end.getTime()) || end <= start) {
       return res.status(400).json({ message: 'End time must be after start time' });
     }
 
-    const space = await ParkingSpace.findById(parkingSpaceId);
+    const targetLotId = parkingLotId || lotId;
+    let space = null;
+
+    // 1. Try finding by ID directly (handles unit tests and valid ObjectIds)
+    try {
+      space = await ParkingSpace.findById(parkingSpaceId);
+    } catch (_) {
+      space = null;
+    }
+
+    // 2. If not found by direct ID, resolve space by space number / lot
+    if (!space && (targetLotId || parkingSpaceId)) {
+      if (targetLotId) {
+        // Try exact match on spaceNumber within this lot
+        space = await ParkingSpace.findOne({
+          parkingLot: targetLotId,
+          spaceNumber: parkingSpaceId,
+        });
+
+        // Try suffix match (e.g. 'G-A1' matches 'A1')
+        if (!space && parkingSpaceId) {
+          space = await ParkingSpace.findOne({
+            parkingLot: targetLotId,
+            spaceNumber: { $regex: new RegExp(`${parkingSpaceId}$`, 'i') },
+          });
+        }
+
+        // Try any available space matching vehicle type in this lot
+        if (!space) {
+          const vehicleFilter =
+            vehicleType && vehicleType !== 'any'
+              ? { $or: [{ vehicleType }, { vehicleType: 'any' }, { vehicleType: { $exists: false } }] }
+              : {};
+          space = await ParkingSpace.findOne({
+            parkingLot: targetLotId,
+            status: 'available',
+            ...vehicleFilter,
+          });
+        }
+
+        // If this lot currently has no space document, auto-create one
+        if (!space) {
+          space = await ParkingSpace.create({
+            parkingLot: targetLotId,
+            spaceNumber: parkingSpaceId || 'A1',
+            vehicleType: vehicleType || 'Car',
+            status: 'available',
+            floor: floor || 'G',
+          });
+        }
+      }
+    }
+
     if (!space) return res.status(404).json({ message: 'Parking space not found' });
     if (space.status !== 'available') {
       return res.status(409).json({ message: 'Parking space is not available' });
@@ -89,21 +158,28 @@ const createReservation = async (req, res, next) => {
       }
     }
 
-    const overlap = await hasOverlap(parkingSpaceId, start, end);
+    const overlap = await hasOverlap(space._id, start, end);
     if (overlap) {
       return res.status(409).json({ message: 'This space is already reserved for the selected time' });
     }
 
-    const lot = await ParkingLot.findById(space.parkingLot);
+    const lot = space.parkingLot ? await ParkingLot.findById(space.parkingLot) : null;
     const chosenVehicle = vehicleType || space.vehicleType || 'Car';
-    const ratePerHour = (lot.vehicleTariffs && lot.vehicleTariffs[chosenVehicle]) || lot.pricePerHour;
+    const ratePerHour = (lot && lot.vehicleTariffs && lot.vehicleTariffs[chosenVehicle]) || (lot && lot.pricePerHour) || 120;
     const hours = (end - start) / (1000 * 60 * 60);
     const totalAmount = parseFloat((hours * ratePerHour).toFixed(2));
+
+    const isOnline = Boolean(
+      paymentMethod &&
+        (paymentMethod.toLowerCase().includes('card') ||
+          paymentMethod.toLowerCase().includes('wallet') ||
+          paymentMethod.toLowerCase().includes('online'))
+    );
 
     const reservation = await Reservation.create({
       reference: `PM-${crypto.randomBytes(4).toString('hex').toUpperCase()}`,
       driver: req.user._id,
-      parkingSpace: parkingSpaceId,
+      parkingSpace: space._id,
       parkingLot: space.parkingLot,
       vehicleType: chosenVehicle,
       vehiclePlate: vehiclePlate ? String(vehiclePlate).trim().toUpperCase() : '',
@@ -114,17 +190,48 @@ const createReservation = async (req, res, next) => {
       overtimeRatePerHour: ratePerHour,
       checkInStatus: 'none',
       checkoutStatus: 'none',
-      paymentStatus: 'unpaid',
+      paymentStatus: isOnline ? 'paid' : 'unpaid',
       startTime: start,
       endTime: end,
       totalAmount,
     });
 
     // Mark space as occupied
-    await ParkingSpace.findByIdAndUpdate(parkingSpaceId, { status: 'occupied' });
-    await ParkingLot.findByIdAndUpdate(space.parkingLot, { $inc: { availableSpaces: -1 } });
+    await ParkingSpace.findByIdAndUpdate(space._id, { status: 'occupied' });
+    if (space.parkingLot) {
+      await ParkingLot.findByIdAndUpdate(space.parkingLot, { $inc: { availableSpaces: -1 } });
+    }
 
-    res.status(201).json(attachOvertimeEstimate(reservation));
+    // Record Payment if payment method is provided
+    if (paymentMethod) {
+      const methodEnum = paymentMethod.toLowerCase().includes('card')
+        ? 'card'
+        : paymentMethod.toLowerCase().includes('wallet')
+        ? 'wallet'
+        : 'cash';
+      try {
+        await Payment.create({
+          reservation: reservation._id,
+          driver: req.user._id,
+          paymentType: 'booking',
+          amount: totalAmount,
+          method: methodEnum,
+          status: isOnline ? 'paid' : 'pending',
+          transactionId: `TXN-${crypto.randomBytes(4).toString('hex').toUpperCase()}`,
+          paidAt: isOnline ? new Date() : undefined,
+        });
+      } catch (_) {}
+    }
+
+    let responseDoc = reservation;
+    try {
+      const populated = await Reservation.findById(reservation._id)
+        .populate('parkingSpace', 'spaceNumber floor type')
+        .populate('parkingLot', 'name address pricePerHour');
+      if (populated) responseDoc = populated;
+    } catch (_) {}
+
+    res.status(201).json(attachOvertimeEstimate(responseDoc));
   } catch (error) {
     next(error);
   }

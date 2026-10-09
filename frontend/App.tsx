@@ -79,6 +79,7 @@ import {
   DriverFilterChip,
   ParkingLotCardItem,
   SAMPLE_NEARBY_PARKING_LOTS,
+  resolveParkingLotItem,
 } from './src/constants/driverSampleData';
 
 type ScreenType =
@@ -524,9 +525,12 @@ export default function App() {
   const handleBookingProceedToPayment = (payload: ConfirmedBookingPayload) => {
     if (!bookingSelection) return;
     const { draft, price } = payload;
+    const lot = resolveParkingLotItem(bookingSelection.lotId, driverParkingLots);
     setBookingDraft(draft);
     setConfirmedBooking({
       lotId: bookingSelection.lotId,
+      lotName: lot?.name,
+      lotAddress: lot?.address,
       spaceId: bookingSelection.spaceId,
       floor: bookingSelection.floor,
       vehicleType: bookingSelection.vehicleType,

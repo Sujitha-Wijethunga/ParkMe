@@ -2,6 +2,8 @@ import { VehicleType } from './parkingSpaceData';
 
 export interface BookingDetails {
   lotId: string;
+  lotName?: string;
+  lotAddress?: string;
   spaceId: string;
   floor: string;
   vehicleType: VehicleType;
