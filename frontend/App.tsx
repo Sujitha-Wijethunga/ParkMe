@@ -1045,8 +1045,8 @@ export default function App() {
           selectedVehicleType={selectedVehicleType}
           onVehicleTypeChange={setSelectedVehicleType}
           onNavigateToMap={() => handleOpenSearch('', 'map', 'Nearest')}
-          onNavigateToLotDetails={(lotId) =>
-            handleOpenLotDetails(lotId, 'driver-home')
+          onNavigateToLotDetails={(lotId, lotItem) =>
+            handleOpenLotDetails(lotId, 'driver-home', undefined, lotItem)
           }
           onNavigateToBookings={handleOpenBookings}
           onNavigateToProfile={handleDriverProfilePress}
