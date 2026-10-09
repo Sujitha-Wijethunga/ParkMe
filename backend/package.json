@@ -9,7 +9,7 @@
     "seed:lots": "node seeds/parkingLotsSeed.js",
     "migrate:models": "node seeds/backfillDatabaseModels.js",
     "provision:staff": "node scripts/provisionStaff.js",
-    "test": "node --test test/nearbyParking.test.js tests/reservationRelease.test.js tests/reservationCancellation.test.js tests/reservationActivation.test.js tests/vehicleSpaceValidation.test.js tests/databaseSchemaAndExtensions.test.js tests/verifiedActiveParking.test.js tests/searchStaffWorkflows.test.js"
+    "test": "node --test test/nearbyParking.test.js tests/reservationRelease.test.js tests/reservationCancellation.test.js tests/reservationActivation.test.js tests/vehicleSpaceValidation.test.js tests/databaseSchemaAndExtensions.test.js tests/verifiedActiveParking.test.js tests/searchStaffWorkflows.test.js tests/walkInParking.test.js"
   },
   "keywords": [],
   "author": "",

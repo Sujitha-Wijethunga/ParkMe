@@ -5,12 +5,18 @@ const paymentSchema = new mongoose.Schema(
     reservation: {
       type: mongoose.Schema.Types.ObjectId,
       ref: 'Reservation',
-      required: [true, 'Reservation reference is required'],
+    },
+    walkInSession: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: 'WalkInSession',
     },
     driver: {
       type: mongoose.Schema.Types.ObjectId,
       ref: 'User',
-      required: [true, 'Driver reference is required'],
+    },
+    recordedBy: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: 'User',
     },
     paymentType: {
       type: String,
@@ -45,7 +51,8 @@ const paymentSchema = new mongoose.Schema(
 
 // Indexes
 // Allow at most one payment per type (booking / extension / overtime) per reservation
-paymentSchema.index({ reservation: 1, paymentType: 1 }, { unique: true });
+paymentSchema.index({ reservation: 1, paymentType: 1 }, { unique: true, sparse: true });
+paymentSchema.index({ walkInSession: 1, paymentType: 1 }, { unique: true, sparse: true });
 // Driver payment history
 paymentSchema.index({ driver: 1, status: 1, createdAt: -1 });
 

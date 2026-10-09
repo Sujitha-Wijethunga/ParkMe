@@ -82,6 +82,7 @@ app.use('/api/payments', require('./routes/paymentRoutes'));
 app.use('/api/attendance', require('./routes/attendanceRoutes'));
 app.use('/api/leave-requests', require('./routes/leaveRequestRoutes'));
 app.use('/api/notifications', require('./routes/notificationRoutes'));
+app.use('/api/walk-in', require('./routes/walkInRoutes'));
 
 // Centralised error handler (must be last)
 app.use(errorHandler);
