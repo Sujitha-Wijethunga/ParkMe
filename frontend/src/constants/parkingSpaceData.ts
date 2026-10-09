@@ -36,7 +36,7 @@
  * This data will be replaced by /api/parking-lots/:id/spaces responses.
  */
 
-import { SAMPLE_NEARBY_PARKING_LOTS } from './driverSampleData';
+import { SAMPLE_NEARBY_PARKING_LOTS, resolveParkingLotItem, ParkingLotCardItem } from './driverSampleData';
 
 /** Persisted space statuses matching backend enum. */
 export type SpacePersistedStatus = 'available' | 'occupied' | 'maintenance';
@@ -316,18 +316,23 @@ export const SAMPLE_LOT_SPACE_LAYOUTS: LotSpaceLayout[] = [
  * Look up the space layout for a given lot ID.
  * Returns a static layout or dynamically creates a vehicle-designated layout based on lot metadata.
  */
-export function getSpaceLayoutForLot(lotId: string): LotSpaceLayout | undefined {
+export function getSpaceLayoutForLot(
+  lotId: string,
+  lotOrPool?: ParkingLotCardItem | ParkingLotCardItem[]
+): LotSpaceLayout | undefined {
   const existing = SAMPLE_LOT_SPACE_LAYOUTS.find((l) => l.lotId === lotId);
   if (existing) return existing;
 
-  const lot = SAMPLE_NEARBY_PARKING_LOTS.find((l) => l.id === lotId);
-  if (!lot) return undefined;
+  const pool = Array.isArray(lotOrPool) ? lotOrPool : undefined;
+  const singleLot = !Array.isArray(lotOrPool) ? lotOrPool : undefined;
+  const lot = singleLot || resolveParkingLotItem(lotId, pool);
 
+  const hourlyRate = lot?.pricePerHour ?? 120;
   const tariffs: Record<VehicleType, number> = {
-    Car: lot.vehicleTariffs?.Car ?? lot.pricePerHour,
-    Bike: lot.vehicleTariffs?.Bike ?? Math.round(lot.pricePerHour * 0.45),
-    SUV: lot.vehicleTariffs?.SUV ?? Math.round(lot.pricePerHour * 1.4),
-    EV: lot.vehicleTariffs?.EV ?? Math.round(lot.pricePerHour * 1.2),
+    Car: lot?.vehicleTariffs?.Car ?? hourlyRate,
+    Bike: lot?.vehicleTariffs?.Bike ?? Math.round(hourlyRate * 0.45),
+    SUV: lot?.vehicleTariffs?.SUV ?? Math.round(hourlyRate * 1.4),
+    EV: lot?.vehicleTariffs?.EV ?? Math.round(hourlyRate * 1.2),
   };
 
   const rows = ['A', 'B', 'C', 'D'];

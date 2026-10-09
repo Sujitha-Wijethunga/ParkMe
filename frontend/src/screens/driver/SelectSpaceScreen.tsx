@@ -11,7 +11,7 @@ import {
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { DriverColors } from '../../constants/colors';
-import { SAMPLE_NEARBY_PARKING_LOTS } from '../../constants/driverSampleData';
+import { SAMPLE_NEARBY_PARKING_LOTS, resolveParkingLotItem, ParkingLotCardItem } from '../../constants/driverSampleData';
 import {
   getSpaceLayoutForLot,
   LotFloor,
@@ -33,6 +33,8 @@ export interface SpaceSelectionResult {
 interface SelectSpaceScreenProps {
   /** Stable lot ID — carried from LotDetailsScreen. */
   lotId: string;
+  /** Optional pool of parking lots from backend or home state. */
+  parkingLots?: ParkingLotCardItem[];
   /** Previously selected space result to preserve when returning from Booking Summary. */
   initialSelection?: SpaceSelectionResult | null;
   /** Selected vehicle type carried from flow. */
@@ -119,6 +121,7 @@ function isSelectable(status: SpaceUIStatus): boolean {
  * ────────────────────────────────────────────────────────────────────────── */
 export default function SelectSpaceScreen({
   lotId,
+  parkingLots,
   initialSelection,
   selectedVehicleType,
   onVehicleTypeChange,
@@ -129,8 +132,8 @@ export default function SelectSpaceScreen({
   const [continueBarHeight, setContinueBarHeight] = useState<number>(0);
 
   /* Lot metadata */
-  const lot = SAMPLE_NEARBY_PARKING_LOTS.find((l) => l.id === lotId);
-  const layout = getSpaceLayoutForLot(lotId);
+  const lot = resolveParkingLotItem(lotId, parkingLots);
+  const layout = getSpaceLayoutForLot(lotId, lot);
 
   /* Default floor = first in list that matches design (G preferred, else first). */
   const defaultFloor = useMemo(() => {

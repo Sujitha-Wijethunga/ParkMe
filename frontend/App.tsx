@@ -433,8 +433,15 @@ export default function App() {
   const handleOpenLotDetails = (
     lotId: string,
     origin: 'driver-home' | 'driver-search',
-    searchSnapshot?: { query: string; viewMode: SearchResultsViewMode; filterChip: DriverFilterChip; selectedLotId: string | null }
+    searchSnapshot?: { query: string; viewMode: SearchResultsViewMode; filterChip: DriverFilterChip; selectedLotId: string | null },
+    lotItem?: ParkingLotCardItem
   ) => {
+    if (lotItem) {
+      setDriverParkingLots((prev) => {
+        if (prev.some((p) => p.id === lotItem.id)) return prev;
+        return [...prev, lotItem];
+      });
+    }
     setSelectedLotId(lotId);
     setLotDetailsOrigin(origin);
     if (searchSnapshot) {
@@ -1083,8 +1090,8 @@ export default function App() {
           onVehicleTypeChange={setSelectedVehicleType}
           onBack={() => setCurrentScreen('driver-home')}
           onNavigateHome={() => setCurrentScreen('driver-home')}
-          onSelectLot={(lotId, snapshot) =>
-            handleOpenLotDetails(lotId, 'driver-search', snapshot)
+          onSelectLot={(lotId, snapshot, lotItem) =>
+            handleOpenLotDetails(lotId, 'driver-search', snapshot, lotItem)
           }
           onNavigateBookings={handleOpenBookings}
           onNavigateProfile={handleDriverProfilePress}
@@ -1174,6 +1181,7 @@ export default function App() {
       {currentScreen === 'driver-lot-details' && (
         <LotDetailsScreen
           lotId={selectedLotId}
+          parkingLots={driverParkingLots}
           onBack={handleBackFromLotDetails}
           onSelectSpace={handleOpenSpaceSelection}
         />
@@ -1181,6 +1189,7 @@ export default function App() {
       {currentScreen === 'driver-space-selection' && (
         <SelectSpaceScreen
           lotId={spaceSelectionLotId}
+          parkingLots={driverParkingLots}
           initialSelection={bookingSelection}
           selectedVehicleType={selectedVehicleType}
           onVehicleTypeChange={setSelectedVehicleType}
@@ -1192,6 +1201,7 @@ export default function App() {
         <BookingSummaryScreen
           key={`${bookingSelection.lotId}-${bookingSelection.spaceId}`}
           selection={bookingSelection}
+          parkingLots={driverParkingLots}
           initialDraft={bookingDraft}
           onDraftChange={setBookingDraft}
           onBack={() => setCurrentScreen('driver-space-selection')}

@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import {
   View,
   Text,
@@ -15,15 +15,19 @@ import { DriverColors } from '../../constants/colors';
 import {
   ParkingLotCardItem,
   SAMPLE_NEARBY_PARKING_LOTS,
+  resolveParkingLotItem,
 } from '../../constants/driverSampleData';
 import ParkingLotImage from '../../components/ParkingLotImage';
 import { checkLotAvailability } from '../../services/parkingService';
 import { launchDrivingNavigation, isValidCoordinate } from '../../services/navigationLauncher';
 import { VERIFIED_LOT_ENTRANCES } from '../../services/parkingEntranceService';
+import { API_BASE_URL } from '../../constants/api';
 
 interface LotDetailsScreenProps {
   /** Stable lot ID passed from the card that was tapped. */
   lotId: string;
+  /** Optional pool of parking lots from backend or home state. */
+  parkingLots?: ParkingLotCardItem[];
   /** Navigate back to the originating screen (Home or Search Results). */
   onBack: () => void;
   /**
@@ -57,17 +61,14 @@ const AMENITY_ICONS: Record<string, string> = {
  * Driver Parking Lot Details Screen  (ParkMe-06-LotDetails)
  *
  * Shows details for the selected parking lot based on lotId.
- * Data is sourced from SAMPLE_NEARBY_PARKING_LOTS; no backend call is made.
- * Ratings and live occupancy counts are intentionally excluded – they are
- * not present in the current sample data and must not be fabricated.
- *
- * The "Reserve a Space" CTA is a placeholder that will be wired to the
- * Select Space milestone in the next sprint.
+ * Data is sourced from SAMPLE_NEARBY_PARKING_LOTS or live backend API.
  */
-export default function LotDetailsScreen({ lotId, onBack, onSelectSpace }: LotDetailsScreenProps) {
+export default function LotDetailsScreen({ lotId, parkingLots, onBack, onSelectSpace }: LotDetailsScreenProps) {
   const insets = useSafeAreaInsets();
   const [isNavigating, setIsNavigating] = useState(false);
   const [bottomBarHeight, setBottomBarHeight] = useState(0);
+  const [fetchedLot, setFetchedLot] = useState<ParkingLotCardItem | null>(null);
+  const [isFetchingLot, setIsFetchingLot] = useState(false);
 
   // Dynamic safe-area paddings
   const bottomBarPaddingBottom =
@@ -76,10 +77,83 @@ export default function LotDetailsScreen({ lotId, onBack, onSelectSpace }: LotDe
     Math.max(insets.top, Platform.OS === 'android' ? (StatusBar.currentHeight ?? 0) : 0) + 8;
   const heroHeight = 260 + (insets.top > 24 ? insets.top - 24 : 0);
 
-  // Resolve the lot from the shared sample data by stable ID
-  const lot: ParkingLotCardItem | undefined = SAMPLE_NEARBY_PARKING_LOTS.find(
-    (l) => l.id === lotId
-  );
+  // Resolve the lot from the pool or sample data
+  const localLot = resolveParkingLotItem(lotId, parkingLots);
+
+  useEffect(() => {
+    if (localLot) return;
+    let isCancelled = false;
+    async function loadRemoteLot() {
+      setIsFetchingLot(true);
+      try {
+        const response = await fetch(`${API_BASE_URL}/api/parking-lots/${lotId}`);
+        if (response.ok) {
+          const remoteData = await response.json();
+          if (!isCancelled && remoteData) {
+            const mapped: ParkingLotCardItem = {
+              id: remoteData._id || remoteData.id || lotId,
+              name: remoteData.name || 'Parking Facility',
+              address: remoteData.address || 'Sri Lanka',
+              city: remoteData.city,
+              distance: remoteData.distance || '0.8 km',
+              status: (remoteData.capacity?.availableSpots ?? remoteData.availableSpaces ?? 1) > 0 ? 'Available' : 'Full',
+              availableSpaces: remoteData.capacity?.availableSpots ?? remoteData.availableSpaces ?? 0,
+              totalSpaces: remoteData.capacity?.totalSpots ?? remoteData.totalSpaces ?? 50,
+              isCovered: remoteData.amenities?.some((a: string) => String(a).toLowerCase().includes('covered')) ?? true,
+              hasEVCharging: remoteData.amenities?.some((a: string) => String(a).toLowerCase().includes('ev')) ?? false,
+              pricePerHour: remoteData.rates?.hourlyRate ?? remoteData.pricePerHour ?? 120,
+              imageUrl: remoteData.imageUrl || 'https://images.unsplash.com/photo-1506521781263-d8422e82f27a?auto=format&fit=crop&w=600&q=80',
+              amenities: remoteData.amenities || ['CCTV Surveillance'],
+              openingHours: remoteData.openTime && remoteData.closeTime ? `${remoteData.openTime} – ${remoteData.closeTime}` : 'Open 24 hours',
+              parkingType: remoteData.parkingType || 'Multi-story',
+              entranceCoordinates: remoteData.vehicleEntranceCoordinates || (remoteData.location?.coordinates ? {
+                lat: remoteData.location.coordinates[1],
+                lng: remoteData.location.coordinates[0],
+              } : undefined),
+              entranceName: remoteData.entranceName,
+              sourceCitation: remoteData.sourceCitation,
+              supportedVehicles: remoteData.supportedVehicles,
+              vehicleTariffs: remoteData.vehicleTariffs,
+            };
+            setFetchedLot(mapped);
+          }
+        }
+      } catch (err) {
+        console.warn('Failed to fetch lot by ID:', err);
+      } finally {
+        if (!isCancelled) setIsFetchingLot(false);
+      }
+    }
+    loadRemoteLot();
+    return () => {
+      isCancelled = true;
+    };
+  }, [lotId, localLot]);
+
+  const lot: ParkingLotCardItem | undefined = localLot || fetchedLot || undefined;
+
+  // ── Loading state ──────────────────────────────────────────────────────────
+  if (!lot && isFetchingLot) {
+    return (
+      <View
+        style={[
+          styles.errorContainer,
+          {
+            paddingTop: topBarPaddingTop,
+            paddingBottom: insets.bottom,
+            justifyContent: 'center',
+            alignItems: 'center',
+          },
+        ]}
+      >
+        <StatusBar barStyle="dark-content" backgroundColor="#FFFFFF" />
+        <ActivityIndicator size="large" color={DriverColors.brandPrimary} />
+        <Text style={[styles.errorSubtitle, { marginTop: 16 }]}>
+          Loading parking details…
+        </Text>
+      </View>
+    );
+  }
 
   // ── Guard: unknown or missing lot ──────────────────────────────────────────
   if (!lot) {
@@ -118,7 +192,12 @@ export default function LotDetailsScreen({ lotId, onBack, onSelectSpace }: LotDe
   const dailyRateEstimate = lot.pricePerHour * 6; // display-only estimate (6 hr cap convention)
 
   // Documented verified entrance registry check
-  const verifiedRegistryEntry = lot.id ? VERIFIED_LOT_ENTRANCES[lot.id] : undefined;
+  const verifiedRegistryEntry = lot.id
+    ? (VERIFIED_LOT_ENTRANCES[lot.id] ||
+       Object.values(VERIFIED_LOT_ENTRANCES).find(
+         (entry) => entry.name.toLowerCase().trim() === lot.name.toLowerCase().trim()
+       ))
+    : undefined;
 
   // Prioritize documented entrance coordinates from lot or registry
   const entranceCoords =
@@ -133,7 +212,11 @@ export default function LotDetailsScreen({ lotId, onBack, onSelectSpace }: LotDe
     (lot.entranceCoordinates && isValidCoordinate(lot.entranceCoordinates.lat, lot.entranceCoordinates.lng))
   );
 
-  const lotCoords = entranceCoords || LOT_SAMPLE_COORDINATES[lot.id];
+  const lotCoords =
+    entranceCoords ||
+    (lot.id ? LOT_SAMPLE_COORDINATES[lot.id] : undefined) ||
+    (verifiedRegistryEntry ? { lat: verifiedRegistryEntry.latitude, lng: verifiedRegistryEntry.longitude } : undefined) ||
+    { lat: 6.9271, lng: 79.8456 };
 
   const handleReserve = () => {
     onSelectSpace(lot.id);
