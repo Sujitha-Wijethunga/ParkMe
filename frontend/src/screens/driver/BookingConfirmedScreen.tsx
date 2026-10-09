@@ -13,7 +13,7 @@ import {
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { DriverColors } from '../../constants/colors';
-import { SAMPLE_NEARBY_PARKING_LOTS } from '../../constants/driverSampleData';
+import { SAMPLE_NEARBY_PARKING_LOTS, resolveParkingLotItem } from '../../constants/driverSampleData';
 import { BookingDetails } from '../../constants/bookingTypes';
 import { DriverReservation } from '../../services/reservationApi';
 
@@ -108,13 +108,20 @@ export default function BookingConfirmedScreen({
   );
   const bottomPadding = Math.max(insets.bottom, 16) + 24;
 
-  const lot = SAMPLE_NEARBY_PARKING_LOTS.find((l) => l.id === booking.lotId);
+  const lot =
+    resolveParkingLotItem(booking.lotId) ||
+    SAMPLE_NEARBY_PARKING_LOTS.find((l) => l.id === booking.lotId || (l as any)._id === booking.lotId);
+  const lotName =
+    booking.lotName ||
+    lot?.name ||
+    (typeof reservation.parkingLot === 'object' && (reservation.parkingLot as any)?.name) ||
+    'Parking Lot';
   const ref = reservation.reference || reservation._id;
   const handleDownloadQr = async () => {
     try {
       const svg = createBookingQrSvg(ref + booking.spaceId, {
         reference: ref,
-        lot: lot?.name ?? 'Parking Lot',
+        lot: lotName,
         space: booking.spaceId,
         floor: booking.floor,
         vehicle: booking.vehicleType,
@@ -160,7 +167,7 @@ export default function BookingConfirmedScreen({
           <Text style={styles.label}>RESERVED LOCATION</Text>
           <View style={styles.rowBetween}>
             <View style={{ flex: 1, paddingRight: 8 }}>
-              <Text style={styles.lotName}>{lot?.name ?? 'Parking Lot'}</Text>
+              <Text style={styles.lotName}>{lotName}</Text>
               <Text style={styles.small}>Floor {booking.floor} · {booking.vehicleType}</Text>
             </View>
             <View style={styles.spaceBadge}>

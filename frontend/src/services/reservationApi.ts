@@ -1,5 +1,5 @@
 import { getApiBaseUrl } from './parkingService';
-import { SAMPLE_NEARBY_PARKING_LOTS } from '../constants/driverSampleData';
+import { SAMPLE_NEARBY_PARKING_LOTS, resolveParkingLotItem } from '../constants/driverSampleData';
 import { BookingDetails } from '../constants/bookingTypes';
 import { getDriverBookingData, saveDriverBookingData } from './storage';
 
@@ -141,7 +141,7 @@ async function reservationRequest<T>(
   path: string,
   token: string,
   method = 'GET',
-  body?: Record<string, string>
+  body?: Record<string, any>
 ): Promise<T> {
   const controller = new AbortController();
   const timeoutId = setTimeout(() => controller.abort(), REQUEST_TIMEOUT_MS);
@@ -155,7 +155,7 @@ async function reservationRequest<T>(
         Authorization: `Bearer ${token}`,
         'Content-Type': 'application/json',
       },
-      ...(method === 'PUT' ? { body: JSON.stringify(body || {}) } : {}),
+      ...(body && method !== 'GET' ? { body: JSON.stringify(body) } : {}),
     });
     const data = await response.json().catch(() => null);
 
@@ -244,29 +244,44 @@ export async function saveConfirmedBooking(input: ConfirmedBookingInput): Promis
     try {
       const serverRes = await reservationRequest<DriverReservation>('', token, 'POST', {
         parkingSpaceId: booking.spaceId,
+        parkingLotId: booking.lotId,
+        lotId: booking.lotId,
+        floor: booking.floor,
         startTime: startTime.toISOString(),
         endTime: endTime.toISOString(),
         vehicleType: booking.vehicleType,
         vehiclePlate: booking.vehiclePlate || '',
         vehicleModel: booking.vehicleModel || '',
+        paymentMethod: booking.paymentMethod || 'Pay with Cash on Arrival',
       });
       return serverRes;
     } catch (err) {
       console.warn('[saveConfirmedBooking] Backend request failed, falling back to local:', err);
+      if (err instanceof Error) {
+        const msg = err.message.toLowerCase();
+        if (
+          msg.includes('already reserved') ||
+          msg.includes('designated for') ||
+          msg.includes('invalid vehicle')
+        ) {
+          throw err;
+        }
+      }
     }
   }
 
-  const lot = SAMPLE_NEARBY_PARKING_LOTS.find((item) => item.id === booking.lotId);
-  if (!lot) throw new Error('The selected parking location is no longer available.');
+  const lot =
+    resolveParkingLotItem(booking.lotId) ||
+    SAMPLE_NEARBY_PARKING_LOTS.find((item) => item.id === booking.lotId || (item as any)._id === booking.lotId);
 
   const now = Date.now();
   const reservation: DriverReservation = {
     _id: `local-${now}-${Math.random().toString(36).slice(2, 8)}`,
     parkingLot: {
       _id: booking.lotId,
-      name: lot.name,
-      address: lot.address,
-      pricePerHour: lot.pricePerHour,
+      name: booking.lotName || lot?.name || 'Parking Facility',
+      address: booking.lotAddress || lot?.address || 'Colombo, Sri Lanka',
+      pricePerHour: lot?.pricePerHour ?? booking.tariffPerHour ?? 120,
     },
     parkingSpace: { _id: booking.spaceId, spaceNumber: booking.spaceId, floor: booking.floor },
     startTime: startTime.toISOString(),
