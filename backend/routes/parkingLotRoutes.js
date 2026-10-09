@@ -19,7 +19,7 @@ router.get('/suggestions', getParkingLotSuggestions);
 router.get('/nearby-driving', getNearbyDrivingParking);
 router.get('/:id/availability', getParkingLotAvailability);
 router.get('/:id', getParkingLotById);
-router.post('/', protect, authorize('admin', 'staff'), uploadParkingLotImage.single('image'), createParkingLot);
+router.post('/', protect, authorize('admin'), uploadParkingLotImage.single('image'), createParkingLot);
 router.put('/:id', protect, authorize('admin', 'staff'), uploadParkingLotImage.single('image'), updateParkingLot);
 router.delete('/:id', protect, authorize('admin'), deleteParkingLot);
 

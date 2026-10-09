@@ -73,6 +73,7 @@ import StaffProfileScreen from './src/screens/staff/StaffProfileScreen';
 import ChangePasswordScreen from './src/screens/staff/ChangePasswordScreen';
 import AttendanceScreen from './src/screens/staff/AttendanceScreen';
 import LeaveRequestScreen from './src/screens/staff/LeaveRequestScreen';
+import WalkInParkingScreen from './src/screens/staff/WalkInParkingScreen';
 import { StaffProfile, defaultStaffProfile } from './src/constants/profile';
 import { API_BASE_URL } from './src/constants/api';
 import {
@@ -109,6 +110,7 @@ type ScreenType =
   | 'add-space'
   | 'reservations'
   | 'verify'
+  | 'staff-walk-in'
   | 'profile'
   | 'change-password'
   | 'attendance'
@@ -843,29 +845,33 @@ export default function App() {
         : null;
 
       if (!lot) {
-        const createLotResponse = await fetch(`${API_BASE_URL}/api/parking-lots`, {
-          method: 'POST',
-          headers,
-          body: JSON.stringify({
-            name: lotName,
-            address: '1A Centre Road, Colombo 02',
-            location: { type: 'Point', coordinates: [79.8612, 6.9271] },
-            totalSpaces: 1,
-            availableSpaces: newSpace.status === 'Available' ? 1 : 0,
-            pricePerHour: 150,
-            openTime: '00:00',
-            closeTime: '23:59',
-            amenities: ['CCTV Surveillance', 'EV Charging'],
-            managedBy: null,
-            isActive: true,
-          }),
-        });
+        if (staffProfile.role?.toLowerCase().includes('admin')) {
+          const createLotResponse = await fetch(`${API_BASE_URL}/api/parking-lots`, {
+            method: 'POST',
+            headers,
+            body: JSON.stringify({
+              name: lotName,
+              address: '1A Centre Road, Colombo 02',
+              location: { type: 'Point', coordinates: [79.8612, 6.9271] },
+              totalSpaces: 1,
+              availableSpaces: newSpace.status === 'Available' ? 1 : 0,
+              pricePerHour: 150,
+              openTime: '00:00',
+              closeTime: '23:59',
+              amenities: ['CCTV Surveillance', 'EV Charging'],
+              managedBy: null,
+              isActive: true,
+            }),
+          });
 
-        if (!createLotResponse.ok) {
-          throw new Error(await readApiError(createLotResponse, 'Unable to create parking lot.'));
+          if (!createLotResponse.ok) {
+            throw new Error(await readApiError(createLotResponse, 'Unable to create parking lot.'));
+          }
+
+          lot = await createLotResponse.json();
+        } else {
+          throw new Error(`Parking facility "${lotName}" was not found. Ordinary staff cannot create new parking locations; please contact an administrator.`);
         }
-
-        lot = await createLotResponse.json();
       }
 
       const lotId = lot._id || lot.id;
@@ -1271,6 +1277,7 @@ export default function App() {
           onNavigateToSpaces={() => setCurrentScreen('spaces')}
           onNavigateToReservations={() => setCurrentScreen('reservations')}
           onNavigateToVerifyEntry={() => setCurrentScreen('verify')}
+          onNavigateToWalkIn={() => setCurrentScreen('staff-walk-in')}
           onNavigateToProfile={() => setCurrentScreen('profile')}
           spaces={spaces}
         />
@@ -1411,6 +1418,44 @@ export default function App() {
                   })));
                 }
               }).catch(() => {});
+            }
+            setCurrentScreen('dashboard');
+          }}
+        />
+      )}
+      {currentScreen === 'staff-walk-in' && (
+        <WalkInParkingScreen
+          authToken={authToken}
+          assignedLotId={spaces.find((s) => s.parkingLotId)?.parkingLotId}
+          assignedLotName={staffProfile.assignedLot || 'Colombo City Centre Car Park'}
+          staffName={staffProfile.name || 'Staff Attendant'}
+          onBack={() => {
+            if (authToken) {
+              void fetch(`${API_BASE_URL}/api/parking-spaces`, {
+                headers: { Authorization: `Bearer ${authToken}` },
+              })
+                .then((r) => (r.ok ? r.json() : null))
+                .then((data) => {
+                  if (Array.isArray(data)) {
+                    setSpaces(
+                      data.map((s: any) => ({
+                        id: s._id || s.id,
+                        slot: s.spaceNumber,
+                        status: normalizeSpaceStatus(s.effectiveStatus || s.status),
+                        location:
+                          typeof s.parkingLot === 'object' && s.parkingLot
+                            ? s.parkingLot.name
+                            : s.location || 'Assigned Facility',
+                        level: s.floor || 'Ground Floor',
+                        parkingLotId:
+                          typeof s.parkingLot === 'object' && s.parkingLot ? s.parkingLot._id : s.parkingLot,
+                        vehicleType: s.vehicleType || 'Car',
+                        imageUrl: resolveApiImageUrl(s.imageUrl),
+                      }))
+                    );
+                  }
+                })
+                .catch(() => {});
             }
             setCurrentScreen('dashboard');
           }}

@@ -158,6 +158,14 @@ const createParkingLot = async (req, res, next) => {
 // @access  Admin / Staff
 const updateParkingLot = async (req, res, next) => {
   try {
+    if (req.user && req.user.role === 'staff') {
+      const staffLot = req.user.parkingLot || req.user.assignedLot;
+      if (!staffLot || staffLot.toString() !== req.params.id.toString()) {
+        return res.status(403).json({
+          message: 'Access denied: You are not authorized to update this parking facility',
+        });
+      }
+    }
     const updates = { ...req.body };
     if (req.file) {
       updates.imageUrl = `/uploads/parking-lots/${req.file.filename}`;
