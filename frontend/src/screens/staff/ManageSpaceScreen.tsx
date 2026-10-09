@@ -11,6 +11,8 @@ import {
   Modal,
   Pressable,
   Alert,
+  ActivityIndicator,
+  RefreshControl,
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
@@ -23,6 +25,7 @@ export interface SpaceItem {
   location?: string;
   level?: string;
   parkingLotId?: string;
+  vehicleType?: string;
   imageUrl?: string;
   imageUri?: string;
   imageMimeType?: string;
@@ -31,38 +34,26 @@ export interface SpaceItem {
 }
 
 export const initialSpaces: SpaceItem[] = [
-  { id: '1', slot: 'A1', status: 'Occupied' },
-  { id: '2', slot: 'A2', status: 'Available' },
-  { id: '3', slot: 'A3', status: 'Reserved' },
-  { id: '4', slot: 'A4', status: 'Available' },
-  { id: '5', slot: 'A5', status: 'Reserved' },
-  { id: '6', slot: 'A6', status: 'Available' },
-  { id: '7', slot: 'A7', status: 'Occupied' },
-  { id: '8', slot: 'A8', status: 'Available' },
-  { id: '9', slot: 'B1', status: 'Available' },
-  { id: '10', slot: 'B2', status: 'Occupied' },
-  { id: '11', slot: 'B3', status: 'Available' },
-  { id: '12', slot: 'B4', status: 'Reserved' },
-  { id: '13', slot: 'B5', status: 'Available' },
-  { id: '14', slot: 'B6', status: 'Available' },
-  { id: '15', slot: 'B7', status: 'Available' },
-  { id: '16', slot: 'B8', status: 'Occupied' },
-  { id: '17', slot: 'C1', status: 'Reserved' },
-  { id: '18', slot: 'C2', status: 'Available' },
-  { id: '19', slot: 'C3', status: 'Occupied' },
-  { id: '20', slot: 'C4', status: 'Available' },
-  { id: '21', slot: 'C5', status: 'Available' },
-  { id: '22', slot: 'C6', status: 'Reserved' },
-  { id: '23', slot: 'C7', status: 'Available' },
-  { id: '24', slot: 'C8', status: 'Available' },
-  { id: '25', slot: 'D1', status: 'Available' },
-  { id: '26', slot: 'D2', status: 'Occupied' },
-  { id: '27', slot: 'D3', status: 'Available' },
-  { id: '28', slot: 'D4', status: 'Reserved' },
-  { id: '29', slot: 'D5', status: 'Available' },
-  { id: '30', slot: 'D6', status: 'Available' },
-  { id: '31', slot: 'D7', status: 'Occupied' },
-  { id: '32', slot: 'D8', status: 'Available' },
+  { id: '1', slot: 'A1', status: 'Occupied', level: 'Ground Floor', vehicleType: 'Car' },
+  { id: '2', slot: 'A2', status: 'Available', level: 'Ground Floor', vehicleType: 'Car' },
+  { id: '3', slot: 'A3', status: 'Reserved', level: 'Ground Floor', vehicleType: 'Car' },
+  { id: '4', slot: 'A4', status: 'Available', level: 'Ground Floor', vehicleType: 'SUV' },
+  { id: '5', slot: 'A5', status: 'Reserved', level: 'Ground Floor', vehicleType: 'Car' },
+  { id: '6', slot: 'A6', status: 'Available', level: 'Ground Floor', vehicleType: 'EV' },
+  { id: '7', slot: 'A7', status: 'Occupied', level: 'Ground Floor', vehicleType: 'Bike' },
+  { id: '8', slot: 'A8', status: 'Available', level: 'Ground Floor', vehicleType: 'Car' },
+  { id: '9', slot: 'B1', status: 'Available', level: 'Level 1', vehicleType: 'Car' },
+  { id: '10', slot: 'B2', status: 'Occupied', level: 'Level 1', vehicleType: 'Car' },
+  { id: '11', slot: 'B3', status: 'Available', level: 'Level 1', vehicleType: 'SUV' },
+  { id: '12', slot: 'B4', status: 'Reserved', level: 'Level 1', vehicleType: 'Car' },
+  { id: '13', slot: 'B5', status: 'Available', level: 'Level 1', vehicleType: 'Car' },
+  { id: '14', slot: 'B6', status: 'Available', level: 'Level 1', vehicleType: 'Bike' },
+  { id: '15', slot: 'B7', status: 'Available', level: 'Level 1', vehicleType: 'EV' },
+  { id: '16', slot: 'B8', status: 'Occupied', level: 'Level 1', vehicleType: 'Car' },
+  { id: '17', slot: 'C1', status: 'Reserved', level: 'Level 2', vehicleType: 'Car' },
+  { id: '18', slot: 'C2', status: 'Available', level: 'Level 2', vehicleType: 'Car' },
+  { id: '19', slot: 'C3', status: 'Occupied', level: 'Level 2', vehicleType: 'SUV' },
+  { id: '20', slot: 'C4', status: 'Available', level: 'Level 2', vehicleType: 'Car' },
 ];
 
 interface ManageSpaceProps {
@@ -70,23 +61,62 @@ interface ManageSpaceProps {
   onUpdateSpaceStatus: (space: SpaceItem, status: SpaceStatus) => Promise<void>;
   spaces: SpaceItem[];
   selectedSpaceId?: string | null;
+  lotName?: string;
+  isLoading?: boolean;
+  error?: string | null;
+  onRetry?: () => void;
+  onRefresh?: () => Promise<void> | void;
+  onNavigateToAddSpace?: () => void;
+  onNavigateTab?: (tab: 'Dashboard' | 'Spaces' | 'Reservations' | 'Profile') => void;
 }
 
-export default function ManageSpaceScreen({ onBack, onUpdateSpaceStatus, spaces, selectedSpaceId }: ManageSpaceProps) {
+const getVehicleIcon = (type?: string) => {
+  switch ((type || '').toLowerCase()) {
+    case 'bike':
+      return '🏍️';
+    case 'suv':
+      return '🚙';
+    case 'ev':
+      return '⚡';
+    case 'any':
+      return '🔄';
+    case 'car':
+    default:
+      return '🚗';
+  }
+};
+
+export default function ManageSpaceScreen({
+  onBack,
+  onUpdateSpaceStatus,
+  spaces,
+  selectedSpaceId,
+  lotName = 'One Galle Face Mall — Ground Floor',
+  isLoading = false,
+  error = null,
+  onRetry,
+  onRefresh,
+  onNavigateToAddSpace,
+  onNavigateTab,
+}: ManageSpaceProps) {
   const insets = useSafeAreaInsets();
   const topPadding = Math.max(
     insets.top,
     Platform.OS === 'android' ? (StatusBar.currentHeight ?? 0) : 0
   );
-  const bottomPadding = Math.max(insets.bottom, 16) + 16;
+  const bottomNavPadding =
+    Math.max(insets.bottom, Platform.OS === 'ios' ? 12 : 8) + (insets.bottom > 0 ? 4 : 2);
 
   const [searchQuery, setSearchQuery] = useState('');
   const [activeFilter, setActiveFilter] = useState<'All' | 'Available' | 'Reserved' | 'Occupied'>('All');
+  const [refreshing, setRefreshing] = useState(false);
 
   // Modal Sheet State
   const [selectedSpace, setSelectedSpace] = useState<SpaceItem | null>(null);
   const [newStatus, setNewStatus] = useState<SpaceStatus>('Available');
   const [isModalVisible, setIsModalVisible] = useState(false);
+  const [isSaving, setIsSaving] = useState(false);
+
   const selectedSlotLabel = spaces.find((item) => item.id === selectedSpaceId)?.slot || null;
 
   // Compute counts
@@ -98,7 +128,11 @@ export default function ManageSpaceScreen({ onBack, onUpdateSpaceStatus, spaces,
   // Filtered spaces
   const filteredSpaces = spaces.filter((s) => {
     const matchesFilter = activeFilter === 'All' || s.status === activeFilter;
-    const matchesSearch = s.slot.toLowerCase().includes(searchQuery.trim().toLowerCase());
+    const query = searchQuery.trim().toLowerCase();
+    const matchesSearch =
+      s.slot.toLowerCase().includes(query) ||
+      (s.level && s.level.toLowerCase().includes(query)) ||
+      (s.vehicleType && s.vehicleType.toLowerCase().includes(query));
     return matchesFilter && matchesSearch;
   });
 
@@ -109,14 +143,27 @@ export default function ManageSpaceScreen({ onBack, onUpdateSpaceStatus, spaces,
   };
 
   const handleSaveStatus = async () => {
-    if (!selectedSpace) return;
+    if (!selectedSpace || isSaving) return;
+    setIsSaving(true);
     try {
       await onUpdateSpaceStatus(selectedSpace, newStatus);
       setIsModalVisible(false);
       setSelectedSpace(null);
-    } catch (error) {
-      const message = error instanceof Error ? error.message : 'Please try again.';
+    } catch (err) {
+      const message = err instanceof Error ? err.message : 'Please try again.';
       Alert.alert('Unable to update space', message);
+    } finally {
+      setIsSaving(false);
+    }
+  };
+
+  const handleRefresh = async () => {
+    if (!onRefresh) return;
+    setRefreshing(true);
+    try {
+      await onRefresh();
+    } finally {
+      setRefreshing(false);
     }
   };
 
@@ -134,11 +181,22 @@ export default function ManageSpaceScreen({ onBack, onUpdateSpaceStatus, spaces,
           <Text style={styles.backArrow}>‹</Text>
         </TouchableOpacity>
         <View style={styles.headerTitleContainer}>
-          <Text style={styles.headerTitle}>Manage Space</Text>
-          <Text style={styles.headerSubtitle}>
-            {selectedSlotLabel ? `Selected: ${selectedSlotLabel}` : 'One Galle Face Mall- Ground Floor'}
+          <Text style={styles.headerTitle}>Manage Spaces</Text>
+          <Text style={styles.headerSubtitle} numberOfLines={1}>
+            {selectedSlotLabel ? `Selected: ${selectedSlotLabel} · ${lotName}` : lotName}
           </Text>
         </View>
+        {onNavigateToAddSpace && (
+          <TouchableOpacity
+            style={styles.addSpaceHeaderBtn}
+            onPress={onNavigateToAddSpace}
+            activeOpacity={0.8}
+            accessibilityRole="button"
+            accessibilityLabel="Add Space"
+          >
+            <Text style={styles.addSpaceHeaderBtnText}>+ Add Space</Text>
+          </TouchableOpacity>
+        )}
       </View>
 
       {/* Search Input */}
@@ -147,7 +205,7 @@ export default function ManageSpaceScreen({ onBack, onUpdateSpaceStatus, spaces,
           <Text style={styles.searchIcon}>🔍</Text>
           <TextInput
             style={styles.searchInput}
-            placeholder="Search space number (e.g. A3, B2)..."
+            placeholder="Search space number, floor, or vehicle type..."
             placeholderTextColor="#94A3B8"
             value={searchQuery}
             onChangeText={setSearchQuery}
@@ -240,57 +298,156 @@ export default function ManageSpaceScreen({ onBack, onUpdateSpaceStatus, spaces,
         <Text style={styles.gridHeaderHint}>Tap tile to override status (FR-11)</Text>
       </View>
 
-      {/* 4-Column Spaces Grid */}
-      <ScrollView
-        style={styles.gridScroll}
-        contentContainerStyle={[styles.gridContainer, { paddingBottom: bottomPadding }]}
-        showsVerticalScrollIndicator={false}
-      >
-        <View style={styles.tilesRow}>
-          {filteredSpaces.map((space) => {
-            const isAvail = space.status === 'Available';
-            const isRes = space.status === 'Reserved';
-            const isOcc = space.status === 'Occupied';
-
-            return (
-              <TouchableOpacity
-                key={space.id}
-                style={[
-                  styles.spaceTile,
-                  isAvail && styles.tileAvailable,
-                  isRes && styles.tileReserved,
-                  isOcc && styles.tileOccupied,
-                  selectedSpaceId === space.id && styles.selectedSpaceTile,
-                ]}
-                onPress={() => handleTilePress(space)}
-                activeOpacity={0.7}
-              >
-                <Text style={styles.tileSlot}>{space.slot}</Text>
-                <View style={styles.tileStatusRow}>
-                  {isAvail && (
-                    <>
-                      <Text style={styles.availCheck}>✓</Text>
-                      <Text style={styles.availLabel}>Available</Text>
-                    </>
-                  )}
-                  {isRes && (
-                    <>
-                      <Text style={styles.resIcon}>⏱</Text>
-                      <Text style={styles.resLabel}>Reserved</Text>
-                    </>
-                  )}
-                  {isOcc && (
-                    <>
-                      <Text style={styles.occIcon}>⛔</Text>
-                      <Text style={styles.occLabel}>Occupied</Text>
-                    </>
-                  )}
-                </View>
-              </TouchableOpacity>
-            );
-          })}
+      {/* Error state */}
+      {error ? (
+        <View style={styles.errorContainer}>
+          <Text style={styles.errorIcon}>⚠️</Text>
+          <Text style={styles.errorText}>{error}</Text>
+          {onRetry && (
+            <TouchableOpacity style={styles.retryButton} onPress={onRetry} activeOpacity={0.8}>
+              <Text style={styles.retryButtonText}>Retry</Text>
+            </TouchableOpacity>
+          )}
         </View>
-      </ScrollView>
+      ) : null}
+
+      {/* Loading state */}
+      {isLoading && spaces.length === 0 ? (
+        <View style={styles.loadingContainer}>
+          <ActivityIndicator size="large" color="#0F766E" />
+          <Text style={styles.loadingText}>Loading parking spaces…</Text>
+        </View>
+      ) : (
+        /* Spaces Grid */
+        <ScrollView
+          style={styles.gridScroll}
+          contentContainerStyle={[styles.gridContainer, { paddingBottom: bottomNavPadding + 70 }]}
+          showsVerticalScrollIndicator={false}
+          refreshControl={
+            onRefresh ? (
+              <RefreshControl refreshing={refreshing} onRefresh={handleRefresh} colors={['#0F766E']} />
+            ) : undefined
+          }
+        >
+          {filteredSpaces.length === 0 ? (
+            <View style={styles.emptyContainer}>
+              <Text style={styles.emptyIcon}>🅿️</Text>
+              <Text style={styles.emptyTitle}>No parking spaces found</Text>
+              <Text style={styles.emptySubtitle}>
+                {searchQuery
+                  ? `No spaces match "${searchQuery}".`
+                  : 'Get started by adding the first parking space to this facility.'}
+              </Text>
+              {onNavigateToAddSpace && (
+                <TouchableOpacity
+                  style={styles.emptyActionBtn}
+                  onPress={onNavigateToAddSpace}
+                  activeOpacity={0.85}
+                >
+                  <Text style={styles.emptyActionBtnText}>+ Add First Space</Text>
+                </TouchableOpacity>
+              )}
+            </View>
+          ) : (
+            <View style={styles.tilesRow}>
+              {filteredSpaces.map((space) => {
+                const isAvail = space.status === 'Available';
+                const isRes = space.status === 'Reserved';
+                const isOcc = space.status === 'Occupied';
+                const vIcon = getVehicleIcon(space.vehicleType);
+
+                return (
+                  <TouchableOpacity
+                    key={space.id}
+                    style={[
+                      styles.spaceTile,
+                      isAvail && styles.tileAvailable,
+                      isRes && styles.tileReserved,
+                      isOcc && styles.tileOccupied,
+                      selectedSpaceId === space.id && styles.selectedSpaceTile,
+                    ]}
+                    onPress={() => handleTilePress(space)}
+                    activeOpacity={0.7}
+                  >
+                    <View style={styles.tileTopRow}>
+                      <Text style={styles.tileSlot}>{space.slot}</Text>
+                      <Text style={styles.tileVehicleIcon}>{vIcon}</Text>
+                    </View>
+
+                    {space.level ? (
+                      <Text style={styles.tileLevelText} numberOfLines={1}>
+                        {space.level}
+                      </Text>
+                    ) : null}
+
+                    <View style={styles.tileStatusRow}>
+                      {isAvail && (
+                        <>
+                          <Text style={styles.availCheck}>✓</Text>
+                          <Text style={styles.availLabel}>Available</Text>
+                        </>
+                      )}
+                      {isRes && (
+                        <>
+                          <Text style={styles.resIcon}>⏱</Text>
+                          <Text style={styles.resLabel}>Reserved</Text>
+                        </>
+                      )}
+                      {isOcc && (
+                        <>
+                          <Text style={styles.occIcon}>⛔</Text>
+                          <Text style={styles.occLabel}>Occupied</Text>
+                        </>
+                      )}
+                    </View>
+                  </TouchableOpacity>
+                );
+              })}
+            </View>
+          )}
+        </ScrollView>
+      )}
+
+      {/* Bottom Navigation Bar */}
+      {onNavigateTab && (
+        <View style={[styles.bottomNav, { paddingBottom: bottomNavPadding }]}>
+          <TouchableOpacity
+            style={styles.navItem}
+            onPress={() => onNavigateTab('Dashboard')}
+            activeOpacity={0.7}
+          >
+            <Text style={styles.navIcon}>📊</Text>
+            <Text style={styles.navLabel}>Dashboard</Text>
+          </TouchableOpacity>
+
+          <TouchableOpacity
+            style={styles.navItem}
+            onPress={() => onNavigateTab('Spaces')}
+            activeOpacity={0.7}
+          >
+            <Text style={[styles.navIcon, styles.navIconActive]}>🎛️</Text>
+            <Text style={[styles.navLabel, styles.navLabelActive]}>Spaces</Text>
+          </TouchableOpacity>
+
+          <TouchableOpacity
+            style={styles.navItem}
+            onPress={() => onNavigateTab('Reservations')}
+            activeOpacity={0.7}
+          >
+            <Text style={styles.navIcon}>📋</Text>
+            <Text style={styles.navLabel}>Reservations</Text>
+          </TouchableOpacity>
+
+          <TouchableOpacity
+            style={styles.navItem}
+            onPress={() => onNavigateTab('Profile')}
+            activeOpacity={0.7}
+          >
+            <Text style={styles.navIcon}>👤</Text>
+            <Text style={styles.navLabel}>Profile</Text>
+          </TouchableOpacity>
+        </View>
+      )}
 
       {/* Manual Status Override Modal Bottom Sheet */}
       <Modal
@@ -314,7 +471,9 @@ export default function ManageSpaceScreen({ onBack, onUpdateSpaceStatus, spaces,
             <View style={styles.sheetHeader}>
               <View>
                 <Text style={styles.sheetTitle}>Update Space {selectedSpace?.slot}</Text>
-                <Text style={styles.sheetSubtitle}>Manual Status Override (FR-11)</Text>
+                <Text style={styles.sheetSubtitle}>
+                  {selectedSpace?.level ? `${selectedSpace.level} · ` : ''}Manual Status Override (FR-11)
+                </Text>
               </View>
               <TouchableOpacity
                 onPress={() => setIsModalVisible(false)}
@@ -390,20 +549,24 @@ export default function ManageSpaceScreen({ onBack, onUpdateSpaceStatus, spaces,
               </TouchableOpacity>
             </View>
 
-            {/* Big Orange Save CTA */}
+            {/* Save CTA */}
             <TouchableOpacity
-              style={styles.saveBtn}
+              style={[styles.saveBtn, isSaving && styles.saveBtnDisabled]}
               onPress={handleSaveStatus}
+              disabled={isSaving}
               activeOpacity={0.85}
             >
-              <Text style={styles.saveBtnText}>Save Space Status</Text>
+              {isSaving ? (
+                <ActivityIndicator color="#FFFFFF" size="small" />
+              ) : (
+                <Text style={styles.saveBtnText}>Save Space Status</Text>
+              )}
             </TouchableOpacity>
 
-            {/* Last updated footer info */}
             <View style={styles.sheetFooter}>
               <Text style={styles.clockFooterIcon}>🕒</Text>
               <Text style={styles.footerInfoText}>
-                Last updated 2 min ago by Staff #204
+                Changes are synchronized in real-time across staff and driver apps.
               </Text>
             </View>
           </Pressable>
@@ -442,16 +605,28 @@ const styles = StyleSheet.create({
     flex: 1,
   },
   headerTitle: {
-    fontSize: 26,
+    fontSize: 22,
     fontWeight: '800',
     color: '#0F172A',
     letterSpacing: -0.5,
   },
   headerSubtitle: {
-    fontSize: 13,
+    fontSize: 12,
     color: '#64748B',
     marginTop: 2,
     fontWeight: '500',
+  },
+  addSpaceHeaderBtn: {
+    backgroundColor: '#0F766E',
+    paddingHorizontal: 12,
+    paddingVertical: 7,
+    borderRadius: 8,
+    marginLeft: 8,
+  },
+  addSpaceHeaderBtnText: {
+    color: '#FFFFFF',
+    fontSize: 13,
+    fontWeight: '700',
   },
   selectedSpaceTile: {
     borderWidth: 2,
@@ -463,8 +638,8 @@ const styles = StyleSheet.create({
   },
   searchContainer: {
     paddingHorizontal: 16,
-    paddingTop: 12,
-    paddingBottom: 10,
+    paddingTop: 10,
+    paddingBottom: 8,
   },
   searchBox: {
     flexDirection: 'row',
@@ -472,7 +647,7 @@ const styles = StyleSheet.create({
     backgroundColor: '#F1F5F9',
     borderRadius: 12,
     paddingHorizontal: 12,
-    height: 44,
+    height: 42,
   },
   searchIcon: {
     fontSize: 14,
@@ -480,7 +655,7 @@ const styles = StyleSheet.create({
   },
   searchInput: {
     flex: 1,
-    fontSize: 14,
+    fontSize: 13,
     color: '#0F172A',
     paddingVertical: 0,
   },
@@ -490,7 +665,7 @@ const styles = StyleSheet.create({
     padding: 4,
   },
   filtersWrapper: {
-    paddingBottom: 10,
+    paddingBottom: 8,
   },
   filtersContainer: {
     paddingHorizontal: 16,
@@ -539,8 +714,8 @@ const styles = StyleSheet.create({
     justifyContent: 'space-between',
     alignItems: 'center',
     paddingHorizontal: 16,
-    paddingTop: 8,
-    paddingBottom: 10,
+    paddingTop: 6,
+    paddingBottom: 8,
   },
   gridHeaderCount: {
     fontSize: 12,
@@ -565,14 +740,17 @@ const styles = StyleSheet.create({
     gap: 8,
   },
   spaceTile: {
-    width: '23%',
-    aspectRatio: 1.05,
+    width: '48%',
     borderRadius: 14,
     borderWidth: 1.5,
-    padding: 6,
+    padding: 10,
+    marginBottom: 8,
+  },
+  tileTopRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
     alignItems: 'center',
-    justifyContent: 'center',
-    marginBottom: 4,
+    marginBottom: 2,
   },
   tileAvailable: {
     backgroundColor: '#F0FDF4',
@@ -590,44 +768,169 @@ const styles = StyleSheet.create({
     fontSize: 18,
     fontWeight: '800',
     color: '#0F172A',
-    marginBottom: 4,
+  },
+  tileVehicleIcon: {
+    fontSize: 16,
+  },
+  tileLevelText: {
+    fontSize: 11,
+    color: '#64748B',
+    marginBottom: 6,
+    fontWeight: '500',
   },
   tileStatusRow: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 2,
+    gap: 4,
+    marginTop: 2,
   },
   availCheck: {
-    fontSize: 11,
-    fontWeight: '900',
-    color: '#15803D',
+    fontSize: 12,
+    color: '#16A34A',
+    fontWeight: '800',
   },
   availLabel: {
-    fontSize: 9.5,
+    fontSize: 12,
+    color: '#16A34A',
     fontWeight: '700',
-    color: '#15803D',
   },
   resIcon: {
-    fontSize: 9,
+    fontSize: 12,
   },
   resLabel: {
-    fontSize: 9.5,
+    fontSize: 12,
+    color: '#CA8A04',
     fontWeight: '700',
-    color: '#A16207',
   },
   occIcon: {
-    fontSize: 8.5,
+    fontSize: 12,
   },
   occLabel: {
-    fontSize: 9.5,
+    fontSize: 12,
+    color: '#DC2626',
     fontWeight: '700',
-    color: '#B91C1C',
   },
-
-  /* ── Bottom Sheet Modal ── */
+  errorContainer: {
+    marginHorizontal: 16,
+    marginVertical: 12,
+    padding: 14,
+    backgroundColor: '#FEF2F2',
+    borderColor: '#FCA5A5',
+    borderWidth: 1,
+    borderRadius: 12,
+    alignItems: 'center',
+  },
+  errorIcon: {
+    fontSize: 24,
+    marginBottom: 6,
+  },
+  errorText: {
+    fontSize: 13,
+    color: '#991B1B',
+    textAlign: 'center',
+    marginBottom: 10,
+    fontWeight: '500',
+  },
+  retryButton: {
+    backgroundColor: '#DC2626',
+    paddingHorizontal: 16,
+    paddingVertical: 8,
+    borderRadius: 8,
+  },
+  retryButtonText: {
+    color: '#FFFFFF',
+    fontWeight: '700',
+    fontSize: 13,
+  },
+  loadingContainer: {
+    flex: 1,
+    justifyContent: 'center',
+    alignItems: 'center',
+    paddingVertical: 60,
+  },
+  loadingText: {
+    marginTop: 12,
+    fontSize: 14,
+    color: '#64748B',
+    fontWeight: '500',
+  },
+  emptyContainer: {
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingVertical: 60,
+    paddingHorizontal: 24,
+  },
+  emptyIcon: {
+    fontSize: 48,
+    marginBottom: 12,
+  },
+  emptyTitle: {
+    fontSize: 18,
+    fontWeight: '700',
+    color: '#0F172A',
+    marginBottom: 6,
+  },
+  emptySubtitle: {
+    fontSize: 13,
+    color: '#64748B',
+    textAlign: 'center',
+    lineHeight: 18,
+    marginBottom: 16,
+  },
+  emptyActionBtn: {
+    backgroundColor: '#0F766E',
+    paddingHorizontal: 20,
+    paddingVertical: 10,
+    borderRadius: 10,
+  },
+  emptyActionBtnText: {
+    color: '#FFFFFF',
+    fontWeight: '700',
+    fontSize: 14,
+  },
+  bottomNav: {
+    flexDirection: 'row',
+    justifyContent: 'space-around',
+    alignItems: 'center',
+    backgroundColor: '#FFFFFF',
+    borderTopWidth: 1,
+    borderTopColor: '#F1F5F9',
+    paddingTop: 10,
+    position: 'absolute',
+    bottom: 0,
+    left: 0,
+    right: 0,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: -2 },
+    shadowOpacity: 0.05,
+    shadowRadius: 4,
+    elevation: 8,
+  },
+  navItem: {
+    alignItems: 'center',
+    justifyContent: 'center',
+    flex: 1,
+  },
+  navIcon: {
+    fontSize: 20,
+    marginBottom: 2,
+    opacity: 0.5,
+  },
+  navIconActive: {
+    opacity: 1,
+  },
+  navLabel: {
+    fontSize: 11,
+    color: '#64748B',
+    fontWeight: '500',
+  },
+  navLabelActive: {
+    color: '#0F766E',
+    fontWeight: '700',
+  },
   modalOverlay: {
     flex: 1,
-    backgroundColor: 'rgba(0,0,0,0.4)',
+    backgroundColor: 'rgba(0, 0, 0, 0.5)',
     justifyContent: 'flex-end',
   },
   bottomSheet: {
@@ -636,10 +939,6 @@ const styles = StyleSheet.create({
     borderTopRightRadius: 24,
     paddingHorizontal: 20,
     paddingTop: 20,
-    shadowColor: '#000',
-    shadowOpacity: 0.15,
-    shadowRadius: 16,
-    elevation: 10,
   },
   sheetHeader: {
     flexDirection: 'row',
@@ -648,14 +947,15 @@ const styles = StyleSheet.create({
     marginBottom: 20,
   },
   sheetTitle: {
-    fontSize: 22,
+    fontSize: 20,
     fontWeight: '800',
     color: '#0F172A',
   },
   sheetSubtitle: {
-    fontSize: 12.5,
+    fontSize: 13,
     color: '#64748B',
     marginTop: 2,
+    fontWeight: '500',
   },
   sheetCloseBtn: {
     width: 32,
@@ -666,21 +966,22 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
   },
   sheetCloseText: {
-    fontSize: 16,
-    color: '#475569',
+    fontSize: 14,
+    color: '#64748B',
     fontWeight: '700',
   },
   changeLabel: {
-    fontSize: 11.5,
+    fontSize: 11,
     fontWeight: '800',
-    color: '#334155',
-    letterSpacing: 0.5,
+    color: '#64748B',
+    letterSpacing: 0.8,
     marginBottom: 12,
   },
   statusOptionsRow: {
     flexDirection: 'row',
-    gap: 10,
-    marginBottom: 20,
+    justifyContent: 'space-between',
+    gap: 8,
+    marginBottom: 24,
   },
   optionButton: {
     flex: 1,
@@ -694,21 +995,21 @@ const styles = StyleSheet.create({
     backgroundColor: '#F0FDF4',
     borderColor: '#86EFAC',
   },
-  optionSelectedAvailable: {
-    backgroundColor: '#16A34A',
-    borderColor: '#16A34A',
-  },
   optionReserved: {
     backgroundColor: '#FEFCE8',
     borderColor: '#FDE047',
   },
-  optionSelectedReserved: {
-    backgroundColor: '#B45309',
-    borderColor: '#B45309',
-  },
   optionOccupied: {
     backgroundColor: '#FEF2F2',
     borderColor: '#FECACA',
+  },
+  optionSelectedAvailable: {
+    backgroundColor: '#16A34A',
+    borderColor: '#16A34A',
+  },
+  optionSelectedReserved: {
+    backgroundColor: '#CA8A04',
+    borderColor: '#CA8A04',
   },
   optionSelectedOccupied: {
     backgroundColor: '#DC2626',
@@ -719,35 +1020,32 @@ const styles = StyleSheet.create({
     fontWeight: '700',
   },
   optionTextAvailable: {
-    color: '#15803D',
+    color: '#16A34A',
   },
   optionTextReserved: {
-    color: '#A16207',
+    color: '#CA8A04',
   },
   optionTextOccupied: {
-    color: '#B91C1C',
+    color: '#DC2626',
   },
   optionTextSelectedWhite: {
     color: '#FFFFFF',
   },
   saveBtn: {
     backgroundColor: '#F26419',
+    paddingVertical: 14,
     borderRadius: 14,
-    paddingVertical: 15,
     alignItems: 'center',
     justifyContent: 'center',
-    shadowColor: '#F26419',
-    shadowOpacity: 0.35,
-    shadowRadius: 10,
-    shadowOffset: { width: 0, height: 4 },
-    elevation: 4,
-    marginBottom: 16,
+    marginBottom: 14,
+  },
+  saveBtnDisabled: {
+    opacity: 0.7,
   },
   saveBtnText: {
-    fontSize: 16,
-    fontWeight: '800',
     color: '#FFFFFF',
-    letterSpacing: 0.2,
+    fontSize: 16,
+    fontWeight: '700',
   },
   sheetFooter: {
     flexDirection: 'row',
@@ -759,7 +1057,10 @@ const styles = StyleSheet.create({
     fontSize: 12,
   },
   footerInfoText: {
-    fontSize: 12,
-    color: '#64748B',
+    fontSize: 11,
+    color: '#94A3B8',
+    fontWeight: '500',
+    textAlign: 'center',
+    flex: 1,
   },
 });

@@ -6,6 +6,7 @@ export interface StaffProfile {
   avatarBg: string;
   staffId: string;
   avatarImageUri?: string;
+  assignedLot?: string;
 }
 
 export const defaultStaffProfile: StaffProfile = {
@@ -15,4 +16,5 @@ export const defaultStaffProfile: StaffProfile = {
   avatar: '👤',
   avatarBg: '#BAE6FD',
   staffId: 'STF-4091',
+  assignedLot: 'One Galle Face Mall',
 };

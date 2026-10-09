@@ -76,6 +76,7 @@ app.use('/api/auth', require('./routes/authRoutes'));
 app.use('/api/users', require('./routes/userRoutes'));
 app.use('/api/parking-lots', require('./routes/parkingLotRoutes'));
 app.use('/api/parking-lots/:lotId/spaces', require('./routes/parkingSpaceRoutes'));
+app.use('/api/parking-spaces', require('./routes/parkingSpaceRoutes'));
 app.use('/api/reservations', require('./routes/reservationRoutes'));
 app.use('/api/payments', require('./routes/paymentRoutes'));
 app.use('/api/attendance', require('./routes/attendanceRoutes'));
