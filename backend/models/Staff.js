@@ -56,6 +56,10 @@ const staffSchema = new mongoose.Schema(
       type: Boolean,
       default: true,
     },
+    parkingLot: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: 'ParkingLot',
+    },
   },
   { timestamps: true }
 );

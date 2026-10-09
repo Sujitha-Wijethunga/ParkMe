@@ -53,6 +53,7 @@ const register = async (req, res, next) => {
     }
 
     // Save into the dedicated 'staff' table (Staff model)
+    const assignedLot = req.body.parkingLot || req.body.parkingLotId || undefined;
     const staff = await Staff.create({
       name: name.trim(),
       email: email.toLowerCase().trim(),
@@ -60,6 +61,7 @@ const register = async (req, res, next) => {
       phone: phone ? phone.trim() : '',
       staffId,
       role: 'Parking Staff',
+      parkingLot: assignedLot,
     });
 
     res.status(201).json({
@@ -112,6 +114,7 @@ const login = async (req, res, next) => {
       email: user.email,
       role: user.role,
       staffId: user.staffId,
+      parkingLot: user.parkingLot || user.assignedLot || null,
       avatar: user.avatar || '',
       avatarBg: user.avatarBg || '',
       avatarUrl: user.avatarUrl || '',
@@ -134,6 +137,18 @@ const getMe = async (req, res) => {
 // @access  Private
 const updateMe = async (req, res, next) => {
   try {
+    if (
+      req.body.role !== undefined ||
+      req.body.staffId !== undefined ||
+      req.body.isAdmin !== undefined ||
+      req.body.isActive !== undefined ||
+      req.body.parkingLot !== undefined
+    ) {
+      return res.status(400).json({
+        message: 'Modifying privileged fields (role, staffId, status, parkingLot) is not permitted.',
+      });
+    }
+
     const { name, email, phone, vehicles, avatar, avatarBg, avatarUrl } = req.body;
     const updates = {};
     if (name !== undefined) updates.name = name.trim();
@@ -209,7 +224,19 @@ const changePassword = async (req, res, next) => {
 // @access  Public
 const driverRegister = async (req, res, next) => {
   try {
-    const { name, email, password, phone } = req.body;
+    const { name, email, password, phone, role, staffId, staffCode, facilityCode, isAdmin } = req.body;
+
+    const privilegedRoles = ['staff', 'admin', 'Parking Staff', 'facility_manager', 'administrator'];
+    if (role && (privilegedRoles.includes(role) || role !== 'driver')) {
+      return res.status(400).json({
+        message: 'Role escalation rejected: Public registration cannot create staff or admin accounts.',
+      });
+    }
+    if (staffId || staffCode || facilityCode || isAdmin !== undefined) {
+      return res.status(400).json({
+        message: 'Privileged credentials and fields are not permitted during public registration.',
+      });
+    }
 
     const normalizedEmail = (email || '').toLowerCase().trim();
     const existingUser = await User.findOne({ email: normalizedEmail });
@@ -359,7 +386,18 @@ const driverLoginValidation = [
 // @access  Public
 const googleAuth = async (req, res, next) => {
   try {
-    const { idToken } = req.body;
+    const { idToken, role, staffId, staffCode, facilityCode } = req.body;
+    if (role && role !== 'driver') {
+      return res.status(400).json({
+        message: 'Role escalation rejected: Google authentication only creates driver accounts.',
+      });
+    }
+    if (staffId || staffCode || facilityCode) {
+      return res.status(400).json({
+        message: 'Privileged credentials are not permitted during Google sign-in.',
+      });
+    }
+
     if (!idToken || !String(idToken).trim()) {
       return res.status(400).json({ message: 'Google ID token is required' });
     }

@@ -16,11 +16,13 @@ const {
   googleAuthValidation,
 } = require('../controllers/authController');
 const { protect } = require('../middleware/auth');
+const { authorize } = require('../middleware/authorize');
 const { validate } = require('../middleware/validate');
 const uploadAvatar = require('../middleware/avatarUpload');
 
-// Staff auth routes (preserved)
-router.post('/register', ...registerValidation, validate, register);
+// Staff auth routes: Public registration is removed. Only authenticated administrators may provision staff accounts.
+router.post('/register', protect, authorize('admin'), ...registerValidation, validate, register);
+router.post('/staff/provision', protect, authorize('admin'), ...registerValidation, validate, register);
 router.post('/login', ...loginValidation, validate, login);
 
 // Driver auth routes
