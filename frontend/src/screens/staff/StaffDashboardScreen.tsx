@@ -22,6 +22,7 @@ interface StaffDashboardProps {
   onNavigateToSpaces?: () => void;
   onNavigateToReservations?: () => void;
   onNavigateToVerifyEntry?: () => void;
+  onNavigateToWalkIn?: () => void;
   onNavigateToProfile?: () => void;
   spaces?: SpaceItem[];
 }
@@ -33,6 +34,7 @@ export default function StaffDashboardScreen({
   onNavigateToSpaces,
   onNavigateToReservations,
   onNavigateToVerifyEntry,
+  onNavigateToWalkIn,
   onNavigateToProfile,
   spaces,
 }: StaffDashboardProps) {
@@ -210,6 +212,35 @@ export default function StaffDashboardScreen({
         <View style={styles.sectionContainer}>
           <Text style={styles.sectionTitle}>Quick Actions</Text>
           <Text style={styles.sectionSubtitle}>Facility management shortcuts</Text>
+
+          {/* Featured Walk-in Parking Banner */}
+          <TouchableOpacity
+            style={styles.walkInBanner}
+            onPress={() => {
+              if (onNavigateToWalkIn) {
+                onNavigateToWalkIn();
+              } else {
+                handleActionPress('Walk-in Parking', 'Walk-in');
+              }
+            }}
+            activeOpacity={0.85}
+          >
+            <View style={styles.walkInBannerLeft}>
+              <View style={styles.walkInBadge}>
+                <Text style={styles.walkInBadgeText}>NEW WORKFLOW</Text>
+              </View>
+              <Text style={styles.walkInBannerTitle}>Walk-in Parking</Text>
+              <Text style={styles.walkInBannerDesc}>
+                Record vehicle, issue QR receipt, & collect cash checkout
+              </Text>
+            </View>
+            <View style={styles.walkInBannerRight}>
+              <View style={styles.walkInIconCircle}>
+                <Text style={styles.walkInIconEmoji}>🎫</Text>
+              </View>
+              <Text style={styles.walkInActionText}>Open ➔</Text>
+            </View>
+          </TouchableOpacity>
 
           <View style={styles.quickActionsRow}>
             {/* Manage Spaces */}
@@ -634,6 +665,69 @@ const styles = StyleSheet.create({
     color: '#64748B',
     marginTop: 2,
     marginBottom: 14,
+  },
+  walkInBanner: {
+    backgroundColor: '#0F172A',
+    borderRadius: 16,
+    padding: 16,
+    marginBottom: 14,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    shadowColor: '#000',
+    shadowOpacity: 0.1,
+    shadowRadius: 8,
+    shadowOffset: { width: 0, height: 4 },
+    elevation: 3,
+  },
+  walkInBannerLeft: {
+    flex: 1,
+    paddingRight: 12,
+  },
+  walkInBadge: {
+    backgroundColor: '#059669',
+    alignSelf: 'flex-start',
+    paddingHorizontal: 8,
+    paddingVertical: 3,
+    borderRadius: 6,
+    marginBottom: 6,
+  },
+  walkInBadgeText: {
+    color: '#FFFFFF',
+    fontSize: 10,
+    fontWeight: '800',
+    letterSpacing: 0.5,
+  },
+  walkInBannerTitle: {
+    fontSize: 17,
+    fontWeight: '800',
+    color: '#FFFFFF',
+    marginBottom: 3,
+  },
+  walkInBannerDesc: {
+    fontSize: 12,
+    color: '#94A3B8',
+    lineHeight: 16,
+  },
+  walkInBannerRight: {
+    alignItems: 'center',
+  },
+  walkInIconCircle: {
+    width: 48,
+    height: 48,
+    borderRadius: 24,
+    backgroundColor: 'rgba(255, 255, 255, 0.12)',
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginBottom: 4,
+  },
+  walkInIconEmoji: {
+    fontSize: 22,
+  },
+  walkInActionText: {
+    fontSize: 12,
+    fontWeight: '700',
+    color: '#34D399',
   },
   quickActionsRow: {
     flexDirection: 'row',
