@@ -36,9 +36,10 @@ app.use((req, res, next) => {
     req.headers['x-vercel-matched-path'] ||
     req.headers['x-forwarded-url'] ||
     req.headers['x-original-url'];
-  if (matchedPath && matchedPath !== '/server.js' && matchedPath !== '/backend/server.js') {
+  const entrypointPaths = ['/server.js', '/backend/server.js', '/api/index.js', '/api/index', '/api'];
+  if (matchedPath && !entrypointPaths.includes(matchedPath)) {
     req.url = matchedPath;
-  } else if (req.url === '/server.js' || req.url === '/backend/server.js') {
+  } else if (entrypointPaths.includes(req.url)) {
     req.url = '/';
   }
   next();
@@ -53,8 +54,8 @@ app.get('/', (req, res) => {
   res.json({ status: 'ok', message: 'ParkMe API is running' });
 });
 
-// Fallback for Vercel rewrite artifacts targeting server.js directly
-app.all(['/server.js', '/backend/server.js'], (req, res) => {
+// Fallback for Vercel rewrite artifacts targeting server.js or api/index.js directly
+app.all(['/server.js', '/backend/server.js', '/api/index.js', '/api/index'], (req, res) => {
   res.json({ status: 'ok', message: 'ParkMe API is running' });
 });
 

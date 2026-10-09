@@ -90,7 +90,6 @@ export async function appendImageToFormData(
     // Convert iOS ph:// URIs to local file:// URIs using expo-file-system
     if (Platform.OS === 'ios' && imageUri.startsWith('ph://')) {
       try {
-        // eslint-disable-next-line @typescript-eslint/no-explicit-any
         const FS: any = await import('expo-file-system');
         // @ts-ignore
         const cacheDir = FS.cacheDirectory || (FS.default && FS.default.cacheDirectory);
@@ -110,7 +109,6 @@ export async function appendImageToFormData(
 
     // Append using the exact structure expected by React Native's networking layer
     const nativeFile = { uri: resolvedUri, name: fileName, type: mime };
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
     formData.append(fieldName, nativeFile as any);
   }
 }

@@ -1,0 +1,20 @@
+{
+  "name": "parkme-root",
+  "version": "1.0.0",
+  "private": true,
+  "main": "api/index.js",
+  "scripts": {
+    "start": "node backend/server.js"
+  },
+  "dependencies": {
+    "bcryptjs": "^3.0.3",
+    "cors": "^2.8.6",
+    "dotenv": "^18.0.4",
+    "express": "^5.2.1",
+    "express-validator": "^7.3.2",
+    "google-auth-library": "^11.1.0",
+    "jsonwebtoken": "^9.0.3",
+    "mongoose": "^9.10.2",
+    "multer": "^2.4.0"
+  }
+}
