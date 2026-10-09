@@ -35,7 +35,7 @@ interface HomeScreenProps {
   selectedVehicleType?: VehicleType;
   onVehicleTypeChange?: (vehicleType: VehicleType) => void;
   onNavigateToMap?: () => void;
-  onNavigateToLotDetails?: (lotId: string) => void;
+  onNavigateToLotDetails?: (lotId: string, lotItem?: ParkingLotCardItem) => void;
   onNavigateToBookings?: () => void;
   onNavigateToProfile?: () => void;
   onNavigateToNotifications?: () => void;
@@ -388,7 +388,7 @@ export default function HomeScreen({
             <ParkingLotCard
               key={lot.id}
               lot={lot}
-              onPress={(lotId) => onNavigateToLotDetails && onNavigateToLotDetails(lotId)}
+              onPress={(lotId) => onNavigateToLotDetails && onNavigateToLotDetails(lotId, lot)}
             />
           ))}
         </View>
