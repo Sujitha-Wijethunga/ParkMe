@@ -161,8 +161,15 @@ export function getParkingLotEntranceInfo(
   lotId: string,
   lotObject?: any
 ): ParkingEntranceInfo {
-  // Check verified registry first
-  const registryEntry = VERIFIED_LOT_ENTRANCES[lotId];
+  // Check verified registry first by ID or name
+  let registryEntry: (typeof VERIFIED_LOT_ENTRANCES)[string] | undefined = VERIFIED_LOT_ENTRANCES[lotId];
+  if (!registryEntry && lotObject?.name) {
+    const cleanName = String(lotObject.name).toLowerCase().trim();
+    registryEntry = Object.values(VERIFIED_LOT_ENTRANCES).find(
+      (entry) => entry.name.toLowerCase().trim() === cleanName
+    );
+  }
+
   if (registryEntry) {
     return {
       lotId,

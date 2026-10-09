@@ -19,13 +19,11 @@ import { API_BASE_URL, getApiConnectionError } from '../../constants/api';
 
 interface StaffLoginScreenProps {
   onLoginSuccess?: (user: any, token: string) => void;
-  onNavigateToSignup?: () => void;
   onNavigateToDriverLogin?: () => void;
 }
 
 export default function StaffLoginScreen({
   onLoginSuccess,
-  onNavigateToSignup,
   onNavigateToDriverLogin,
 }: StaffLoginScreenProps) {
   const insets = useSafeAreaInsets();
@@ -61,11 +59,7 @@ export default function StaffLoginScreen({
     }).start();
   };
 
-  const handleNavigateToSignup = () => {
-    if (onNavigateToSignup) {
-      onNavigateToSignup();
-    }
-  };
+
 
   const validateLogin = () => {
     const nextErrors = { staffId: '', password: '' };
@@ -281,14 +275,16 @@ export default function StaffLoginScreen({
               </Animated.View>
             </Pressable>
 
-            {/* Create Staff Account Button */}
-            <TouchableOpacity
-              style={styles.signupButton}
-              onPress={handleNavigateToSignup}
-              activeOpacity={0.8}
-            >
-              <Text style={styles.signupButtonText}>✨ Create New Staff Account</Text>
-            </TouchableOpacity>
+            {/* Administrator Provisioning Notice */}
+            <View style={styles.provisionNoticeCard}>
+              <Text style={styles.provisionNoticeIcon}>🔒</Text>
+              <View style={styles.provisionNoticeBody}>
+                <Text style={styles.provisionNoticeTitle}>Staff Accounts Are Provisioned</Text>
+                <Text style={styles.provisionNoticeText}>
+                  Staff access is managed exclusively by facility administration. Public registration is disabled. Contact your supervisor for credentials.
+                </Text>
+              </View>
+            </View>
 
             {/* Security Badge */}
             <View style={styles.securityBadge}>
@@ -303,14 +299,6 @@ export default function StaffLoginScreen({
 
             {/* Divider */}
             <View style={styles.divider} />
-
-            {/* Staff Signup Link */}
-            <View style={styles.footer}>
-              <Text style={styles.footerText}>New staff member? </Text>
-              <TouchableOpacity onPress={handleNavigateToSignup}>
-                <Text style={styles.footerLink}>Sign Up Here</Text>
-              </TouchableOpacity>
-            </View>
 
             {/* Driver link */}
             <View style={styles.footer}>
@@ -579,6 +567,35 @@ const styles = StyleSheet.create({
     fontWeight: '700',
     color: '#2E7D32',
     letterSpacing: 0.5,
+  },
+
+  provisionNoticeCard: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 12,
+    backgroundColor: '#F8FAFC',
+    borderRadius: 12,
+    padding: 14,
+    borderWidth: 1,
+    borderColor: '#E2E8F0',
+    marginTop: 14,
+  },
+  provisionNoticeIcon: {
+    fontSize: 20,
+  },
+  provisionNoticeBody: {
+    flex: 1,
+  },
+  provisionNoticeTitle: {
+    fontSize: 13,
+    fontWeight: '700',
+    color: '#1E293B',
+    marginBottom: 2,
+  },
+  provisionNoticeText: {
+    fontSize: 12,
+    color: '#64748B',
+    lineHeight: 16,
   },
 
   /* ── Footer ── */

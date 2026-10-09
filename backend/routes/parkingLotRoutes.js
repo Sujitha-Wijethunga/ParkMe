@@ -2,6 +2,7 @@ const express = require('express');
 const router = express.Router();
 const {
   getParkingLots,
+  getParkingLotSuggestions,
   getParkingLotById,
   createParkingLot,
   updateParkingLot,
@@ -14,6 +15,7 @@ const { authorize } = require('../middleware/authorize');
 const uploadParkingLotImage = require('../middleware/parkingLotUpload');
 
 router.get('/', getParkingLots);
+router.get('/suggestions', getParkingLotSuggestions);
 router.get('/nearby-driving', getNearbyDrivingParking);
 router.get('/:id/availability', getParkingLotAvailability);
 router.get('/:id', getParkingLotById);

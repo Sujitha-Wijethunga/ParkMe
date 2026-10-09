@@ -37,7 +37,7 @@ interface VerifyEntryProps {
 
 export default function VerifyEntryScreen({
   reservationId,
-  initialReference = 'PM-000000',
+  initialReference = '',
   initialSlot = 'A3',
   driverName: propDriverName = 'Driver',
   vehiclePlate = '—',
@@ -62,13 +62,23 @@ export default function VerifyEntryScreen({
   const [collectCash, setCollectCash] = useState(true);
   const [permission, requestPermission] = useCameraPermissions();
 
-
   const handleLookup = useCallback(async (searchQuery?: string) => {
-    const q = (typeof searchQuery === 'string' ? searchQuery : referenceInput).trim();
+    let q = (typeof searchQuery === 'string' ? searchQuery : referenceInput).trim();
     if (!q) {
       Alert.alert('Required', 'Please enter or scan a booking reference or QR code.');
       return;
     }
+    // Handle QR codes containing JSON payload
+    if (q.startsWith('{') && q.endsWith('}')) {
+      try {
+        const parsed = JSON.parse(q);
+        if (parsed.reference) q = String(parsed.reference).trim();
+        else if (parsed.id || parsed._id) q = String(parsed.id || parsed._id).trim();
+      } catch {
+        // use raw query
+      }
+    }
+
     if (!authToken) {
       Alert.alert('Staff Authentication Required', 'Please sign in again.');
       return;
@@ -91,7 +101,7 @@ export default function VerifyEntryScreen({
   }, [authToken, referenceInput]);
 
   useEffect(() => {
-    const targetQuery = reservationId || (initialReference && initialReference !== 'PE-84213' ? initialReference : null);
+    const targetQuery = reservationId || (initialReference && initialReference.trim() ? initialReference.trim() : null);
     if (!targetQuery) return;
     const timer = setTimeout(() => {
       void handleLookup(targetQuery);
@@ -319,23 +329,28 @@ export default function VerifyEntryScreen({
           <>
             <View style={[
               styles.confirmedBanner,
+              matchedReservation.status === 'cancelled' && { backgroundColor: '#DC2626' },
               matchedReservation.status === 'active' && { backgroundColor: isOverdue ? '#DC2626' : '#2563EB' },
               matchedReservation.status === 'completed' && { backgroundColor: '#4B5563' },
             ]}>
               <View style={styles.confirmedLeft}>
                 <Text style={styles.confirmedCheck}>
-                  {matchedReservation.status === 'pending' ? '✓' : matchedReservation.status === 'active' ? '🚗' : '🏁'}
+                  {matchedReservation.status === 'cancelled' ? '❌' : matchedReservation.status === 'pending' ? '✓' : matchedReservation.status === 'active' ? '🚗' : '🏁'}
                 </Text>
                 <View>
                   <Text style={styles.confirmedTitle}>
-                    {matchedReservation.status === 'pending'
+                    {matchedReservation.status === 'cancelled'
+                      ? 'BOOKING CANCELLED'
+                      : matchedReservation.status === 'pending'
                       ? (matchedReservation.checkInStatus === 'requested' ? 'CHECK-IN REQUESTED' : 'UPCOMING RESERVATION')
                       : matchedReservation.status === 'active'
                       ? (isOverdue ? 'OVERDUE ACTIVE SESSION' : 'ACTIVE PARKING SESSION')
                       : 'COMPLETED RESERVATION'}
                   </Text>
                   <Text style={styles.confirmedSubtitle}>
-                    {matchedReservation.status === 'pending'
+                    {matchedReservation.status === 'cancelled'
+                      ? 'Reservation was cancelled and is not valid for entry'
+                      : matchedReservation.status === 'pending'
                       ? 'Ready for vehicle entry verification'
                       : matchedReservation.status === 'active'
                       ? (isOverdue ? `Overdue by ${matchedReservation.estimatedOvertimeMinutes || matchedReservation.overtimeMinutes || 0}m (Grace ended)` : 'Vehicle currently parked')
@@ -375,7 +390,7 @@ export default function VerifyEntryScreen({
               </View>
               <View style={[styles.reservedTag, matchedReservation.status === 'active' && { borderColor: '#BFDBFE', backgroundColor: '#EFF6FF' }]}>
                 <Text style={[styles.reservedTagText, matchedReservation.status === 'active' && { color: '#1D4ED8' }]}>
-                  {matchedReservation.status === 'active' ? 'Space Occupied' : 'Space Reserved'}
+                  {matchedReservation.status === 'active' ? 'Space Occupied' : matchedReservation.status === 'cancelled' ? 'Booking Cancelled' : 'Space Reserved'}
                 </Text>
               </View>
             </View>
@@ -400,8 +415,9 @@ export default function VerifyEntryScreen({
                   <Text style={styles.fieldIcon}>💳</Text>
                   <Text style={styles.fieldLabel}>Vehicle Plate</Text>
                 </View>
-                <Text style={[styles.fieldValue, styles.plateBold]}>{vehiclePlate}</Text>
-                <Text style={[styles.fieldValue, styles.plateBold]}>{plateNumber}</Text>
+                <Text style={[styles.fieldValue, styles.plateBold]}>
+                  {plateNumber && plateNumber !== '—' ? plateNumber : vehiclePlate}
+                </Text>
               </View>
             </View>
 

@@ -746,12 +746,28 @@ const getAllReservations = async (req, res, next) => {
     const { status, lotId } = req.query;
     const query = {};
     if (status) query.status = status;
-    if (lotId) query.parkingLot = lotId;
+
+    // Enforce staff lot isolation
+    if (req.user?.role === 'staff') {
+      const staffLot = req.user.parkingLot || req.user.assignedLot;
+      if (staffLot) {
+        if (lotId && lotId.toString() !== staffLot.toString()) {
+          return res.status(403).json({
+            message: 'Access denied: You are not authorized to view reservations for this parking lot',
+          });
+        }
+        query.parkingLot = staffLot;
+      } else if (lotId) {
+        query.parkingLot = lotId;
+      }
+    } else if (lotId) {
+      query.parkingLot = lotId;
+    }
 
     const reservations = await Reservation.find(query)
-      .populate('driver', 'name email')
-      .populate('parkingSpace', 'spaceNumber')
-      .populate('parkingLot', 'name')
+      .populate('driver', 'name email phone')
+      .populate('parkingSpace', 'spaceNumber floor type')
+      .populate('parkingLot', 'name address')
       .sort({ createdAt: -1 });
 
     res.json(reservations.map((r) => attachOvertimeEstimate(r)));

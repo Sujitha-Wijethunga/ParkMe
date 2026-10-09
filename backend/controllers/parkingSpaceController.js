@@ -1,15 +1,40 @@
 const ParkingSpace = require('../models/ParkingSpace');
 const ParkingLot = require('../models/ParkingLot');
+const Reservation = require('../models/Reservation');
 const fs = require('fs/promises');
 const path = require('path');
 
 // @desc    List spaces in a lot
 // @route   GET /api/parking-lots/:lotId/spaces
-// @access  Public
+// @access  Public / Staff
 const getSpaces = async (req, res, next) => {
   try {
     const { status, vehicleType } = req.query;
-    const query = { parkingLot: req.params.lotId };
+    let targetLotId = req.params.lotId || req.query.lotId;
+
+    if (!targetLotId && req.user) {
+      targetLotId = req.user.parkingLot || req.user.assignedLot;
+    }
+
+    if (req.user?.role === 'staff') {
+      const staffLot = req.user.parkingLot || req.user.assignedLot;
+      if (staffLot && targetLotId && staffLot.toString() !== targetLotId.toString()) {
+        return res.status(403).json({
+          message: 'Access denied: You are not authorized to view spaces for this parking lot',
+        });
+      }
+      if (staffLot && !targetLotId) {
+        targetLotId = staffLot;
+      }
+    }
+
+    if (!targetLotId) {
+      // Default to first active lot if no lot ID specified
+      const firstLot = await ParkingLot.findOne({ isActive: true });
+      if (firstLot) targetLotId = firstLot._id;
+    }
+
+    const query = { parkingLot: targetLotId };
     if (status) query.status = status;
     if (vehicleType && typeof vehicleType === 'string' && vehicleType.trim()) {
       query.$or = [
@@ -19,8 +44,47 @@ const getSpaces = async (req, res, next) => {
       ];
     }
 
-    const spaces = await ParkingSpace.find(query);
-    res.json(spaces);
+    const spaces = await ParkingSpace.find(query).sort({ spaceNumber: 1 }).lean();
+
+    // Attach live active & upcoming reservations so spaces reflect true status
+    const now = new Date();
+    const activeReservations = await Reservation.find({
+      parkingLot: targetLotId,
+      status: { $in: ['pending', 'active'] },
+      endTime: { $gt: now },
+    })
+      .select('parkingSpace status startTime endTime reference vehiclePlate driver')
+      .populate('driver', 'name')
+      .lean();
+
+    const resBySpaceId = {};
+    activeReservations.forEach((r) => {
+      const sId = (r.parkingSpace?._id || r.parkingSpace).toString();
+      if (!resBySpaceId[sId] || r.status === 'active') {
+        resBySpaceId[sId] = r;
+      }
+    });
+
+    const enrichedSpaces = spaces.map((s) => {
+      const activeRes = resBySpaceId[s._id.toString()];
+      let effectiveStatus = s.status || 'available';
+      if (s.status === 'occupied') {
+        effectiveStatus = 'occupied';
+      } else if (activeRes) {
+        if (activeRes.status === 'active') {
+          effectiveStatus = 'occupied';
+        } else if (activeRes.status === 'pending') {
+          effectiveStatus = 'reserved';
+        }
+      }
+      return {
+        ...s,
+        effectiveStatus,
+        activeReservation: activeRes || null,
+      };
+    });
+
+    res.json(enrichedSpaces);
   } catch (error) {
     next(error);
   }
@@ -47,7 +111,23 @@ const getSpaceById = async (req, res, next) => {
 // @access  Admin / Staff
 const createSpace = async (req, res, next) => {
   try {
-    const lot = await ParkingLot.findById(req.params.lotId);
+    const targetLotId = req.params.lotId || req.body.parkingLot || req.user?.parkingLot;
+    if (!targetLotId) {
+      const error = new Error('Parking lot ID is required.');
+      error.statusCode = 400;
+      throw error;
+    }
+
+    if (req.user?.role === 'staff') {
+      const staffLot = req.user.parkingLot || req.user.assignedLot;
+      if (staffLot && staffLot.toString() !== targetLotId.toString()) {
+        const error = new Error('Access denied: You are not authorized to add spaces to this parking lot.');
+        error.statusCode = 403;
+        throw error;
+      }
+    }
+
+    const lot = await ParkingLot.findById(targetLotId);
     if (!lot) {
       const error = new Error('Parking lot not found');
       error.statusCode = 404;
@@ -81,8 +161,23 @@ const createSpace = async (req, res, next) => {
       throw error;
     }
 
+    const cleanFloor = (req.body.floor || '').trim();
+    if (!cleanFloor) {
+      const error = new Error('Floor or level is required (e.g. Ground Floor, Level 1).');
+      error.statusCode = 400;
+      throw error;
+    }
+
+    const validVehicleTypes = ['Car', 'Bike', 'SUV', 'EV', 'any'];
+    const vehicleType = req.body.vehicleType ? req.body.vehicleType.trim() : 'Car';
+    if (!validVehicleTypes.includes(vehicleType)) {
+      const error = new Error('Vehicle type must be Car, Bike, SUV, EV, or any.');
+      error.statusCode = 400;
+      throw error;
+    }
+
     const existingSpaces = await ParkingSpace.find({
-      parkingLot: req.params.lotId,
+      parkingLot: targetLotId,
       spaceNumber: { $in: spaceNumbers },
     }).select('spaceNumber').lean();
     if (existingSpaces.length > 0) {
@@ -96,20 +191,21 @@ const createSpace = async (req, res, next) => {
       : (req.body.imageUrl || undefined);
     const createdSpaces = await ParkingSpace.insertMany(
       spaceNumbers.map((spaceNumber) => ({
-        parkingLot: req.params.lotId,
-        spaceNumber: spaceNumber.trim(),
-        floor: req.body.floor,
-        type: req.body.type || 'standard',
+        parkingLot: targetLotId,
+        spaceNumber: spaceNumber.trim().toUpperCase(),
+        floor: cleanFloor,
+        type: req.body.type || (vehicleType === 'EV' ? 'EV' : 'standard'),
+        vehicleType,
         status: req.body.status || 'available',
         imageUrl,
       }))
     );
 
     const [totalSpaces, availableSpaces] = await Promise.all([
-      ParkingSpace.countDocuments({ parkingLot: req.params.lotId }),
-      ParkingSpace.countDocuments({ parkingLot: req.params.lotId, status: 'available' }),
+      ParkingSpace.countDocuments({ parkingLot: targetLotId }),
+      ParkingSpace.countDocuments({ parkingLot: targetLotId, status: 'available' }),
     ]);
-    await ParkingLot.findByIdAndUpdate(req.params.lotId, {
+    await ParkingLot.findByIdAndUpdate(targetLotId, {
       $set: { totalSpaces, availableSpaces },
     });
     res.status(201).json(req.body.spaceNumbers !== undefined ? createdSpaces : createdSpaces[0]);
@@ -130,6 +226,16 @@ const createSpace = async (req, res, next) => {
 // @access  Admin / Staff
 const updateSpace = async (req, res, next) => {
   try {
+    const targetLotId = req.params.lotId;
+    if (req.user?.role === 'staff') {
+      const staffLot = req.user.parkingLot || req.user.assignedLot;
+      if (staffLot && targetLotId && staffLot.toString() !== targetLotId.toString()) {
+        return res.status(403).json({
+          message: 'Access denied: You are not authorized to manage spaces for this parking lot',
+        });
+      }
+    }
+
     const allowedUpdates = {};
     for (const field of ['status', 'floor', 'type', 'imageUrl']) {
       if (req.body[field] !== undefined) allowedUpdates[field] = req.body[field];

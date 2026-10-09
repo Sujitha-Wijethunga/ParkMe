@@ -1,4 +1,4 @@
-import React, { useState, useMemo, useEffect, useCallback } from 'react';
+import React, { useState, useMemo, useEffect, useCallback, useRef } from 'react';
 import {
   View,
   Text,
@@ -34,8 +34,11 @@ import {
   fetchNearbyDrivingLots,
   checkLotAvailability,
   fetchAllParkingLots,
+  fetchSearchSuggestions,
+  SearchSuggestionItem,
   NearbyDrivingLot,
 } from '../../services/parkingService';
+import SearchSuggestionsDropdown from '../../components/SearchSuggestionsDropdown';
 import { launchDrivingNavigation, isValidCoordinate } from '../../services/navigationLauncher';
 import { VERIFIED_LOT_ENTRANCES } from '../../services/parkingEntranceService';
 import { VehicleType } from '../../constants/parkingSpaceData';
@@ -70,7 +73,8 @@ interface SearchResultsScreenProps {
       viewMode: SearchResultsViewMode;
       filterChip: DriverFilterChip;
       selectedLotId: string | null;
-    }
+    },
+    lotItem?: ParkingLotCardItem
   ) => void;
   onNavigateHome?: () => void;
   onNavigateBookings?: () => void;
@@ -133,6 +137,71 @@ export default function SearchResultsScreen({
   const [locationError, setLocationError] = useState<LocationError | null>(null);
   const [fetchError, setFetchError] = useState<string | null>(null);
   const [lastRefreshedAt, setLastRefreshedAt] = useState<Date | null>(null);
+
+  // ── Autocomplete Search Suggestions State ──
+  const [suggestions, setSuggestions] = useState<SearchSuggestionItem[]>([]);
+  const [isSuggestionsLoading, setIsSuggestionsLoading] = useState(false);
+  const [suggestionsError, setSuggestionsError] = useState(false);
+  const [showSuggestions, setShowSuggestions] = useState(false);
+  const suggestionsReqIdRef = useRef(0);
+
+  useEffect(() => {
+    const trimmed = searchQuery.trim();
+    if (!trimmed) {
+      setSuggestions([]);
+      setIsSuggestionsLoading(false);
+      setShowSuggestions(false);
+      return;
+    }
+
+    setShowSuggestions(true);
+    setIsSuggestionsLoading(true);
+    setSuggestionsError(false);
+
+    const reqId = ++suggestionsReqIdRef.current;
+    const controller = new AbortController();
+
+    const timer = setTimeout(async () => {
+      try {
+        const results = await fetchSearchSuggestions(trimmed, controller.signal);
+        if (reqId === suggestionsReqIdRef.current) {
+          setSuggestions(results);
+          setIsSuggestionsLoading(false);
+        }
+      } catch (err: any) {
+        if (err.name !== 'AbortError' && reqId === suggestionsReqIdRef.current) {
+          setSuggestionsError(true);
+          setIsSuggestionsLoading(false);
+        }
+      }
+    }, 280);
+
+    return () => {
+      clearTimeout(timer);
+      controller.abort();
+    };
+  }, [searchQuery]);
+
+  const handleSelectSuggestion = (item: SearchSuggestionItem) => {
+    setSearchQuery(item.name);
+    setShowSuggestions(false);
+    if (item.type === 'lot') {
+      setSelectedLotId(item.id);
+      const matched = dbLots.find((l) => l.id === item.id) || SAMPLE_NEARBY_PARKING_LOTS.find((l) => l.id === item.id);
+      if (matched && onSelectLot) {
+        onSelectLot(
+          item.id,
+          {
+            query: item.name,
+            viewMode,
+            filterChip: selectedFilter,
+            selectedLotId: item.id,
+          },
+          matched
+        );
+      }
+    }
+  };
 
   // Fetch real database parking lots across Sri Lanka matching search query
   useEffect(() => {
@@ -591,6 +660,17 @@ export default function SearchResultsScreen({
           </TouchableOpacity>
         </View>
 
+        {/* 1b. Search Suggestions Dropdown */}
+        <SearchSuggestionsDropdown
+          visible={showSuggestions}
+          suggestions={suggestions}
+          isLoading={isSuggestionsLoading}
+          searchQuery={searchQuery}
+          hasError={suggestionsError}
+          onSelectSuggestion={handleSelectSuggestion}
+          onDismiss={() => setShowSuggestions(false)}
+        />
+
         {/* 2. Mode Shortcuts & Filter Chips Row */}
         <View style={styles.chipsWrapper}>
           <ScrollView
@@ -962,7 +1042,7 @@ export default function SearchResultsScreen({
                           viewMode,
                           filterChip: selectedFilter,
                           selectedLotId: lot.id,
-                        })
+                        }, cardItem)
                       }
                     />
 
@@ -1047,7 +1127,7 @@ export default function SearchResultsScreen({
                         viewMode,
                         filterChip: selectedFilter,
                         selectedLotId: lotId,
-                      })
+                      }, activeSelectedSampleLot)
                     }
                   />
                 </View>
@@ -1094,7 +1174,7 @@ export default function SearchResultsScreen({
                       viewMode,
                       filterChip: selectedFilter,
                       selectedLotId: lotId,
-                    })
+                    }, lot)
                   }
                 />
               ))}

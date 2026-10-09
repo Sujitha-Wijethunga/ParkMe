@@ -63,7 +63,6 @@ import {
   formatTime12,
 } from './src/constants/bookingDraft';
 import StaffLoginScreen from './src/screens/staff/StaffLoginScreen';
-import StaffSignupScreen from './src/screens/staff/StaffSignupScreen';
 import StaffDashboardScreen from './src/screens/staff/StaffDashboardScreen';
 import ManageSpaceScreen, { SpaceItem, initialSpaces } from './src/screens/staff/ManageSpaceScreen';
 import SpaceListScreen from './src/screens/staff/SpaceListScreen';
@@ -131,9 +130,10 @@ const readApiError = async (response: Response, fallback: string) => {
 };
 
 const normalizeSpaceStatus = (status?: string): SpaceItem['status'] => {
-  switch (status) {
+  switch (status?.toLowerCase()) {
     case 'occupied':
       return 'Occupied';
+    case 'reserved':
     case 'maintenance':
       return 'Reserved';
     case 'available':
@@ -294,6 +294,8 @@ export default function App() {
   });
   const [authToken, setAuthToken] = useState<string | null>(null);
   const [spaces, setSpaces] = useState<SpaceItem[]>(initialSpaces);
+  const [isStaffSpacesLoading, setIsStaffSpacesLoading] = useState(false);
+  const [staffSpacesError, setStaffSpacesError] = useState<string | null>(null);
   const [selectedSpaceId, setSelectedSpaceId] = useState<string | null>(null);
   const [driverParkingLots, setDriverParkingLots] = useState<ParkingLotCardItem[]>(SAMPLE_NEARBY_PARKING_LOTS);
   const [bookingSelection, setBookingSelection] = useState<SpaceSelectionResult | null>(null);
@@ -372,36 +374,47 @@ export default function App() {
         avatar: user.avatar || profile.avatar,
         avatarBg: user.avatarBg || profile.avatarBg,
         avatarImageUri: resolveApiImageUrl(user.avatarUrl) || profile.avatarImageUri,
+        assignedLot: typeof user.parkingLot === 'object' && user.parkingLot ? user.parkingLot.name : (user.assignedLot || profile.assignedLot),
       }));
     };
 
     const loadStaffSpaces = async () => {
-      const response = await fetch(`${API_BASE_URL}/api/parking-lots`);
-      if (!response.ok) throw new Error('Unable to load parking lots');
-      const lots = await response.json();
-      if (!Array.isArray(lots)) throw new Error('Invalid parking-lot response');
+      setIsStaffSpacesLoading(true);
+      setStaffSpacesError(null);
+      try {
+        const response = await fetch(`${API_BASE_URL}/api/parking-spaces`, {
+          headers: { Authorization: `Bearer ${authToken}` },
+        });
+        if (response.ok) {
+          const lotSpaces = await response.json();
+          if (Array.isArray(lotSpaces)) {
+            const mapped = lotSpaces.map((space: any): SpaceItem => ({
+              id: space._id || space.id,
+              slot: space.spaceNumber,
+              status: normalizeSpaceStatus(space.effectiveStatus || space.status),
+              location: typeof space.parkingLot === 'object' && space.parkingLot ? space.parkingLot.name : (space.location || 'Assigned Facility'),
+              level: space.floor || 'Ground Floor',
+              parkingLotId: typeof space.parkingLot === 'object' && space.parkingLot ? space.parkingLot._id : space.parkingLot,
+              vehicleType: space.vehicleType || 'Car',
+              imageUrl: resolveApiImageUrl(space.imageUrl),
+            }));
+            setSpaces(mapped);
+            return;
+          }
+        }
 
-      const spacesByLot = await Promise.all(
-        lots.map(async (lot: any) => {
-          const lotId = lot._id || lot.id;
-          const spacesResponse = await fetch(`${API_BASE_URL}/api/parking-lots/${lotId}/spaces`);
-          if (!spacesResponse.ok) throw new Error(`Unable to load spaces for ${lot.name}`);
-          const lotSpaces = await spacesResponse.json();
-          return Array.isArray(lotSpaces)
-            ? lotSpaces.map((space: any): SpaceItem => ({
-                id: space._id || space.id,
-                slot: space.spaceNumber,
-                status: normalizeSpaceStatus(space.status),
-                location: lot.name,
-                level: space.floor,
-                parkingLotId: lotId,
-                imageUrl: resolveApiImageUrl(space.imageUrl),
-              }))
-            : [];
-        })
-      );
-      setSpaces(spacesByLot.flat());
-      setDriverParkingLots(lots.map(mapLotToDriverCard));
+        // Fallback: load lots and their spaces
+        const lotsRes = await fetch(`${API_BASE_URL}/api/parking-lots`);
+        if (!lotsRes.ok) throw new Error('Unable to load parking lots');
+        const lots = await lotsRes.json();
+        if (Array.isArray(lots)) {
+          setDriverParkingLots(lots.map(mapLotToDriverCard));
+        }
+      } catch (err: any) {
+        setStaffSpacesError(err instanceof Error ? err.message : 'Unable to load spaces');
+      } finally {
+        setIsStaffSpacesLoading(false);
+      }
     };
 
     void Promise.all([loadStaffProfile(), loadStaffSpaces()]).catch((error) => {
@@ -433,8 +446,15 @@ export default function App() {
   const handleOpenLotDetails = (
     lotId: string,
     origin: 'driver-home' | 'driver-search',
-    searchSnapshot?: { query: string; viewMode: SearchResultsViewMode; filterChip: DriverFilterChip; selectedLotId: string | null }
+    searchSnapshot?: { query: string; viewMode: SearchResultsViewMode; filterChip: DriverFilterChip; selectedLotId: string | null },
+    lotItem?: ParkingLotCardItem
   ) => {
+    if (lotItem) {
+      setDriverParkingLots((prev) => {
+        if (prev.some((p) => p.id === lotItem.id)) return prev;
+        return [...prev, lotItem];
+      });
+    }
     setSelectedLotId(lotId);
     setLotDetailsOrigin(origin);
     if (searchSnapshot) {
@@ -847,8 +867,9 @@ export default function App() {
       const lotId = lot._id || lot.id;
       const formData = new FormData();
       formData.append('spaceNumbers', JSON.stringify(newSpace.spaceNumbers ?? [newSpace.slot]));
-      formData.append('floor', newSpace.level || 'Level 3');
-      formData.append('type', 'standard');
+      formData.append('floor', newSpace.level || 'Ground Floor');
+      formData.append('vehicleType', newSpace.vehicleType || 'Car');
+      formData.append('type', newSpace.vehicleType === 'EV' ? 'EV' : 'standard');
       if (newSpace.imageUri) {
         console.log('Uploading image:', newSpace.imageUri);
 
@@ -880,8 +901,9 @@ export default function App() {
         slot: createdSpace.spaceNumber,
         status: normalizeSpaceStatus(createdSpace.status),
         location: lotName,
-        level: createdSpace.floor || newSpace.level || 'Level 3',
+        level: createdSpace.floor || newSpace.level || 'Ground Floor',
         parkingLotId: lotId,
+        vehicleType: createdSpace.vehicleType || newSpace.vehicleType || 'Car',
         imageUrl: resolveApiImageUrl(createdSpace.imageUrl),
       }));
 
@@ -1038,8 +1060,8 @@ export default function App() {
           selectedVehicleType={selectedVehicleType}
           onVehicleTypeChange={setSelectedVehicleType}
           onNavigateToMap={() => handleOpenSearch('', 'map', 'Nearest')}
-          onNavigateToLotDetails={(lotId) =>
-            handleOpenLotDetails(lotId, 'driver-home')
+          onNavigateToLotDetails={(lotId, lotItem) =>
+            handleOpenLotDetails(lotId, 'driver-home', undefined, lotItem)
           }
           onNavigateToBookings={handleOpenBookings}
           onNavigateToProfile={handleDriverProfilePress}
@@ -1083,8 +1105,8 @@ export default function App() {
           onVehicleTypeChange={setSelectedVehicleType}
           onBack={() => setCurrentScreen('driver-home')}
           onNavigateHome={() => setCurrentScreen('driver-home')}
-          onSelectLot={(lotId, snapshot) =>
-            handleOpenLotDetails(lotId, 'driver-search', snapshot)
+          onSelectLot={(lotId, snapshot, lotItem) =>
+            handleOpenLotDetails(lotId, 'driver-search', snapshot, lotItem)
           }
           onNavigateBookings={handleOpenBookings}
           onNavigateProfile={handleDriverProfilePress}
@@ -1174,6 +1196,7 @@ export default function App() {
       {currentScreen === 'driver-lot-details' && (
         <LotDetailsScreen
           lotId={selectedLotId}
+          parkingLots={driverParkingLots}
           onBack={handleBackFromLotDetails}
           onSelectSpace={handleOpenSpaceSelection}
         />
@@ -1181,6 +1204,7 @@ export default function App() {
       {currentScreen === 'driver-space-selection' && (
         <SelectSpaceScreen
           lotId={spaceSelectionLotId}
+          parkingLots={driverParkingLots}
           initialSelection={bookingSelection}
           selectedVehicleType={selectedVehicleType}
           onVehicleTypeChange={setSelectedVehicleType}
@@ -1192,6 +1216,7 @@ export default function App() {
         <BookingSummaryScreen
           key={`${bookingSelection.lotId}-${bookingSelection.spaceId}`}
           selection={bookingSelection}
+          parkingLots={driverParkingLots}
           initialDraft={bookingDraft}
           onDraftChange={setBookingDraft}
           onBack={() => setCurrentScreen('driver-space-selection')}
@@ -1231,14 +1256,7 @@ export default function App() {
       {currentScreen === 'login' && (
         <StaffLoginScreen
           onLoginSuccess={handleLoginSuccess}
-          onNavigateToSignup={() => setCurrentScreen('signup')}
           onNavigateToDriverLogin={() => setCurrentScreen('driver-login')}
-        />
-      )}
-      {currentScreen === 'signup' && (
-        <StaffSignupScreen
-          onSignupSuccess={handleLoginSuccess}
-          onBackToLogin={() => setCurrentScreen('login')}
         />
       )}
       {currentScreen === 'dashboard' && (
@@ -1246,9 +1264,9 @@ export default function App() {
           staffId={loggedStaffId}
           profile={staffProfile}
           onLogout={handleLogout}
-          onNavigateToSpaces={() => setCurrentScreen('spaces-list')}
+          onNavigateToSpaces={() => setCurrentScreen('spaces')}
           onNavigateToReservations={() => setCurrentScreen('reservations')}
-          onNavigateToVerifyEntry={() => setCurrentScreen('reservations')}
+          onNavigateToVerifyEntry={() => setCurrentScreen('verify')}
           onNavigateToProfile={() => setCurrentScreen('profile')}
           spaces={spaces}
         />
@@ -1268,15 +1286,81 @@ export default function App() {
       {currentScreen === 'spaces' && (
         <ManageSpaceScreen 
           selectedSpaceId={selectedSpaceId}
-          onBack={() => setCurrentScreen('spaces-list')} 
+          onBack={() => setCurrentScreen('dashboard')} 
           onUpdateSpaceStatus={handleUpdateSpaceStatus}
           spaces={spaces}
+          lotName={staffProfile.assignedLot || 'One Galle Face Mall — Ground Floor'}
+          isLoading={isStaffSpacesLoading}
+          error={staffSpacesError}
+          onRetry={async () => {
+            if (!authToken) return;
+            setIsStaffSpacesLoading(true);
+            setStaffSpacesError(null);
+            try {
+              const res = await fetch(`${API_BASE_URL}/api/parking-spaces`, {
+                headers: { Authorization: `Bearer ${authToken}` },
+              });
+              if (res.ok) {
+                const data = await res.json();
+                if (Array.isArray(data)) {
+                  setSpaces(data.map((s: any) => ({
+                    id: s._id || s.id,
+                    slot: s.spaceNumber,
+                    status: normalizeSpaceStatus(s.effectiveStatus || s.status),
+                    location: typeof s.parkingLot === 'object' && s.parkingLot ? s.parkingLot.name : (s.location || 'Assigned Facility'),
+                    level: s.floor || 'Ground Floor',
+                    parkingLotId: typeof s.parkingLot === 'object' && s.parkingLot ? s.parkingLot._id : s.parkingLot,
+                    vehicleType: s.vehicleType || 'Car',
+                    imageUrl: resolveApiImageUrl(s.imageUrl),
+                  })));
+                }
+              }
+            } catch (e: any) {
+              setStaffSpacesError(e instanceof Error ? e.message : 'Unable to reload spaces');
+            } finally {
+              setIsStaffSpacesLoading(false);
+            }
+          }}
+          onRefresh={async () => {
+            if (!authToken) return;
+            try {
+              const res = await fetch(`${API_BASE_URL}/api/parking-spaces`, {
+                headers: { Authorization: `Bearer ${authToken}` },
+              });
+              if (res.ok) {
+                const data = await res.json();
+                if (Array.isArray(data)) {
+                  setSpaces(data.map((s: any) => ({
+                    id: s._id || s.id,
+                    slot: s.spaceNumber,
+                    status: normalizeSpaceStatus(s.effectiveStatus || s.status),
+                    location: typeof s.parkingLot === 'object' && s.parkingLot ? s.parkingLot.name : (s.location || 'Assigned Facility'),
+                    level: s.floor || 'Ground Floor',
+                    parkingLotId: typeof s.parkingLot === 'object' && s.parkingLot ? s.parkingLot._id : s.parkingLot,
+                    vehicleType: s.vehicleType || 'Car',
+                    imageUrl: resolveApiImageUrl(s.imageUrl),
+                  })));
+                }
+              }
+            } catch (e) {
+              console.warn('Failed to refresh spaces:', e);
+            }
+          }}
+          onNavigateToAddSpace={() => setCurrentScreen('add-space')}
+          onNavigateTab={(tab) => {
+            if (tab === 'Dashboard') setCurrentScreen('dashboard');
+            else if (tab === 'Spaces') setCurrentScreen('spaces');
+            else if (tab === 'Reservations') setCurrentScreen('reservations');
+            else if (tab === 'Profile') setCurrentScreen('profile');
+          }}
         />
       )}
       {currentScreen === 'add-space' && (
         <AddSpaceScreen
-          onBack={() => setCurrentScreen('spaces-list')}
+          onBack={() => setCurrentScreen('spaces')}
           onSave={handleAddSpace}
+          authorizedLotName={staffProfile.assignedLot || 'One Galle Face Mall'}
+          isStaff={true}
         />
       )}
       {currentScreen === 'reservations' && (
@@ -1285,6 +1369,13 @@ export default function App() {
           onAdmitVehicle={handleAdmitVehicle}
           apiBaseUrl={API_BASE_URL}
           authToken={authToken}
+          lotName={staffProfile.assignedLot || 'One Galle Face Mall — Ground Floor'}
+          onNavigateTab={(tab) => {
+            if (tab === 'Dashboard') setCurrentScreen('dashboard');
+            else if (tab === 'Spaces') setCurrentScreen('spaces');
+            else if (tab === 'Reservations') setCurrentScreen('reservations');
+            else if (tab === 'Profile') setCurrentScreen('profile');
+          }}
         />
       )}
       {currentScreen === 'verify' && (
@@ -1297,8 +1388,28 @@ export default function App() {
           vehicleModel={activeReservation.vehicleModel}
           apiBaseUrl={API_BASE_URL}
           authToken={authToken}
-          onBack={() => setCurrentScreen('reservations')}
-          onEntryConfirmed={() => setCurrentScreen('dashboard')}
+          onBack={() => setCurrentScreen('dashboard')}
+          onEntryConfirmed={() => {
+            if (authToken) {
+              void fetch(`${API_BASE_URL}/api/parking-spaces`, {
+                headers: { Authorization: `Bearer ${authToken}` },
+              }).then(r => r.ok ? r.json() : null).then(data => {
+                if (Array.isArray(data)) {
+                  setSpaces(data.map((s: any) => ({
+                    id: s._id || s.id,
+                    slot: s.spaceNumber,
+                    status: normalizeSpaceStatus(s.effectiveStatus || s.status),
+                    location: typeof s.parkingLot === 'object' && s.parkingLot ? s.parkingLot.name : (s.location || 'Assigned Facility'),
+                    level: s.floor || 'Ground Floor',
+                    parkingLotId: typeof s.parkingLot === 'object' && s.parkingLot ? s.parkingLot._id : s.parkingLot,
+                    vehicleType: s.vehicleType || 'Car',
+                    imageUrl: resolveApiImageUrl(s.imageUrl),
+                  })));
+                }
+              }).catch(() => {});
+            }
+            setCurrentScreen('dashboard');
+          }}
         />
       )}
       {currentScreen === 'profile' && (

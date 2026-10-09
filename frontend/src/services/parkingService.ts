@@ -1,5 +1,17 @@
 import { getApiBaseUrl } from '../constants/api';
+import { SAMPLE_NEARBY_PARKING_LOTS } from '../constants/driverSampleData';
 export { getApiBaseUrl };
+
+export interface SearchSuggestionItem {
+  id: string;
+  name: string;
+  address: string;
+  city?: string;
+  subtitle: string;
+  availableSpaces?: number;
+  pricePerHour?: number;
+  type: 'lot' | 'city';
+}
 
 export interface NearbyDrivingLot {
   id: string;
@@ -190,4 +202,53 @@ export async function fetchAllParkingLots(search?: string): Promise<any[]> {
     throw err;
   }
 }
+
+/**
+ * Autocomplete suggestions for driver search input.
+ * Debounced and cancels superseded requests with signal.
+ */
+export async function fetchSearchSuggestions(
+  query: string,
+  signal?: AbortSignal
+): Promise<SearchSuggestionItem[]> {
+  const clean = query.trim();
+  if (!clean) return [];
+
+  try {
+    const url = `${getApiBaseUrl().replace(/\/+$/, '')}/api/parking-lots/suggestions?q=${encodeURIComponent(clean)}`;
+    const res = await fetch(url, {
+      signal,
+      headers: { Accept: 'application/json' },
+    });
+    if (res.ok) {
+      const data = await res.json();
+      if (Array.isArray(data)) {
+        return data;
+      }
+    }
+  } catch (err: any) {
+    if (err.name === 'AbortError') {
+      throw err;
+    }
+  }
+
+  // Graceful offline fallback from local sample dataset
+  const lower = clean.toLowerCase();
+  const matchedLots = SAMPLE_NEARBY_PARKING_LOTS.filter((lot) => {
+    const hay = `${lot.name} ${lot.address} ${lot.city || ''}`.toLowerCase();
+    return hay.includes(lower);
+  }).slice(0, 6);
+
+  return matchedLots.map((lot) => ({
+    id: lot.id,
+    name: lot.name,
+    address: lot.address,
+    city: lot.city,
+    subtitle: lot.city ? `${lot.address}, ${lot.city}` : lot.address,
+    availableSpaces: lot.availableSpaces,
+    pricePerHour: lot.pricePerHour,
+    type: 'lot',
+  }));
+}
+
 

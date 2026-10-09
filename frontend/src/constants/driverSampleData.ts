@@ -451,3 +451,58 @@ export const SAMPLE_NEARBY_PARKING_LOTS: ParkingLotCardItem[] = [
     vehicleTariffs: { Car: 100, Bike: 40, SUV: 150 },
   },
 ];
+
+/**
+ * Resolves a ParkingLotCardItem by its ID (whether mock ID like 'lot-6' or MongoDB ObjectId).
+ * Checks the dynamic pool first, then SAMPLE_NEARBY_PARKING_LOTS by ID, and finally by name/slug.
+ */
+export function resolveParkingLotItem(
+  lotId: string,
+  pool?: ParkingLotCardItem[]
+): ParkingLotCardItem | undefined {
+  if (!lotId) return undefined;
+
+  // 1. Exact ID in pool
+  if (pool && pool.length > 0) {
+    const directInPool = pool.find((l) => l.id === lotId || (l as any)._id === lotId);
+    if (directInPool) return directInPool;
+  }
+
+  // 2. Exact ID in sample data
+  const directInSample = SAMPLE_NEARBY_PARKING_LOTS.find((l) => l.id === lotId || (l as any)._id === lotId);
+  if (directInSample) return directInSample;
+
+  // 3. Name or partial match in pool with sample enrichment
+  if (pool && pool.length > 0) {
+    const poolLot = pool.find((l) => l.id === lotId);
+    if (poolLot) {
+      const sampleByName = SAMPLE_NEARBY_PARKING_LOTS.find(
+        (s) => s.name.toLowerCase().trim() === poolLot.name.toLowerCase().trim()
+      );
+      if (sampleByName) {
+        return {
+          ...sampleByName,
+          id: poolLot.id,
+          availableSpaces: poolLot.availableSpaces ?? sampleByName.availableSpaces,
+          totalSpaces: poolLot.totalSpaces ?? sampleByName.totalSpaces,
+          status: poolLot.status ?? sampleByName.status,
+          pricePerHour: poolLot.pricePerHour ?? sampleByName.pricePerHour,
+        };
+      }
+      return poolLot;
+    }
+  }
+
+  // 4. Try matching lotId against sample lots by fuzzy slug/name
+  const normalizedSearch = lotId.toLowerCase().replace(/[^a-z0-9]/g, '');
+  if (normalizedSearch.length > 2) {
+    const bySlug = SAMPLE_NEARBY_PARKING_LOTS.find((s) => {
+      const sSlug = s.name.toLowerCase().replace(/[^a-z0-9]/g, '');
+      return sSlug.includes(normalizedSearch) || normalizedSearch.includes(sSlug);
+    });
+    if (bySlug) return bySlug;
+  }
+
+  return undefined;
+}
+

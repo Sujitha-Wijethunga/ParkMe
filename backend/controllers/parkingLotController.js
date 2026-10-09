@@ -58,6 +58,70 @@ const getParkingLots = async (req, res, next) => {
   }
 };
 
+// @desc    Get autocomplete suggestions for driver search
+// @route   GET /api/parking-lots/suggestions
+// @access  Public
+const getParkingLotSuggestions = async (req, res, next) => {
+  try {
+    const rawQuery = (req.query.q || req.query.query || '').trim();
+    if (!rawQuery) {
+      return res.json([]);
+    }
+
+    const escaped = rawQuery.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+    const regex = new RegExp(escaped, 'i');
+
+    const lots = await ParkingLot.find({
+      isActive: true,
+      $or: [
+        { name: regex },
+        { address: regex },
+        { city: regex },
+        { entranceName: regex },
+      ],
+    })
+      .select('_id name address city entranceName availableSpaces pricePerHour')
+      .limit(8)
+      .lean();
+
+    const suggestions = lots.map((lot) => ({
+      id: lot._id.toString(),
+      name: lot.name,
+      address: lot.address,
+      city: lot.city || '',
+      subtitle: lot.city ? `${lot.address}, ${lot.city}` : lot.address,
+      availableSpaces: lot.availableSpaces,
+      pricePerHour: lot.pricePerHour,
+      type: 'lot',
+    }));
+
+    // Detect distinct matching cities
+    const cityMatches = new Set();
+    lots.forEach((l) => {
+      if (l.city && regex.test(l.city)) {
+        cityMatches.add(l.city.trim());
+      }
+    });
+
+    cityMatches.forEach((cityName) => {
+      if (!suggestions.some((s) => s.name.toLowerCase() === cityName.toLowerCase())) {
+        suggestions.unshift({
+          id: `city-${cityName.toLowerCase().replace(/\s+/g, '-')}`,
+          name: cityName,
+          address: `${cityName}, Sri Lanka`,
+          city: cityName,
+          subtitle: `City · Sri Lanka`,
+          type: 'city',
+        });
+      }
+    });
+
+    res.json(suggestions.slice(0, 6));
+  } catch (error) {
+    next(error);
+  }
+};
+
 // @desc    Get single parking lot
 // @route   GET /api/parking-lots/:id
 // @access  Public
@@ -428,6 +492,7 @@ const getParkingLotAvailability = async (req, res, next) => {
 
 module.exports = {
   getParkingLots,
+  getParkingLotSuggestions,
   getParkingLotById,
   createParkingLot,
   updateParkingLot,
