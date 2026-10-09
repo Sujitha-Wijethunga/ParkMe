@@ -15,7 +15,7 @@ import {
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { DriverColors } from '../../constants/colors';
-import { SAMPLE_NEARBY_PARKING_LOTS } from '../../constants/driverSampleData';
+import { SAMPLE_NEARBY_PARKING_LOTS, resolveParkingLotItem, ParkingLotCardItem } from '../../constants/driverSampleData';
 import { getSpaceLayoutForLot } from '../../constants/parkingSpaceData';
 import {
   BookingDraft,
@@ -34,6 +34,8 @@ import { SpaceSelectionResult } from './SelectSpaceScreen';
 interface BookingSummaryScreenProps {
   /** Full space selection result from SelectSpaceScreen. */
   selection: SpaceSelectionResult;
+  /** Optional pool of parking lots from backend or home state. */
+  parkingLots?: ParkingLotCardItem[];
   /** Preserved booking draft from previous navigation, if any. */
   initialDraft?: BookingDraft | null;
   /** Callback fired whenever the driver modifies the draft. */
@@ -285,6 +287,7 @@ function MiniMapGraphic({ distance, imageUrl }: { distance: string; imageUrl?: s
  */
 export default function BookingSummaryScreen({
   selection,
+  parkingLots,
   initialDraft,
   onDraftChange,
   onBack,
@@ -303,8 +306,8 @@ export default function BookingSummaryScreen({
   const { lotId, spaceId, floor, vehicleType, tariffPerHour } = selection;
 
   /* Lot and space data */
-  const lot = SAMPLE_NEARBY_PARKING_LOTS.find((l) => l.id === lotId);
-  const layout = getSpaceLayoutForLot(lotId);
+  const lot = resolveParkingLotItem(lotId, parkingLots);
+  const layout = getSpaceLayoutForLot(lotId, lot);
   const floorLayout = layout?.floors.find((f) => f.label === floor);
   const space = floorLayout?.spaces.find((s) => s.id === spaceId);
 

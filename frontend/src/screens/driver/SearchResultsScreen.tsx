@@ -70,7 +70,8 @@ interface SearchResultsScreenProps {
       viewMode: SearchResultsViewMode;
       filterChip: DriverFilterChip;
       selectedLotId: string | null;
-    }
+    },
+    lotItem?: ParkingLotCardItem
   ) => void;
   onNavigateHome?: () => void;
   onNavigateBookings?: () => void;
@@ -962,7 +963,7 @@ export default function SearchResultsScreen({
                           viewMode,
                           filterChip: selectedFilter,
                           selectedLotId: lot.id,
-                        })
+                        }, cardItem)
                       }
                     />
 
@@ -1047,7 +1048,7 @@ export default function SearchResultsScreen({
                         viewMode,
                         filterChip: selectedFilter,
                         selectedLotId: lotId,
-                      })
+                      }, activeSelectedSampleLot)
                     }
                   />
                 </View>
@@ -1094,7 +1095,7 @@ export default function SearchResultsScreen({
                       viewMode,
                       filterChip: selectedFilter,
                       selectedLotId: lotId,
-                    })
+                    }, lot)
                   }
                 />
               ))}
