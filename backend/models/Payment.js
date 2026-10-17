@@ -51,8 +51,20 @@ const paymentSchema = new mongoose.Schema(
 
 // Indexes
 // Allow at most one payment per type (booking / extension / overtime) per reservation
-paymentSchema.index({ reservation: 1, paymentType: 1 }, { unique: true, sparse: true });
-paymentSchema.index({ walkInSession: 1, paymentType: 1 }, { unique: true, sparse: true });
+paymentSchema.index(
+  { reservation: 1, paymentType: 1 },
+  {
+    unique: true,
+    partialFilterExpression: { reservation: { $type: 'objectId' } },
+  }
+);
+paymentSchema.index(
+  { walkInSession: 1, paymentType: 1 },
+  {
+    unique: true,
+    partialFilterExpression: { walkInSession: { $type: 'objectId' } },
+  }
+);
 // Driver payment history
 paymentSchema.index({ driver: 1, status: 1, createdAt: -1 });
 

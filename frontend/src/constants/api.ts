@@ -25,24 +25,19 @@ const isLoopbackUrl = (url?: string) => {
 };
 
 export const getApiBaseUrl = (): string => {
-  // If an HTTPS live URL is explicitly configured, always prioritize it
-  if (configuredApiUrl && configuredApiUrl.startsWith('https://')) {
-    return configuredApiUrl;
-  }
-
   // Web platform resolution
   if (Platform.OS === 'web') {
-    if (configuredApiUrl) return configuredApiUrl;
+    if (configuredApiUrl && !isLoopbackUrl(configuredApiUrl)) return configuredApiUrl;
     const host = typeof window !== 'undefined' ? window.location.hostname : 'localhost';
     if (host === 'localhost' || host === '127.0.0.1') {
       return 'http://localhost:5000';
     }
-    return LIVE_BACKEND_URL;
+    return configuredApiUrl || LIVE_BACKEND_URL;
   }
 
   // Development client connected to Metro on local machine
   if (typeof __DEV__ !== 'undefined' && __DEV__) {
-    if (configuredApiUrl && !isLoopbackUrl(configuredApiUrl)) {
+    if (configuredApiUrl && !isLoopbackUrl(configuredApiUrl) && !configuredApiUrl.includes('vercel.app')) {
       return configuredApiUrl;
     }
     const metroHost = getHostName(Constants.expoConfig?.hostUri);
