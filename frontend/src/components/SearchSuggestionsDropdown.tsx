@@ -5,7 +5,6 @@ import {
   StyleSheet,
   TouchableOpacity,
   ActivityIndicator,
-  Platform,
 } from 'react-native';
 import { SearchSuggestionItem } from '../services/parkingService';
 import { DriverColors } from '../constants/colors';

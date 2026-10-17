@@ -234,13 +234,13 @@ export async function getActiveWalkIns(
   token: string,
   lotId?: string,
   search?: string
-): Promise<Array<WalkInSessionData & { calculation: WalkInTariffCalculation }>> {
+): Promise<(WalkInSessionData & { calculation: WalkInTariffCalculation })[]> {
   const query = new URLSearchParams();
   if (lotId) query.set('lotId', lotId);
   if (search) query.set('search', search);
 
   const endpoint = `/api/walk-in/active${query.toString() ? `?${query.toString()}` : ''}`;
-  return authFetch<Array<WalkInSessionData & { calculation: WalkInTariffCalculation }>>(endpoint, token);
+  return authFetch<(WalkInSessionData & { calculation: WalkInTariffCalculation })[]>(endpoint, token);
 }
 
 /**

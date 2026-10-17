@@ -91,20 +91,21 @@ export default function HomeScreen({
   useEffect(() => {
     const trimmed = searchQuery.trim();
     if (!trimmed) {
-      setSuggestions([]);
-      setIsSuggestionsLoading(false);
-      setShowSuggestions(false);
-      return;
+      const resetTimer = setTimeout(() => {
+        setSuggestions([]);
+        setIsSuggestionsLoading(false);
+        setShowSuggestions(false);
+      }, 0);
+      return () => clearTimeout(resetTimer);
     }
-
-    setShowSuggestions(true);
-    setIsSuggestionsLoading(true);
-    setSuggestionsError(false);
 
     const reqId = ++searchRequestIdRef.current;
     const controller = new AbortController();
 
     const timer = setTimeout(async () => {
+      setShowSuggestions(true);
+      setIsSuggestionsLoading(true);
+      setSuggestionsError(false);
       try {
         const results = await fetchSearchSuggestions(trimmed, controller.signal);
         if (reqId === searchRequestIdRef.current) {

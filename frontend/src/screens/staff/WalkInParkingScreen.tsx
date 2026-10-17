@@ -126,7 +126,7 @@ export default function WalkInParkingScreen({
   const [isProcessingCheckout, setIsProcessingCheckout] = useState(false);
 
   // Active sessions tab state
-  const [activeList, setActiveList] = useState<Array<WalkInSessionData & { calculation: WalkInTariffCalculation }>>([]);
+  const [activeList, setActiveList] = useState<(WalkInSessionData & { calculation: WalkInTariffCalculation })[]>([]);
   const [isLoadingActiveList, setIsLoadingActiveList] = useState(false);
   const [activeSearchQuery, setActiveSearchQuery] = useState('');
 
@@ -150,7 +150,10 @@ export default function WalkInParkingScreen({
 
   useEffect(() => {
     if (activeTab === 'entry') {
-      void fetchSpaces();
+      const timer = setTimeout(() => {
+        void fetchSpaces();
+      }, 0);
+      return () => clearTimeout(timer);
     }
   }, [activeTab, fetchSpaces]);
 
@@ -170,7 +173,10 @@ export default function WalkInParkingScreen({
 
   useEffect(() => {
     if (activeTab === 'active') {
-      void fetchActiveSessions();
+      const timer = setTimeout(() => {
+        void fetchActiveSessions();
+      }, 0);
+      return () => clearTimeout(timer);
     }
   }, [activeTab, fetchActiveSessions]);
 
@@ -210,7 +216,7 @@ export default function WalkInParkingScreen({
       if (!result.canceled && result.assets[0]?.uri) {
         setPhotoUri(result.assets[0].uri);
       }
-    } catch (error) {
+    } catch {
       Alert.alert('Camera Error', 'Could not access the camera. You can enter the plate number manually.');
     }
   };
@@ -361,7 +367,7 @@ export default function WalkInParkingScreen({
       `;
 
       await Print.printAsync({ html });
-    } catch (error) {
+    } catch {
       Alert.alert('Print Error', 'Could not open print dialog on this device.');
     }
   };
@@ -389,7 +395,7 @@ export default function WalkInParkingScreen({
       } else {
         Alert.alert('Receipt Generated', `Saved receipt PDF to ${uri}`);
       }
-    } catch (error) {
+    } catch {
       Alert.alert('Share Error', 'Could not share receipt.');
     }
   };
