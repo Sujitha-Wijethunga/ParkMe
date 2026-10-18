@@ -149,14 +149,22 @@ const createSpace = async (req, res, next) => {
       spaceNumbers = [req.body.spaceNumber];
     }
 
+    if (!Array.isArray(spaceNumbers)) {
+      const error = new Error('Space numbers must be an array of space identifiers.');
+      error.statusCode = 400;
+      throw error;
+    }
+
+    // Normalize and sanitize space numbers
+    spaceNumbers = spaceNumbers.map((s) => (typeof s === 'string' ? s.trim().toUpperCase() : ''));
+
     if (
-      !Array.isArray(spaceNumbers)
-      || spaceNumbers.length < 1
+      spaceNumbers.length < 1
       || spaceNumbers.length > 100
-      || spaceNumbers.some((spaceNumber) => typeof spaceNumber !== 'string' || !spaceNumber.trim() || spaceNumber.length > 50)
+      || spaceNumbers.some((num) => !num || num.length > 20 || !/^[A-Z0-9_-]+$/.test(num))
       || new Set(spaceNumbers).size !== spaceNumbers.length
     ) {
-      const error = new Error('Provide 1 to 100 unique, non-empty space numbers.');
+      const error = new Error('Provide 1 to 100 unique space numbers (1-20 alphanumeric characters or hyphens).');
       error.statusCode = 400;
       throw error;
     }
@@ -164,6 +172,11 @@ const createSpace = async (req, res, next) => {
     const cleanFloor = (req.body.floor || '').trim();
     if (!cleanFloor) {
       const error = new Error('Floor or level is required (e.g. Ground Floor, Level 1).');
+      error.statusCode = 400;
+      throw error;
+    }
+    if (cleanFloor.length > 50) {
+      const error = new Error('Floor or level cannot exceed 50 characters.');
       error.statusCode = 400;
       throw error;
     }

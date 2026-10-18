@@ -1397,6 +1397,7 @@ export default function App() {
           onSave={handleAddSpace}
           authorizedLotName={staffProfile.assignedLot || 'One Galle Face Mall'}
           isStaff={true}
+          existingSpaces={spaces}
         />
       )}
       {currentScreen === 'reservations' && (
