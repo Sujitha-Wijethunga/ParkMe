@@ -15,7 +15,7 @@ import {
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { DriverColors } from '../../constants/colors';
-import { SAMPLE_NEARBY_PARKING_LOTS, resolveParkingLotItem, ParkingLotCardItem } from '../../constants/driverSampleData';
+import { resolveParkingLotItem, ParkingLotCardItem } from '../../constants/driverSampleData';
 import { getSpaceLayoutForLot } from '../../constants/parkingSpaceData';
 import {
   BookingDraft,

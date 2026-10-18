@@ -9,7 +9,7 @@
     "seed:lots": "node seeds/parkingLotsSeed.js",
     "migrate:models": "node seeds/backfillDatabaseModels.js",
     "provision:staff": "node scripts/provisionStaff.js",
-    "test": "node --test test/nearbyParking.test.js tests/reservationRelease.test.js tests/reservationCancellation.test.js tests/reservationActivation.test.js tests/vehicleSpaceValidation.test.js tests/databaseSchemaAndExtensions.test.js tests/verifiedActiveParking.test.js tests/searchStaffWorkflows.test.js tests/walkInParking.test.js"
+    "test": "node --test tests/nearbyParking.test.js tests/reservationRelease.test.js tests/reservationCancellation.test.js tests/reservationActivation.test.js tests/vehicleSpaceValidation.test.js tests/databaseSchemaAndExtensions.test.js tests/verifiedActiveParking.test.js tests/searchStaffWorkflows.test.js tests/walkInParking.test.js"
   },
   "keywords": [],
   "author": "",
@@ -23,7 +23,9 @@
     "google-auth-library": "^11.1.0",
     "jsonwebtoken": "^9.0.3",
     "mongoose": "^9.10.2",
-    "multer": "^2.4.0"
+    "multer": "^2.4.0",
+    "sharp": "^0.35.5",
+    "tesseract.js": "^7.0.0"
   },
   "devDependencies": {
     "nodemon": "^3.1.14"

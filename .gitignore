@@ -56,3 +56,6 @@ backend/.env.*
 /android
 frontend/ios
 frontend/android
+scratch/
+*.log
+

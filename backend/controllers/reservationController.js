@@ -420,14 +420,36 @@ const completeReservation = async (req, res, next) => {
         reservation.overtimePaymentStatus = 'paid';
         reservation.overtimePaidAt = now;
         reservation.overtimePaymentMethod = 'cash';
-        await Payment.create({
-          reservation: reservation._id,
-          user: reservation.driver,
-          amount: overtimeAmount,
-          method: 'cash',
-          status: 'paid',
-          paidAt: now,
-        });
+
+        try {
+          await Payment.create({
+            reservation: reservation._id,
+            driver: reservation.driver,
+            recordedBy: req.user?._id,
+            paymentType: 'overtime',
+            amount: overtimeAmount,
+            method: 'cash',
+            status: 'paid',
+            transactionId: `TXN-OT-${crypto.randomBytes(4).toString('hex').toUpperCase()}`,
+            paidAt: now,
+          });
+        } catch (paymentErr) {
+          if (paymentErr.code === 11000) {
+            await Payment.findOneAndUpdate(
+              { reservation: reservation._id, paymentType: 'overtime' },
+              {
+                amount: overtimeAmount,
+                method: 'cash',
+                status: 'paid',
+                paidAt: now,
+                driver: reservation.driver,
+                recordedBy: req.user?._id,
+              }
+            );
+          } else {
+            throw paymentErr;
+          }
+        }
       } else {
         reservation.unpaidOvertimeAmount = overtimeAmount;
         reservation.overtimePaymentStatus = 'pending';
@@ -601,14 +623,37 @@ const recordOvertimeCashPayment = async (req, res, next) => {
     reservation.overtimePaymentMethod = 'cash';
     await reservation.save();
 
-    const payment = await Payment.create({
-      reservation: reservation._id,
-      user: reservation.driver,
-      amount: amountPaid,
-      method: 'cash',
-      status: 'paid',
-      paidAt: now,
-    });
+    let payment;
+    try {
+      payment = await Payment.create({
+        reservation: reservation._id,
+        driver: reservation.driver,
+        recordedBy: req.user?._id,
+        paymentType: 'overtime',
+        amount: amountPaid,
+        method: 'cash',
+        status: 'paid',
+        transactionId: `TXN-OT-${crypto.randomBytes(4).toString('hex').toUpperCase()}`,
+        paidAt: now,
+      });
+    } catch (paymentErr) {
+      if (paymentErr.code === 11000) {
+        payment = await Payment.findOneAndUpdate(
+          { reservation: reservation._id, paymentType: 'overtime' },
+          {
+            amount: amountPaid,
+            method: 'cash',
+            status: 'paid',
+            paidAt: now,
+            driver: reservation.driver,
+            recordedBy: req.user?._id,
+          },
+          { new: true }
+        );
+      } else {
+        throw paymentErr;
+      }
+    }
 
     res.json({
       message: 'Cash payment recorded successfully.',

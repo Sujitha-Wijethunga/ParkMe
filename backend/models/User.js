@@ -72,6 +72,11 @@ const userSchema = new mongoose.Schema(
       trim: true,
       default: '',
     },
+    pushToken: {
+      type: String,
+      trim: true,
+      default: '',
+    },
     vehicles: [
       {
         plateNumber: {

@@ -14,7 +14,6 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { DriverColors } from '../../constants/colors';
 import {
   ParkingLotCardItem,
-  SAMPLE_NEARBY_PARKING_LOTS,
   resolveParkingLotItem,
 } from '../../constants/driverSampleData';
 import ParkingLotImage from '../../components/ParkingLotImage';

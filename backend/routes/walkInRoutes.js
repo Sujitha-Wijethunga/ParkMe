@@ -6,6 +6,8 @@ const {
   getWalkInSession,
   getActiveWalkIns,
   checkoutWalkIn,
+  getShiftSummary,
+  recognizePlate,
 } = require('../controllers/walkInController');
 const { protect } = require('../middleware/auth');
 const { authorize } = require('../middleware/authorize');
@@ -17,9 +19,11 @@ router.post(
   protect,
   authorize('staff', 'admin'),
   (req, res, next) => {
+    if (req.is('json') || req.headers['content-type']?.includes('application/json')) {
+      return next();
+    }
     walkInPhotoUpload.single('photo')(req, res, (err) => {
       if (err) {
-        // If file upload fails or is not an image, log and proceed without blocking manual entry
         console.warn('Walk-in photo upload warning:', err.message);
       }
       next();
@@ -30,5 +34,25 @@ router.post(
 router.get('/session/:refOrId', protect, authorize('staff', 'admin'), getWalkInSession);
 router.get('/active', protect, authorize('staff', 'admin'), getActiveWalkIns);
 router.post('/checkout', protect, authorize('staff', 'admin'), checkoutWalkIn);
+
+// Shift summary for cash reconciliation report
+router.get('/shift-summary', protect, authorize('staff', 'admin'), getShiftSummary);
+
+// Automatic License Plate Recognition (OCR) endpoint
+router.post(
+  '/recognize-plate',
+  protect,
+  authorize('staff', 'admin'),
+  (req, res, next) => {
+    if (req.is('json') || req.headers['content-type']?.includes('application/json')) {
+      return next();
+    }
+    walkInPhotoUpload.single('photo')(req, res, (err) => {
+      if (err) console.warn('Plate OCR upload warning:', err.message);
+      next();
+    });
+  },
+  recognizePlate
+);
 
 module.exports = router;

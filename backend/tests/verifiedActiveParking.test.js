@@ -444,5 +444,27 @@ suite('Verified Active Parking & Overtime Suite', () => {
     assert.equal(reservation.overtimePaymentMethod, 'cash');
     assert.ok(reservation.overtimePaidAt instanceof Date);
     assert.equal(createdPayments.length, 1);
+    assert.equal(createdPayments[0][0].paymentType, 'overtime');
+  });
+
+  // 12. Staff exit verification with cash overtime creates payment with paymentType='overtime'
+  test('12. Staff exit verification with cash overtime creates payment with paymentType overtime', async () => {
+    reservation.status = 'active';
+    reservation.endTime = new Date(Date.now() - 45 * 60000);
+    reservation.overtimeRatePerHour = 150;
+
+    const staffReq = {
+      params: { id: 'res-123' },
+      body: { recordPayment: true, paymentMethod: 'cash' },
+      user: { _id: { toString: () => 'staff-1' }, role: 'staff', assignedLot: 'lot-1' },
+    };
+    const staffRes = createMockRes();
+    await completeReservation(staffReq, staffRes);
+
+    assert.equal(staffRes.statusCode, 200);
+    assert.equal(createdPayments.length, 1);
+    assert.equal(createdPayments[0][0].paymentType, 'overtime');
+    assert.equal(createdPayments[0][0].method, 'cash');
+    assert.equal(createdPayments[0][0].status, 'paid');
   });
 });

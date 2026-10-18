@@ -74,6 +74,11 @@ import ChangePasswordScreen from './src/screens/staff/ChangePasswordScreen';
 import AttendanceScreen from './src/screens/staff/AttendanceScreen';
 import LeaveRequestScreen from './src/screens/staff/LeaveRequestScreen';
 import WalkInParkingScreen from './src/screens/staff/WalkInParkingScreen';
+import {
+  registerForPushNotifications,
+  savePushTokenToBackend,
+  scheduleParkingExpiryNotification,
+} from './src/services/notificationService';
 import { StaffProfile, defaultStaffProfile } from './src/constants/profile';
 import { API_BASE_URL } from './src/constants/api';
 import {
@@ -198,6 +203,9 @@ export default function App() {
               }
               setAuthToken(staffToken);
               setLoggedStaffId(user.staffId || user._id);
+              registerForPushNotifications().then((t) => {
+                if (t) savePushTokenToBackend(t, staffToken);
+              }).catch(() => {});
               setStaffProfile((prev) => ({
                 ...prev,
                 staffId: user.staffId || user._id,
@@ -226,6 +234,9 @@ export default function App() {
             const user = await getCurrentUser(token);
             setDriverUser(user);
             setDriverToken(token);
+            registerForPushNotifications().then((t) => {
+              if (t) savePushTokenToBackend(t, token);
+            }).catch(() => {});
             setCurrentScreen('driver-home');
           } catch (sessionErr: any) {
             console.warn('[App.prepare] Driver session restoration failed:', sessionErr?.message);
@@ -559,6 +570,21 @@ export default function App() {
     });
     setConfirmedReservation(savedReservation);
     setConfirmedBooking(paid);
+
+    // Schedule 15-minute parking expiry notification
+    try {
+      const durationHrs = paid.hours || 1;
+      const expiryDate = new Date(bookingDraft.arrivalTime.getTime() + durationHrs * 60 * 60 * 1000);
+      scheduleParkingExpiryNotification(
+        paid.vehiclePlate || 'Vehicle',
+        paid.lotName || 'Parking Lot',
+        expiryDate,
+        savedReservation?._id || 'reservation'
+      ).catch(() => {});
+    } catch (notifErr) {
+      console.warn('Failed to schedule parking expiry alert:', notifErr);
+    }
+
     setCurrentScreen('driver-booking-confirmed');
   };
 
@@ -598,6 +624,9 @@ export default function App() {
     }
     setDriverUser(user);
     setDriverToken(token);
+    registerForPushNotifications().then((t) => {
+      if (t) savePushTokenToBackend(t, token);
+    }).catch(() => {});
     setCurrentScreen('driver-home');
   };
 
@@ -629,6 +658,9 @@ export default function App() {
     }
     setLoggedStaffId(user.staffId || user._id);
     setAuthToken(token);
+    registerForPushNotifications().then((t) => {
+      if (t) savePushTokenToBackend(t, token);
+    }).catch(() => {});
     setStaffProfile((prev) => ({ 
       ...prev, 
       staffId: user.staffId || user._id,
@@ -1259,6 +1291,9 @@ export default function App() {
       {currentScreen === 'driver-navigation' && confirmedBooking && (
         <NavigationScreen
           booking={confirmedBooking}
+          reservation={confirmedReservation}
+          token={driverToken}
+          userId={driverUser?._id}
           onCancel={() => setCurrentScreen('driver-booking-confirmed')}
           onArrived={resetBookingFlow}
         />
@@ -1273,6 +1308,7 @@ export default function App() {
         <StaffDashboardScreen
           staffId={loggedStaffId}
           profile={staffProfile}
+          authToken={authToken}
           onLogout={handleLogout}
           onNavigateToSpaces={() => setCurrentScreen('spaces')}
           onNavigateToReservations={() => setCurrentScreen('reservations')}

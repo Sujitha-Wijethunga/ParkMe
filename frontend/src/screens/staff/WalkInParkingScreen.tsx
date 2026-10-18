@@ -26,7 +26,9 @@ import {
   WalkInSessionData,
   WalkInTariffCalculation,
   WalkInReceiptData,
+  recognizePlateFromImage,
 } from '../../services/walkInApi';
+import { socketService } from '../../services/socketService';
 
 interface WalkInParkingScreenProps {
   authToken: string | null;
@@ -101,6 +103,7 @@ export default function WalkInParkingScreen({
   const [customerName, setCustomerName] = useState('');
   const [customerPhone, setCustomerPhone] = useState('');
   const [photoUri, setPhotoUri] = useState<string | null>(null);
+  const [photoBase64, setPhotoBase64] = useState<string | null>(null);
 
   // Spaces state
   const [availableSpaces, setAvailableSpaces] = useState<WalkInSpaceItem[]>([]);
@@ -126,7 +129,7 @@ export default function WalkInParkingScreen({
   const [isProcessingCheckout, setIsProcessingCheckout] = useState(false);
 
   // Active sessions tab state
-  const [activeList, setActiveList] = useState<Array<WalkInSessionData & { calculation: WalkInTariffCalculation }>>([]);
+  const [activeList, setActiveList] = useState<(WalkInSessionData & { calculation: WalkInTariffCalculation })[]>([]);
   const [isLoadingActiveList, setIsLoadingActiveList] = useState(false);
   const [activeSearchQuery, setActiveSearchQuery] = useState('');
 
@@ -150,7 +153,10 @@ export default function WalkInParkingScreen({
 
   useEffect(() => {
     if (activeTab === 'entry') {
-      void fetchSpaces();
+      const timer = setTimeout(() => {
+        void fetchSpaces();
+      }, 0);
+      return () => clearTimeout(timer);
     }
   }, [activeTab, fetchSpaces]);
 
@@ -170,11 +176,102 @@ export default function WalkInParkingScreen({
 
   useEffect(() => {
     if (activeTab === 'active') {
-      void fetchActiveSessions();
+      const timer = setTimeout(() => {
+        void fetchActiveSessions();
+      }, 0);
+      return () => clearTimeout(timer);
     }
   }, [activeTab, fetchActiveSessions]);
 
-  // 3. Photo Capture with permission handling
+  // Real-time space sync via Socket.io
+  useEffect(() => {
+    if (assignedLotId) {
+      socketService.connect(assignedLotId);
+      const unsubscribeSpace = socketService.onSpaceUpdate((payload) => {
+        if (!payload.lotId || payload.lotId === assignedLotId) {
+          if (payload.status !== 'available') {
+            setSelectedSpaceId((prev) => (prev === payload.spaceId ? null : prev));
+          }
+          void fetchSpaces();
+        }
+      });
+      return () => {
+        unsubscribeSpace();
+      };
+    }
+  }, [assignedLotId, fetchSpaces]);
+
+  // ANPR / OCR Text Recognition for license plates
+  const [isRecognizingPlate, setIsRecognizingPlate] = useState(false);
+
+  const recognizeLicensePlate = async (uri: string, base64?: string | null) => {
+    setIsRecognizingPlate(true);
+    let detectedPlate: string | null = null;
+
+    // 1. Try on-device ML Kit first (available if running in a native custom development build)
+    try {
+      const TextRecognition = require('@react-native-ml-kit/text-recognition').default;
+      if (TextRecognition) {
+        const recognized = await TextRecognition.recognize(uri);
+        if (recognized && recognized.text) {
+          const lines: string[] = recognized.text.split('\n');
+          for (const line of lines) {
+            const cleaned = line.replace(/[^A-Za-z0-9 -]/g, '').trim();
+            const match = cleaned.match(/(?:[A-Z]{2,3}[-\s]?)?[A-Z]{2,3}[-\s]?\d{4}|\b\d{2,3}[-\s]?\d{4}\b/i);
+            if (match) {
+              detectedPlate = match[0].toUpperCase();
+              break;
+            }
+          }
+          if (!detectedPlate) {
+            const generalMatch = recognized.text.match(/\b[A-Z]{2,3}[-\s]?\d{4}\b/i);
+            if (generalMatch) detectedPlate = generalMatch[0].toUpperCase();
+          }
+        }
+      }
+    } catch {
+      // In Expo Go or standard client without native ML Kit module - seamlessly proceed to backend OCR
+    }
+
+    let detectedVehicleType: string | null = null;
+
+    // 2. If on-device ML Kit was unavailable (e.g. running in Expo Go) or didn't find plate, use Backend OCR Engine!
+    if (!detectedPlate && authToken) {
+      try {
+        console.log('[OCR] Processing photo via backend OCR engine...');
+        const res = await recognizePlateFromImage(authToken, uri, base64 || undefined);
+        if (res && res.plate) {
+          detectedPlate = res.plate;
+        }
+        if (res && res.suggestedVehicleType) {
+          detectedVehicleType = res.suggestedVehicleType;
+        }
+      } catch (backendOcrErr: any) {
+        console.warn('[OCR Backend Error]:', backendOcrErr?.message);
+      }
+    }
+
+    setIsRecognizingPlate(false);
+
+    if (detectedPlate) {
+      const formatted = detectedPlate.toUpperCase().replace(/\s+/g, ' ');
+      setVehiclePlate(formatted);
+      if (detectedVehicleType && (detectedVehicleType === 'Bike' || detectedVehicleType === 'Car' || detectedVehicleType === 'SUV' || detectedVehicleType === 'EV')) {
+        setVehicleType(detectedVehicleType as any);
+      }
+      Alert.alert(
+        'Plate Detected (OCR)',
+        `Auto-detected: ${formatted}${detectedVehicleType ? ` (${detectedVehicleType})` : ''}\nPlease verify the plate number.`
+      );
+    } else {
+      Alert.alert(
+        'Plate Scan Notice',
+        'Could not automatically detect the plate characters. Please verify or enter the plate number manually.'
+      );
+    }
+  };
+
+  // 3. Photo Capture with permission handling & ANPR OCR
   const handleTakePhoto = async () => {
     try {
       const { status } = await ImagePicker.requestCameraPermissionsAsync();
@@ -188,12 +285,17 @@ export default function WalkInParkingScreen({
               text: 'Pick from Gallery',
               onPress: async () => {
                 const libRes = await ImagePicker.launchImageLibraryAsync({
-                  mediaTypes: ImagePicker.MediaTypeOptions.Images,
-                  allowsEditing: true,
+                  mediaTypes: ['images'],
+                  allowsEditing: false,
                   quality: 0.8,
+                  base64: true,
                 });
                 if (!libRes.canceled && libRes.assets[0]?.uri) {
-                  setPhotoUri(libRes.assets[0].uri);
+                  const pickedUri = libRes.assets[0].uri;
+                  const pickedBase64 = libRes.assets[0].base64;
+                  setPhotoUri(pickedUri);
+                  setPhotoBase64(pickedBase64 || null);
+                  void recognizeLicensePlate(pickedUri, pickedBase64);
                 }
               },
             },
@@ -203,15 +305,41 @@ export default function WalkInParkingScreen({
       }
 
       const result = await ImagePicker.launchCameraAsync({
-        allowsEditing: true,
+        allowsEditing: false,
         quality: 0.8,
+        base64: true,
       });
 
       if (!result.canceled && result.assets[0]?.uri) {
-        setPhotoUri(result.assets[0].uri);
+        const capturedUri = result.assets[0].uri;
+        const capturedBase64 = result.assets[0].base64;
+        setPhotoUri(capturedUri);
+        setPhotoBase64(capturedBase64 || null);
+        void recognizeLicensePlate(capturedUri, capturedBase64);
       }
-    } catch (error) {
+    } catch {
       Alert.alert('Camera Error', 'Could not access the camera. You can enter the plate number manually.');
+    }
+  };
+
+  // Pick existing photo from device gallery & run OCR
+  const handlePickFromGallery = async () => {
+    try {
+      const libRes = await ImagePicker.launchImageLibraryAsync({
+        mediaTypes: ['images'],
+        allowsEditing: false,
+        quality: 0.8,
+        base64: true,
+      });
+      if (!libRes.canceled && libRes.assets[0]?.uri) {
+        const pickedUri = libRes.assets[0].uri;
+        const pickedBase64 = libRes.assets[0].base64;
+        setPhotoUri(pickedUri);
+        setPhotoBase64(pickedBase64 || null);
+        void recognizeLicensePlate(pickedUri, pickedBase64);
+      }
+    } catch {
+      Alert.alert('Gallery Error', 'Could not open image library. Please enter the plate manually.');
     }
   };
 
@@ -243,6 +371,7 @@ export default function WalkInParkingScreen({
         customerName: customerName.trim() || undefined,
         customerPhone: customerPhone.trim() || undefined,
         photoUri: photoUri || undefined,
+        photoBase64: photoBase64 || undefined,
       });
 
       setIssuedReceipt(res);
@@ -252,6 +381,7 @@ export default function WalkInParkingScreen({
       setCustomerName('');
       setCustomerPhone('');
       setPhotoUri(null);
+      setPhotoBase64(null);
     } catch (err) {
       Alert.alert('Walk-in Entry Failed', err instanceof Error ? err.message : 'Could not create parking session.');
     } finally {
@@ -361,7 +491,7 @@ export default function WalkInParkingScreen({
       `;
 
       await Print.printAsync({ html });
-    } catch (error) {
+    } catch {
       Alert.alert('Print Error', 'Could not open print dialog on this device.');
     }
   };
@@ -389,7 +519,7 @@ export default function WalkInParkingScreen({
       } else {
         Alert.alert('Receipt Generated', `Saved receipt PDF to ${uri}`);
       }
-    } catch (error) {
+    } catch {
       Alert.alert('Share Error', 'Could not share receipt.');
     }
   };
@@ -462,24 +592,52 @@ export default function WalkInParkingScreen({
                 <Image source={{ uri: photoUri }} style={styles.photoThumbnail} />
                 <View style={styles.photoInfo}>
                   <Text style={styles.photoAttachedText}>✓ Photo Attached</Text>
-                  <TouchableOpacity
-                    style={styles.retakeBtn}
-                    onPress={handleTakePhoto}
-                    activeOpacity={0.7}
-                  >
-                    <Text style={styles.retakeBtnText}>Retake Photo</Text>
-                  </TouchableOpacity>
+                  {isRecognizingPlate ? (
+                    <View style={{ flexDirection: 'row', alignItems: 'center', marginTop: 4 }}>
+                      <ActivityIndicator size="small" color="#0F766E" />
+                      <Text style={{ fontSize: 12, color: '#0F766E', marginLeft: 6, fontWeight: '600' }}>
+                        Scanning plate (OCR)...
+                      </Text>
+                    </View>
+                  ) : null}
+                  <View style={{ flexDirection: 'row', gap: 8, marginTop: 8 }}>
+                    <TouchableOpacity
+                      style={styles.retakeBtn}
+                      onPress={handleTakePhoto}
+                      activeOpacity={0.7}
+                    >
+                      <Text style={styles.retakeBtnText}>📷 Retake</Text>
+                    </TouchableOpacity>
+                    <TouchableOpacity
+                      style={[styles.retakeBtn, { backgroundColor: '#EFF6FF' }]}
+                      onPress={handlePickFromGallery}
+                      activeOpacity={0.7}
+                    >
+                      <Text style={[styles.retakeBtnText, { color: '#1D4ED8' }]}>🖼️ Gallery</Text>
+                    </TouchableOpacity>
+                  </View>
                 </View>
               </View>
             ) : (
-              <TouchableOpacity
-                style={styles.cameraBtn}
-                onPress={handleTakePhoto}
-                activeOpacity={0.8}
-              >
-                <Text style={styles.cameraBtnIcon}>📷</Text>
-                <Text style={styles.cameraBtnText}>Capture Plate Photo</Text>
-              </TouchableOpacity>
+              <View style={{ flexDirection: 'row', gap: 10 }}>
+                <TouchableOpacity
+                  style={[styles.cameraBtn, { flex: 1 }]}
+                  onPress={handleTakePhoto}
+                  activeOpacity={0.8}
+                >
+                  <Text style={styles.cameraBtnIcon}>📷</Text>
+                  <Text style={styles.cameraBtnText}>Take Photo</Text>
+                </TouchableOpacity>
+
+                <TouchableOpacity
+                  style={[styles.cameraBtn, { flex: 1, backgroundColor: '#EFF6FF', borderColor: '#93C5FD' }]}
+                  onPress={handlePickFromGallery}
+                  activeOpacity={0.8}
+                >
+                  <Text style={styles.cameraBtnIcon}>🖼️</Text>
+                  <Text style={[styles.cameraBtnText, { color: '#1D4ED8' }]}>From Gallery</Text>
+                </TouchableOpacity>
+              </View>
             )}
           </View>
 

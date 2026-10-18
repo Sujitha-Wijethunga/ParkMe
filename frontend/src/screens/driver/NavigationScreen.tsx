@@ -47,7 +47,17 @@ export default function NavigationScreen({
   const [isActivating, setIsActivating] = useState(false);
 
   // Look up lot details and verified vehicle entrance coordinates
-  const lot = SAMPLE_NEARBY_PARKING_LOTS.find((l) => l.id === booking.lotId);
+  const lot =
+    SAMPLE_NEARBY_PARKING_LOTS.find(
+      (l) =>
+        l.id === booking.lotId ||
+        (booking.lotName && l.name?.toLowerCase().includes(booking.lotName.toLowerCase()))
+    ) ||
+    (typeof reservation?.parkingLot === 'object' ? reservation.parkingLot : null) || {
+      id: booking.lotId,
+      name: booking.lotName || 'One Galle Face Mall Parking',
+      address: booking.lotAddress || '1A Centre Road, Colombo 02',
+    };
   const entranceInfo = getParkingLotEntranceInfo(booking.lotId, lot);
 
   const topPadding = Math.max(

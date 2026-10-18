@@ -36,7 +36,7 @@
  * This data will be replaced by /api/parking-lots/:id/spaces responses.
  */
 
-import { SAMPLE_NEARBY_PARKING_LOTS, resolveParkingLotItem, ParkingLotCardItem } from './driverSampleData';
+import { resolveParkingLotItem, ParkingLotCardItem } from './driverSampleData';
 
 /** Persisted space statuses matching backend enum. */
 export type SpacePersistedStatus = 'available' | 'occupied' | 'maintenance';

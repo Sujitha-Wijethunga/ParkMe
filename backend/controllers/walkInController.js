@@ -311,10 +311,30 @@ const createWalkInEntry = async (req, res, next) => {
       120;
     const serviceCharge = (lot && lot.serviceCharge !== undefined) ? lot.serviceCharge : 50;
 
-    // 7. Resolve photo URL if uploaded
+    // 7. Resolve photo URL if uploaded (file upload or in-memory base64)
     let vehiclePhotoUrl = '';
     if (req.file) {
       vehiclePhotoUrl = `/uploads/walk-in-plates/${req.file.filename}`;
+    } else if (req.body.imageBase64) {
+      try {
+        const fs = require('fs');
+        const path = require('path');
+        const os = require('os');
+        const { randomUUID } = require('crypto');
+        const isServerless = Boolean(process.env.VERCEL || process.env.AWS_LAMBDA_FUNCTION_NAME);
+        const uploadDir = isServerless
+          ? path.join(os.tmpdir(), 'uploads', 'walk-in-plates')
+          : path.join(__dirname, '..', 'uploads', 'walk-in-plates');
+        fs.mkdirSync(uploadDir, { recursive: true });
+
+        const filename = `plate-${randomUUID()}.jpg`;
+        const filePath = path.join(uploadDir, filename);
+        const base64Data = req.body.imageBase64.replace(/^data:image\/\w+;base64,/, '');
+        fs.writeFileSync(filePath, Buffer.from(base64Data, 'base64'));
+        vehiclePhotoUrl = `/uploads/walk-in-plates/${filename}`;
+      } catch (imgErr) {
+        console.warn('Failed to save base64 vehicle photo:', imgErr.message);
+      }
     } else if (req.body.vehiclePhotoUrl) {
       vehiclePhotoUrl = String(req.body.vehiclePhotoUrl).trim();
     }
@@ -360,6 +380,27 @@ const createWalkInEntry = async (req, res, next) => {
     }
 
     const calculation = calculateWalkInCharges(session, entryTime);
+
+    // Emit real-time space update via Socket.io
+    try {
+      const io = req.app?.get?.('io');
+      if (io) {
+        io.to(`lot_${targetLotId}`).emit('space_update', {
+          spaceId: space._id,
+          status: 'occupied',
+          lotId: targetLotId,
+          spaceNumber: space.spaceNumber,
+        });
+        ParkingLot.findById(targetLotId).select('availableSpaces').then((lotDoc) => {
+          if (lotDoc) {
+            io.to(`lot_${targetLotId}`).emit('lot_count_update', {
+              lotId: targetLotId,
+              availableSpaces: lotDoc.availableSpaces,
+            });
+          }
+        }).catch(() => {});
+      }
+    } catch (_) {}
 
     res.status(201).json({
       message: 'Walk-in parking entry recorded successfully',
@@ -612,6 +653,28 @@ const checkoutWalkIn = async (req, res, next) => {
       // Release slot back to available
       await ParkingSpace.findByIdAndUpdate(session.parkingSpace, { status: 'available' });
       await ParkingLot.findByIdAndUpdate(session.parkingLot, { $inc: { availableSpaces: 1 } });
+
+      // Emit real-time space release via Socket.io
+      try {
+        const io = req.app?.get?.('io');
+        if (io) {
+          const sessionLotId = session.parkingLot?._id || session.parkingLot;
+          io.to(`lot_${sessionLotId}`).emit('space_update', {
+            spaceId: session.parkingSpace,
+            status: 'available',
+            lotId: sessionLotId,
+            spaceNumber: session.spaceNumber,
+          });
+          ParkingLot.findById(sessionLotId).select('availableSpaces').then((lotDoc) => {
+            if (lotDoc) {
+              io.to(`lot_${sessionLotId}`).emit('lot_count_update', {
+                lotId: sessionLotId,
+                availableSpaces: lotDoc.availableSpaces,
+              });
+            }
+          }).catch(() => {});
+        }
+      } catch (_) {}
     }
 
     if (typeof session.save === 'function') {
@@ -650,12 +713,338 @@ const checkoutWalkIn = async (req, res, next) => {
   }
 };
 
+
+// @desc    Get daily shift cash reconciliation summary for the authenticated staff
+// @route   GET /api/walk-in/shift-summary
+// @access  Staff / Admin
+const getShiftSummary = async (req, res, next) => {
+  try {
+    const isStaff =
+      req.user &&
+      (req.user.role === 'staff' ||
+        String(req.user.role).toLowerCase() === 'parking staff' ||
+        req.user.constructor?.modelName === 'Staff');
+
+    // Determine the lot to summarize
+    let targetLotId = req.query.lotId;
+    if (isStaff && !targetLotId) {
+      targetLotId = await resolveStaffLotId(req.user);
+    }
+    if (!targetLotId) {
+      const defaultLot = await ParkingLot.findOne({ isActive: true });
+      if (defaultLot) targetLotId = defaultLot._id;
+    }
+
+    // Date range: today (or custom date via query)
+    const dateStr = req.query.date; // optional YYYY-MM-DD
+    const targetDate = dateStr ? new Date(dateStr) : new Date();
+    const startOfDay = new Date(targetDate);
+    startOfDay.setHours(0, 0, 0, 0);
+    const endOfDay = new Date(targetDate);
+    endOfDay.setHours(23, 59, 59, 999);
+
+    const query = {
+      createdAt: { $gte: startOfDay, $lte: endOfDay },
+    };
+    if (targetLotId) query.parkingLot = targetLotId;
+
+    // Filter by staff member if enteredBy is present
+    if (isStaff && req.user?._id) {
+      query.enteredBy = req.user._id;
+    }
+
+    const sessions = await WalkInSession.find(query)
+      .populate('parkingLot', 'name address city')
+      .populate('parkingSpace', 'spaceNumber floor')
+      .lean();
+
+    // Compute summary
+    let totalCashCollected = 0;
+    let totalSessions = sessions.length;
+    let completedSessions = 0;
+    let activeSessions = 0;
+    let overtimeCount = 0; // sessions > 3 hours
+
+    const vehicleBreakdown = { Car: 0, Bike: 0, SUV: 0, EV: 0 };
+    const sessionDetails = [];
+
+    for (const session of sessions) {
+      const calc = calculateWalkInCharges(session);
+      const durationHours = calc.startedHours;
+
+      if (session.status === 'completed') {
+        completedSessions++;
+        totalCashCollected += session.amountPaid || 0;
+      } else if (session.status === 'active') {
+        activeSessions++;
+      }
+
+      if (durationHours > 3) overtimeCount++;
+
+      if (vehicleBreakdown[session.vehicleType] !== undefined) {
+        vehicleBreakdown[session.vehicleType]++;
+      }
+
+      sessionDetails.push({
+        reference: session.reference,
+        vehiclePlate: session.vehiclePlate,
+        vehicleType: session.vehicleType,
+        spaceNumber: session.spaceNumber,
+        floor: session.floor,
+        entryTime: session.entryTime,
+        exitTime: session.exitTime,
+        status: session.status,
+        paymentStatus: session.paymentStatus,
+        amountPaid: session.amountPaid || 0,
+        totalAmount: calc.totalAmount,
+        durationHours: calc.startedHours,
+        durationMinutes: calc.durationMinutes,
+      });
+    }
+
+    let lotInfo = { name: 'One Galle Face Mall — Ground Floor', address: 'Colombo 02' };
+    if (sessions.length > 0 && sessions[0].parkingLot) {
+      lotInfo = sessions[0].parkingLot;
+    } else if (targetLotId) {
+      const foundLot = await ParkingLot.findById(targetLotId).select('name address city');
+      if (foundLot) lotInfo = foundLot;
+    }
+
+    res.json({
+      date: targetDate.toISOString().split('T')[0],
+      staffId: req.user?.staffId || req.user?._id,
+      staffName: req.user?.name || 'Staff',
+      lot: lotInfo,
+      summary: {
+        totalSessions,
+        completedSessions,
+        activeSessions,
+        overtimeCount,
+        totalCashCollected,
+        vehicleBreakdown,
+      },
+      sessions: sessionDetails,
+    });
+  } catch (error) {
+    next(error);
+  }
+};
+
+const SRI_LANKA_PROVINCES = ['WP', 'CP', 'SP', 'NW', 'NP', 'NC', 'UP', 'SG', 'EP'];
+
+// Helper to clean OCR digit substitutions (e.g. O, U, D, Q -> 0, I, l -> 1, S -> 5, T, J, ", ' -> 7, etc.)
+function cleanDigitPart(s) {
+  return String(s || '')
+    .replace(/[OoDQUG]/g, '0')
+    .replace(/[Il|!]/g, '1')
+    .replace(/Z/g, '2')
+    .replace(/S/g, '5')
+    .replace(/[TJ"']/g, '7')
+    .replace(/B/g, '8');
+}
+
+// Helper to clean OCR letter substitutions (e.g. 0 -> O, 1 -> I, 5 -> S, etc.)
+function cleanLetterPart(s) {
+  return String(s || '')
+    .replace(/0/g, 'O')
+    .replace(/1/g, 'I')
+    .replace(/5/g, 'S')
+    .replace(/8/g, 'B');
+}
+
+// Extract all valid license plate candidates from OCR text
+function extractAllPlateCandidates(text) {
+  if (!text) return [];
+  const raw = text.toUpperCase();
+  const candidates = [];
+
+  // 1. Provincial: ONLY valid Sri Lankan province codes + 2-3 letters + EXACTLY 4 digits
+  const provPattern = '(?:' + SRI_LANKA_PROVINCES.join('|') + ')';
+  const provRegex = new RegExp('\\b(' + provPattern + ')[\\s\\n\\-_]+([A-Z0-9]{2,3})[\\s\\n\\-_]*([A-Z0-9"\\\']{4})\\b', 'g');
+  let pMatch;
+  while ((pMatch = provRegex.exec(raw)) !== null) {
+    const prov = pMatch[1];
+    const letters = cleanLetterPart(pMatch[2]);
+    const digits = cleanDigitPart(pMatch[3]);
+    if (/^[A-Z]{2,3}$/.test(letters) && /^\d{4}$/.test(digits)) {
+      candidates.push({ plate: `${prov} ${letters}-${digits}`, prov, letters, digits });
+    }
+  }
+
+  // 2. Standard: 2-3 English letters + EXACTLY 4 digits (e.g. "BKA 0577", "CAB 4921", "BKAGSTT")
+  const stdRegex = /\b([A-Z0-9]{2,3})[\s\n\-_]*([A-Z0-9"']{4})\b/g;
+  let sMatch;
+  while ((sMatch = stdRegex.exec(raw)) !== null) {
+    const letters = cleanLetterPart(sMatch[1]);
+    const digits = cleanDigitPart(sMatch[2]);
+    if (/^[A-Z]{2,3}$/.test(letters) && /^\d{4}$/.test(digits)) {
+      candidates.push({ plate: `${letters}-${digits}`, letters, digits });
+    }
+  }
+
+  // 3. Vintage: 2-3 digits + 4 digits: e.g. "250-1234", "19-4321"
+  const vintRegex = /\b(\d{2,3})[\s\n\-_]*(\d{4})\b/g;
+  let vMatch;
+  while ((vMatch = vintRegex.exec(raw)) !== null) {
+    candidates.push({ plate: `${vMatch[1]}-${vMatch[2]}`, digits: vMatch[2], isVintage: true });
+  }
+
+  // 4. Condensed fallback (when spaces are inconsistent): 2-3 letters + 4 digits
+  const condensed = raw.replace(/[^A-Z0-9"']/g, '');
+  const condMatch = condensed.match(/([A-Z]{2,3})([0-9A-Z"']{4})/);
+  if (condMatch) {
+    const letters = cleanLetterPart(condMatch[1]);
+    const digits = cleanDigitPart(condMatch[2]);
+    if (/^[A-Z]{2,3}$/.test(letters) && /^\d{4}$/.test(digits)) {
+      candidates.push({ plate: `${letters}-${digits}`, letters, digits });
+    }
+  }
+
+  return candidates;
+}
+
+// Select the highest-confidence plate candidate
+function rankAndSelectPlate(candidates) {
+  if (!candidates || candidates.length === 0) return null;
+
+  let bestPlate = null;
+  let highestScore = -999;
+
+  for (const c of candidates) {
+    let score = 0;
+
+    // Must have 4 digits
+    if (c.digits && c.digits.length === 4) score += 30;
+
+    // Valid Sri Lankan province
+    if (c.prov && SRI_LANKA_PROVINCES.includes(c.prov)) score += 20;
+
+    // Known vehicle series:
+    // Motorcycle: Starts with B (e.g. BKA, BA, BB) or M
+    if (c.letters && /^B[A-Z]{1,2}$/.test(c.letters)) score += 25;
+    // Car: Starts with C (e.g. CAB, CAC), K, P, etc.
+    else if (c.letters && /^[CPKWDGHJLMNQRSTUVYZ][A-Z]{1,2}$/.test(c.letters)) score += 15;
+
+    // Penalize non-plate noise words
+    if (['PEE', 'SEE', 'THE', 'AND', 'FOR', 'NOT', 'OFF', 'ALL'].includes(c.letters)) score -= 40;
+
+    if (score > highestScore) {
+      highestScore = score;
+      bestPlate = c.plate;
+    }
+  }
+
+  return bestPlate;
+}
+
+let ocrWorker = null;
+const getOcrWorker = async () => {
+  if (!ocrWorker) {
+    const { createWorker } = require('tesseract.js');
+    ocrWorker = await createWorker('eng');
+  }
+  return ocrWorker;
+};
+
+// @desc    Recognize license plate from photo using server OCR (Tesseract + Sharp)
+// @route   POST /api/walk-in/recognize-plate
+// @access  Staff / Admin
+const recognizePlate = async (req, res, next) => {
+  try {
+    let imageSource = null;
+    if (req.file) {
+      imageSource = req.file.path;
+    } else if (req.body?.imageBase64) {
+      const base64Data = req.body.imageBase64.replace(/^data:image\/\w+;base64,/, '');
+      imageSource = Buffer.from(base64Data, 'base64');
+    }
+
+    if (!imageSource) {
+      return res.status(400).json({ message: 'No image provided for plate recognition' });
+    }
+
+    try {
+      const fs = require('fs');
+      const path = require('path');
+      const logDir = path.join(__dirname, '..', 'uploads');
+      if (Buffer.isBuffer(imageSource)) {
+        fs.writeFileSync(path.join(logDir, 'last_ocr.png'), imageSource);
+      } else if (typeof imageSource === 'string' && fs.existsSync(imageSource)) {
+        fs.copyFileSync(imageSource, path.join(logDir, 'last_ocr.png'));
+      }
+    } catch (saveErr) {
+      console.warn('[OCR Save Error]:', saveErr.message);
+    }
+
+    const worker = await getOcrWorker();
+    const sharp = require('sharp');
+    const allCandidates = [];
+    let combinedRawText = '';
+
+    // Pass 1: Standard OCR with upscaling for crisp character edges
+    try {
+      const upscaledBuf = await sharp(imageSource)
+        .resize({ width: 1200, withoutEnlargement: false })
+        .toBuffer();
+      const res1 = await worker.recognize(upscaledBuf);
+      const text1 = res1?.data?.text || '';
+      combinedRawText += text1;
+      allCandidates.push(...extractAllPlateCandidates(text1));
+    } catch (pass1Err) {
+      console.warn('[OCR Pass 1 Error]:', pass1Err.message);
+    }
+
+    // Pass 2: Inverted & normalized OCR via Sharp (crucial for black-background motorcycle & vintage plates)
+    try {
+      const invertedBuf = await sharp(imageSource)
+        .resize({ width: 1200, withoutEnlargement: false })
+        .removeAlpha()
+        .grayscale()
+        .negate({ alpha: false })
+        .normalize()
+        .toBuffer();
+
+      const res2 = await worker.recognize(invertedBuf);
+      const text2 = res2?.data?.text || '';
+      combinedRawText += '\n' + text2;
+      allCandidates.push(...extractAllPlateCandidates(text2));
+    } catch (sharpErr) {
+      console.warn('[OCR Sharp Preprocessing Error]:', sharpErr.message);
+    }
+
+    // Select the best candidate across both passes
+    const detectedPlate = rankAndSelectPlate(allCandidates);
+
+    // Auto-suggest vehicle type if plate starts with Sri Lankan motorcycle/bike series
+    let suggestedVehicleType = null;
+    if (detectedPlate) {
+      const upper = detectedPlate.toUpperCase();
+      if (/^[A-Z]{0,3}\s*B[A-Z]{1,2}-\d{4}/.test(upper) || /^[A-Z]{0,3}\s*M[A-Z]{1,2}-\d{4}/.test(upper)) {
+        suggestedVehicleType = 'Bike';
+      }
+    }
+
+    res.json({
+      success: true,
+      plate: detectedPlate || '',
+      suggestedVehicleType,
+      rawText: combinedRawText.trim(),
+    });
+  } catch (error) {
+    console.error('[OCR Error]:', error);
+    res.status(500).json({ message: 'OCR recognition failed', error: error.message });
+  }
+};
+
 module.exports = {
   getAvailableSpaces,
   createWalkInEntry,
   getWalkInSession,
   getActiveWalkIns,
   checkoutWalkIn,
+  getShiftSummary,
   calculateWalkInCharges,
   normalizePlate,
+  recognizePlate,
 };
+

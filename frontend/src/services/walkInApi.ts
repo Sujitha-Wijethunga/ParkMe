@@ -1,4 +1,5 @@
-import { API_BASE_URL } from '../constants/api';
+import { API_BASE_URL, getApiBaseUrl, LIVE_BACKEND_URL } from '../constants/api';
+import { appendImageToFormData } from '../utils/imageUpload';
 
 export interface WalkInSpaceItem {
   _id: string;
@@ -90,6 +91,7 @@ export interface WalkInEntryInput {
   customerName?: string;
   customerPhone?: string;
   photoUri?: string;
+  photoBase64?: string;
   idempotencyKey?: string;
 }
 
@@ -112,18 +114,32 @@ async function authFetch<T>(
   const timeoutId = setTimeout(() => controller.abort(), REQUEST_TIMEOUT_MS);
 
   try {
-    const url = `${API_BASE_URL.replace(/\/+$/, '')}${endpoint}`;
+    const baseUrl = (getApiBaseUrl() || API_BASE_URL).replace(/\/+$/, '');
+    const url = `${baseUrl}${endpoint}`;
     const headers: Record<string, string> = {
       Accept: 'application/json',
       Authorization: `Bearer ${token}`,
       ...(options.headers as Record<string, string>),
     };
 
-    const response = await fetch(url, {
-      ...options,
-      signal: controller.signal,
-      headers,
-    });
+    let response: Response;
+    try {
+      response = await fetch(url, {
+        ...options,
+        signal: controller.signal,
+        headers,
+      });
+    } catch (networkErr) {
+      if (baseUrl !== LIVE_BACKEND_URL) {
+        response = await fetch(`${LIVE_BACKEND_URL.replace(/\/+$/, '')}${endpoint}`, {
+          ...options,
+          signal: controller.signal,
+          headers,
+        });
+      } else {
+        throw networkErr;
+      }
+    }
 
     const data = await response.json().catch(() => null);
 
@@ -169,36 +185,10 @@ export async function createWalkInEntry(
   calculation: WalkInTariffCalculation;
   receipt: WalkInReceiptData;
 }> {
-  if (input.photoUri) {
-    const formData = new FormData();
-    if (input.parkingLotId) formData.append('parkingLotId', input.parkingLotId);
-    formData.append('vehiclePlate', input.vehiclePlate);
-    formData.append('vehicleType', input.vehicleType);
-    formData.append('parkingSpaceId', input.parkingSpaceId);
-    if (input.floor) formData.append('floor', input.floor);
-    if (input.customerName) formData.append('customerName', input.customerName);
-    if (input.customerPhone) formData.append('customerPhone', input.customerPhone);
-    if (input.idempotencyKey) formData.append('idempotencyKey', input.idempotencyKey);
-
-    const filename = input.photoUri.split('/').pop() || 'plate.jpg';
-    const match = /\.(\w+)$/.exec(filename);
-    const type = match ? `image/${match[1].toLowerCase()}` : 'image/jpeg';
-
-    formData.append('photo', {
-      uri: input.photoUri,
-      name: filename,
-      type,
-    } as any);
-
-    return authFetch<{
-      session: WalkInSessionData;
-      calculation: WalkInTariffCalculation;
-      receipt: WalkInReceiptData;
-    }>('/api/walk-in/entry', token, {
-      method: 'POST',
-      body: formData,
-    });
-  }
+  const payload = {
+    ...input,
+    imageBase64: input.photoBase64,
+  };
 
   return authFetch<{
     session: WalkInSessionData;
@@ -207,7 +197,7 @@ export async function createWalkInEntry(
   }>('/api/walk-in/entry', token, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify(input),
+    body: JSON.stringify(payload),
   });
 }
 
@@ -234,13 +224,13 @@ export async function getActiveWalkIns(
   token: string,
   lotId?: string,
   search?: string
-): Promise<Array<WalkInSessionData & { calculation: WalkInTariffCalculation }>> {
+): Promise<(WalkInSessionData & { calculation: WalkInTariffCalculation })[]> {
   const query = new URLSearchParams();
   if (lotId) query.set('lotId', lotId);
   if (search) query.set('search', search);
 
   const endpoint = `/api/walk-in/active${query.toString() ? `?${query.toString()}` : ''}`;
-  return authFetch<Array<WalkInSessionData & { calculation: WalkInTariffCalculation }>>(endpoint, token);
+  return authFetch<(WalkInSessionData & { calculation: WalkInTariffCalculation })[]>(endpoint, token);
 }
 
 /**
@@ -265,4 +255,103 @@ export async function checkoutWalkIn(
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify(input),
   });
+}
+
+export interface ShiftSummarySessionDetail {
+  reference: string;
+  vehiclePlate: string;
+  vehicleType: string;
+  spaceNumber: string;
+  floor: string;
+  entryTime: string;
+  exitTime?: string;
+  status: string;
+  paymentStatus: string;
+  amountPaid: number;
+  totalAmount: number;
+  durationHours: number;
+  durationMinutes: number;
+}
+
+export interface ShiftSummaryData {
+  date: string;
+  staffId: string;
+  staffName: string;
+  lot: { _id?: string; name: string; address?: string; city?: string };
+  summary: {
+    totalSessions: number;
+    completedSessions: number;
+    activeSessions: number;
+    overtimeCount: number;
+    totalCashCollected: number;
+    vehicleBreakdown: { Car: number; Bike: number; SUV: number; EV: number };
+  };
+  sessions: ShiftSummarySessionDetail[];
+}
+
+/**
+ * Fetch daily shift cash reconciliation summary.
+ */
+export async function getShiftSummary(
+  token: string,
+  date?: string,
+  lotId?: string
+): Promise<ShiftSummaryData> {
+  const query = new URLSearchParams();
+  if (date) query.set('date', date);
+  if (lotId) query.set('lotId', lotId);
+  const endpoint = `/api/walk-in/shift-summary${query.toString() ? `?${query.toString()}` : ''}`;
+  return authFetch<ShiftSummaryData>(endpoint, token);
+}
+
+/**
+ * Automatically recognize vehicle license plate from an image via OCR.
+ */
+export async function recognizePlateFromImage(
+  token: string,
+  imageUri: string,
+  base64?: string
+): Promise<{ success: boolean; plate?: string; suggestedVehicleType?: string; rawText?: string }> {
+  const baseUrl = (getApiBaseUrl() || API_BASE_URL).replace(/\/+$/, '');
+  const url = `${baseUrl}/api/walk-in/recognize-plate`;
+
+  let requestBody: any;
+  let requestHeaders: Record<string, string> = {
+    Authorization: `Bearer ${token}`,
+  };
+
+  if (base64) {
+    requestHeaders['Content-Type'] = 'application/json';
+    requestBody = JSON.stringify({ imageBase64: base64 });
+  } else {
+    const formData = new FormData();
+    await appendImageToFormData(formData, 'photo', imageUri);
+    requestBody = formData;
+  }
+
+  let res: Response;
+  try {
+    res = await fetch(url, {
+      method: 'POST',
+      headers: requestHeaders,
+      body: requestBody,
+    });
+  } catch (networkErr) {
+    if (baseUrl !== LIVE_BACKEND_URL) {
+      res = await fetch(`${LIVE_BACKEND_URL.replace(/\/+$/, '')}/api/walk-in/recognize-plate`, {
+        method: 'POST',
+        headers: requestHeaders,
+        body: requestBody,
+      });
+    } else {
+      throw networkErr;
+    }
+  }
+
+  if (!res.ok) {
+    const errorBody = await res.json().catch(() => ({}));
+    throw new Error(errorBody.message || 'Plate recognition request failed');
+  }
+
+  return res.json();
 }
