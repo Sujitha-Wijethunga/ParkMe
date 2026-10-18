@@ -30,6 +30,7 @@ import {
   getParkingLotEntranceInfo,
   launchGoogleMapsNavigation,
 } from '../../services/parkingEntranceService';
+import BookingQrCode, { BookingQrDetails } from '../../components/BookingQrCode';
 
 type BookingCategory = 'upcoming' | 'active' | 'past';
 
@@ -547,6 +548,19 @@ export function BookingDetailsScreen({
     }
   };
 
+  const qrDetails: BookingQrDetails | null = reservation
+    ? {
+        reference: reservation.reference || reservation._id,
+        lot: getLotName(reservation),
+        space: getSpaceNumber(reservation),
+        floor: getFloor(reservation) || '—',
+        vehicle: reservation.vehicleType || 'Vehicle',
+        vehiclePlate: reservation.vehiclePlate,
+        hours: Math.max(1, Math.round((new Date(reservation.endTime).getTime() - new Date(reservation.startTime).getTime()) / 3600000)),
+        total: reservation.totalAmount,
+      }
+    : null;
+
   const handleActivateParking = async (res: DriverReservation) => {
     setActivating(true);
     try {
@@ -650,6 +664,15 @@ export function BookingDetailsScreen({
               <Text style={styles.priceValue}>{formatAmount(reservation.totalAmount)}</Text>
             </View>
           </View>
+          {qrDetails && (
+            <View style={styles.detailsCard}>
+              <Text style={styles.detailsSectionTitle}>Entry QR</Text>
+              <Text style={styles.qrHint}>Scan this code to retrieve the booking details at entry.</Text>
+              <View style={styles.detailsQrBox}>
+                <BookingQrCode details={qrDetails} size={180} />
+              </View>
+            </View>
+          )}
 
           {reservation.status === 'pending' && (
             <View style={styles.detailsActionsCard}>
@@ -877,6 +900,8 @@ const styles = StyleSheet.create({
     padding: 16,
   },
   detailsSectionTitle: { color: DriverColors.navyHeading, fontSize: 15, fontWeight: '800', marginBottom: 14 },
+  qrHint: { color: DriverColors.textSecondary, fontSize: 12, lineHeight: 18, marginBottom: 12 },
+  detailsQrBox: { alignItems: 'center', paddingVertical: 8 },
   inlineError: { color: '#B42318', fontSize: 12, lineHeight: 18 },
   inlineWarning: {
     color: '#8A5A00',
