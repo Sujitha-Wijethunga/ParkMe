@@ -100,7 +100,13 @@ const login = async (req, res, next) => {
       user = await User.findOne(lookup).select('+password');
     }
 
-    if (!user || !(await user.matchPassword(password))) {
+    const trimmedPassword = typeof password === 'string' ? password.trim() : password;
+    const isPasswordValid = user && (
+      (await user.matchPassword(password)) ||
+      (trimmedPassword !== password && (await user.matchPassword(trimmedPassword)))
+    );
+
+    if (!user || !isPasswordValid) {
       return res.status(401).json({ message: 'Invalid Staff ID/email or password' });
     }
 
@@ -279,6 +285,12 @@ const driverLogin = async (req, res, next) => {
 
     if (!rawIdentifier || !password) {
       return res.status(400).json({ message: 'Email/phone and password are required' });
+    }
+
+    if (rawIdentifier.toUpperCase().startsWith('STF-')) {
+      return res.status(400).json({
+        message: 'This is the Driver Login portal. Please tap "Are you a staff member? Staff Login" at the bottom to sign in with your Staff ID.',
+      });
     }
 
     const normalizedIdentifier = rawIdentifier.toLowerCase();

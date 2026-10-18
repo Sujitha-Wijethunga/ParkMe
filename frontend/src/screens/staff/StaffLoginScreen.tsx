@@ -101,11 +101,12 @@ export default function StaffLoginScreen({
 
     try {
       let response: Response;
+      const payload = { identifier: staffId.trim().toUpperCase(), password: password.trim() };
       try {
         response = await fetch(`${API_BASE_URL}/api/auth/login`, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ identifier: staffId.trim(), password }),
+          body: JSON.stringify(payload),
         });
       } catch (networkErr) {
         if (API_BASE_URL !== LIVE_BACKEND_URL) {
@@ -113,7 +114,7 @@ export default function StaffLoginScreen({
           response = await fetch(`${LIVE_BACKEND_URL}/api/auth/login`, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ identifier: staffId.trim(), password }),
+            body: JSON.stringify(payload),
           });
         } else {
           throw networkErr;
