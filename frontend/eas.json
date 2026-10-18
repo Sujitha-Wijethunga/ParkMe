@@ -11,7 +11,8 @@
       },
       "env": {
         "EXPO_PUBLIC_API_URL": "https://parkme1-nine.vercel.app",
-        "EXPO_PUBLIC_GOOGLE_WEB_CLIENT_ID": "648388983732-sfsgdcu722ma7e411a269c4a5sscievq.apps.googleusercontent.com"
+        "EXPO_PUBLIC_GOOGLE_WEB_CLIENT_ID": "648388983732-sfsgdcu722ma7e411a269c4a5sscievq.apps.googleusercontent.com",
+        "EXPO_PUBLIC_USE_RN_FETCH": "1"
       },
       "credentialsSource": "remote"
     },
@@ -23,7 +24,8 @@
       },
       "env": {
         "EXPO_PUBLIC_API_URL": "https://parkme1-nine.vercel.app",
-        "EXPO_PUBLIC_GOOGLE_WEB_CLIENT_ID": "648388983732-sfsgdcu722ma7e411a269c4a5sscievq.apps.googleusercontent.com"
+        "EXPO_PUBLIC_GOOGLE_WEB_CLIENT_ID": "648388983732-sfsgdcu722ma7e411a269c4a5sscievq.apps.googleusercontent.com",
+        "EXPO_PUBLIC_USE_RN_FETCH": "1"
       },
       "credentialsSource": "remote"
     },
@@ -31,7 +33,8 @@
       "autoIncrement": true,
       "env": {
         "EXPO_PUBLIC_API_URL": "https://parkme1-nine.vercel.app",
-        "EXPO_PUBLIC_GOOGLE_WEB_CLIENT_ID": "648388983732-sfsgdcu722ma7e411a269c4a5sscievq.apps.googleusercontent.com"
+        "EXPO_PUBLIC_GOOGLE_WEB_CLIENT_ID": "648388983732-sfsgdcu722ma7e411a269c4a5sscievq.apps.googleusercontent.com",
+        "EXPO_PUBLIC_USE_RN_FETCH": "1"
       }
     }
   },
