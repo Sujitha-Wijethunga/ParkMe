@@ -1,7 +1,6 @@
 import React, { useMemo, useState } from 'react';
 import {
   Alert,
-  Image,
   KeyboardAvoidingView,
   Platform,
   SafeAreaView,
@@ -14,7 +13,6 @@ import {
   View,
   ActivityIndicator,
 } from 'react-native';
-import * as ImagePicker from 'expo-image-picker';
 import { Colors } from '../../constants/colors';
 import { SpaceItem } from './ManageSpaceScreen';
 
@@ -43,34 +41,12 @@ export default function AddSpaceScreen({
   const [level, setLevel] = useState('Ground Floor');
   const [capacity, setCapacity] = useState('');
   const [selectedVehicleType, setSelectedVehicleType] = useState('Car');
-  const [spaceImage, setSpaceImage] = useState<ImagePicker.ImagePickerAsset | null>(null);
 
   const [lotError, setLotError] = useState('');
   const [levelError, setLevelError] = useState('');
   const [capacityError, setCapacityError] = useState('');
   const [vehicleTypeError, setVehicleTypeError] = useState('');
   const [isSubmitting, setIsSubmitting] = useState(false);
-
-  const chooseImage = async () => {
-    try {
-      const result = await ImagePicker.launchImageLibraryAsync({
-        mediaTypes: ['images'],
-        allowsEditing: true,
-        quality: 0.8,
-      });
-
-      if (!result.canceled) {
-        const asset = result.assets[0];
-        if (!asset) {
-          throw new Error('The photo picker did not return an image.');
-        }
-        setSpaceImage(asset);
-      }
-    } catch (error) {
-      const message = error instanceof Error ? error.message : 'Please try again.';
-      Alert.alert('Unable to select image', message);
-    }
-  };
 
   const capacityLabel = useMemo(() => capacity.trim().toUpperCase(), [capacity]);
 
@@ -122,15 +98,6 @@ export default function AddSpaceScreen({
       return;
     }
 
-    let imageMimeType: string | undefined;
-    if (spaceImage) {
-      imageMimeType = resolveImageMimeType(spaceImage);
-      if (!imageMimeType) {
-        Alert.alert('Unsupported image', 'Please choose a JPEG, PNG, or WebP image.');
-        return;
-      }
-    }
-
     const nextSpace: SpaceItem = {
       id: `${Date.now()}`,
       slot: spaceNumbers[0],
@@ -138,9 +105,6 @@ export default function AddSpaceScreen({
       location: cleanLot,
       level: cleanLevel,
       vehicleType: selectedVehicleType,
-      imageUri: spaceImage?.uri,
-      imageMimeType,
-      imageFile: spaceImage?.file,
       spaceNumbers,
     };
 
@@ -276,34 +240,6 @@ export default function AddSpaceScreen({
             <Text style={styles.helpText}>Enter single slot (e.g. A9) or range with letter prefix (e.g. A1-A20).</Text>
           </View>
 
-          {/* Optional Space Image */}
-          <View style={styles.fieldGroup}>
-            <Text style={styles.label}>Space Photo (Optional)</Text>
-            {spaceImage ? (
-              <View style={styles.imagePreviewWrap}>
-                <Image source={{ uri: spaceImage.uri }} style={styles.imagePreview} />
-                <TouchableOpacity
-                  onPress={() => setSpaceImage(null)}
-                  style={styles.removeImageButton}
-                  accessibilityRole="button"
-                  accessibilityLabel="Remove selected image"
-                >
-                  <Text style={styles.removeImageText}>Remove image</Text>
-                </TouchableOpacity>
-              </View>
-            ) : null}
-            <TouchableOpacity
-              style={styles.chooseImageButton}
-              onPress={chooseImage}
-              activeOpacity={0.85}
-            >
-              <Text style={styles.chooseImageText}>
-                {spaceImage ? 'Choose a different image' : '📸 Choose image from phone (Optional)'}
-              </Text>
-            </TouchableOpacity>
-            <Text style={styles.helpText}>JPEG, PNG, or WebP · Optional · Maximum 10 MB</Text>
-          </View>
-
           {/* Preview Card */}
           <View style={styles.previewCard}>
             <Text style={styles.previewLabel}>PREVIEW</Text>
@@ -357,33 +293,6 @@ const expandSpaceCapacity = (capacity: string): string[] => {
   }
 
   return Array.from({ length: count }, (_, index) => `${rangeMatch[1]}${start + index}`);
-};
-
-const resolveImageMimeType = (asset: ImagePicker.ImagePickerAsset) => {
-  const mimeTypeByExtension: Record<string, string> = {
-    jpg: 'image/jpeg',
-    jpeg: 'image/jpeg',
-    png: 'image/png',
-    webp: 'image/webp',
-    gif: 'image/gif',
-  };
-
-  const mimeType = asset.mimeType?.toLowerCase();
-  if (mimeType && (Object.values(mimeTypeByExtension).includes(mimeType) || mimeType.startsWith('image/'))) {
-    return mimeType === 'image/jpg' ? 'image/jpeg' : mimeType;
-  }
-
-  const uriExtension = asset.uri.split(/[?#]/, 1)[0].split('.').pop()?.toLowerCase();
-  if (uriExtension && mimeTypeByExtension[uriExtension]) {
-    return mimeTypeByExtension[uriExtension];
-  }
-
-  const fileExtension = asset.fileName?.split('.').pop()?.toLowerCase();
-  if (fileExtension && mimeTypeByExtension[fileExtension]) {
-    return mimeTypeByExtension[fileExtension];
-  }
-
-  return 'image/jpeg';
 };
 
 const styles = StyleSheet.create({
@@ -509,39 +418,6 @@ const styles = StyleSheet.create({
   vehicleTypeChipTextSelected: {
     color: '#FFFFFF',
     fontWeight: '700',
-  },
-  imagePreviewWrap: {
-    marginBottom: 8,
-    borderRadius: 10,
-    overflow: 'hidden',
-  },
-  imagePreview: {
-    width: '100%',
-    height: 140,
-    borderRadius: 10,
-  },
-  removeImageButton: {
-    paddingVertical: 6,
-    alignItems: 'center',
-  },
-  removeImageText: {
-    fontSize: 12,
-    color: '#EF4444',
-    fontWeight: '600',
-  },
-  chooseImageButton: {
-    backgroundColor: '#FFFFFF',
-    borderWidth: 1,
-    borderStyle: 'dashed',
-    borderColor: '#94A3B8',
-    borderRadius: 10,
-    paddingVertical: 12,
-    alignItems: 'center',
-  },
-  chooseImageText: {
-    fontSize: 13,
-    color: '#475569',
-    fontWeight: '600',
   },
   previewCard: {
     backgroundColor: '#FFFFFF',

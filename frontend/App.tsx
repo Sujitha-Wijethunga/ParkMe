@@ -907,29 +907,18 @@ export default function App() {
       }
 
       const lotId = lot._id || lot.id;
-      const formData = new FormData();
-      formData.append('spaceNumbers', JSON.stringify(newSpace.spaceNumbers ?? [newSpace.slot]));
-      formData.append('floor', newSpace.level || 'Ground Floor');
-      formData.append('vehicleType', newSpace.vehicleType || 'Car');
-      formData.append('type', newSpace.vehicleType === 'EV' ? 'EV' : 'standard');
-      if (newSpace.imageUri) {
-        console.log('Uploading image:', newSpace.imageUri);
-
-        await appendImageToFormData(
-          formData,
-          'image',
-          newSpace.imageUri,
-          {
-            mimeType: newSpace.imageMimeType || 'image/jpeg',
-            fileBlob: newSpace.imageFile,
-          }
-        );
-      }
-
       const createSpaceResponse = await fetch(`${API_BASE_URL}/api/parking-lots/${lotId}/spaces`, {
         method: 'POST',
-        headers: { Authorization: headers.Authorization },
-        body: formData,
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: headers.Authorization,
+        },
+        body: JSON.stringify({
+          spaceNumbers: newSpace.spaceNumbers ?? [newSpace.slot],
+          floor: newSpace.level || 'Ground Floor',
+          vehicleType: newSpace.vehicleType || 'Car',
+          type: newSpace.vehicleType === 'EV' ? 'EV' : 'standard',
+        }),
       });
 
       if (!createSpaceResponse.ok) {
