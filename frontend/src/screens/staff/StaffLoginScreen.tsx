@@ -15,7 +15,7 @@ import {
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Colors } from '../../constants/colors';
-import { API_BASE_URL, getApiConnectionError } from '../../constants/api';
+import { API_BASE_URL, LIVE_BACKEND_URL, getApiConnectionError } from '../../constants/api';
 
 interface StaffLoginScreenProps {
   onLoginSuccess?: (user: any, token: string) => void;
@@ -37,6 +37,7 @@ export default function StaffLoginScreen({
   const [staffIdFocused, setStaffIdFocused] = useState(false);
   const [passwordFocused, setPasswordFocused] = useState(false);
   const [isLoading, setIsLoading] = useState(false);
+  const [generalError, setGeneralError] = useState('');
   const [loginErrors, setLoginErrors] = useState({ staffId: '', password: '' });
 
   const staffIdInputRef = useRef<TextInput>(null);
@@ -96,13 +97,28 @@ export default function StaffLoginScreen({
     }
 
     setIsLoading(true);
+    setGeneralError('');
 
     try {
-      const response = await fetch(`${API_BASE_URL}/api/auth/login`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ identifier: staffId.trim(), password }),
-      });
+      let response: Response;
+      try {
+        response = await fetch(`${API_BASE_URL}/api/auth/login`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ identifier: staffId.trim(), password }),
+        });
+      } catch (networkErr) {
+        if (API_BASE_URL !== LIVE_BACKEND_URL) {
+          console.log('[StaffLogin] Local API failed, trying live backend fallback...');
+          response = await fetch(`${LIVE_BACKEND_URL}/api/auth/login`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ identifier: staffId.trim(), password }),
+          });
+        } else {
+          throw networkErr;
+        }
+      }
 
       const data = await response.json();
 
@@ -112,22 +128,16 @@ export default function StaffLoginScreen({
 
       setIsLoading(false);
       setLoginErrors({ staffId: '', password: '' });
-      Alert.alert('Login Successful', 'You have successfully logged in to the Staff Portal.', [
-        {
-          text: 'Continue',
-          onPress: () => {
-            if (onLoginSuccess) {
-              onLoginSuccess(data, data.token);
-            }
-          },
-        },
-      ]);
+      setGeneralError('');
+
+      if (onLoginSuccess) {
+        onLoginSuccess(data, data.token);
+      }
     } catch (error) {
       setIsLoading(false);
-      Alert.alert(
-        'Login Failed',
-        error instanceof TypeError ? getApiConnectionError() : error instanceof Error ? error.message : 'Please try again.'
-      );
+      const errMsg = error instanceof TypeError ? getApiConnectionError() : error instanceof Error ? error.message : 'Please try again.';
+      setGeneralError(errMsg);
+      Alert.alert('Login Failed', errMsg);
     }
   };
 
@@ -177,6 +187,12 @@ export default function StaffLoginScreen({
           <View style={styles.formCard}>
             <Text style={styles.formTitle}>Attendant Sign In</Text>
             <Text style={styles.formSubtitle}>Enter your assigned staff credentials</Text>
+
+            {generalError ? (
+              <View style={styles.generalErrorBox}>
+                <Text style={styles.generalErrorText}>⚠️ {generalError}</Text>
+              </View>
+            ) : null}
 
             {/* Staff ID Field */}
             <View style={styles.fieldGroup}>
@@ -632,5 +648,20 @@ const styles = StyleSheet.create({
   supportExt: {
     fontWeight: '700',
     color: Colors.textSecondary,
+  },
+  generalErrorBox: {
+    backgroundColor: '#FEF2F2',
+    borderWidth: 1,
+    borderColor: '#FECACA',
+    borderRadius: 8,
+    padding: 10,
+    marginTop: 8,
+    marginBottom: 12,
+  },
+  generalErrorText: {
+    color: '#DC2626',
+    fontSize: 13,
+    fontWeight: '600',
+    lineHeight: 18,
   },
 });

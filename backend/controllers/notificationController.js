@@ -1,4 +1,5 @@
 const Notification = require('../models/Notification');
+const User = require('../models/User');
 
 // @desc    Get notifications for logged-in user
 // @route   GET /api/notifications
@@ -55,8 +56,32 @@ const markAllAsRead = async (req, res, next) => {
   }
 };
 
+// @desc    Register or update Expo push notification token
+// @route   POST /api/notifications/push-token
+// @access  Private
+const registerPushToken = async (req, res, next) => {
+  try {
+    const { pushToken } = req.body;
+
+    if (!pushToken || typeof pushToken !== 'string') {
+      return res.status(400).json({ message: 'pushToken is required' });
+    }
+
+    await User.findByIdAndUpdate(
+      req.user._id,
+      { $set: { pushToken: pushToken.trim() } },
+      { new: true }
+    );
+
+    res.json({ message: 'Push token registered successfully' });
+  } catch (error) {
+    next(error);
+  }
+};
+
 module.exports = {
   getNotifications,
   markAsRead,
   markAllAsRead,
+  registerPushToken,
 };

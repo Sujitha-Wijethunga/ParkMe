@@ -29,19 +29,21 @@ export const getApiBaseUrl = (): string => {
   if (Platform.OS === 'web') {
     if (configuredApiUrl && !isLoopbackUrl(configuredApiUrl)) return configuredApiUrl;
     const host = typeof window !== 'undefined' ? window.location.hostname : 'localhost';
-    if (host === 'localhost' || host === '127.0.0.1') {
-      return 'http://localhost:5000';
+    if (host && host !== 'parkme1-nine.vercel.app' && host !== 'parkme.lk') {
+      return `http://${host}:5000`;
     }
     return configuredApiUrl || LIVE_BACKEND_URL;
   }
 
   // Development client connected to Metro on local machine
   if (typeof __DEV__ !== 'undefined' && __DEV__) {
+    const metroHost = getHostName(Constants.expoConfig?.hostUri);
+    if (metroHost && !isLoopbackUrl(`http://${metroHost}:5000`)) {
+      return `http://${metroHost}:5000`;
+    }
     if (configuredApiUrl && !isLoopbackUrl(configuredApiUrl) && !configuredApiUrl.includes('vercel.app')) {
       return configuredApiUrl;
     }
-    const metroHost = getHostName(Constants.expoConfig?.hostUri);
-    if (metroHost) return `http://${metroHost}:5000`;
   }
 
   // Standalone installed APK or production builds default to the live HTTPS backend

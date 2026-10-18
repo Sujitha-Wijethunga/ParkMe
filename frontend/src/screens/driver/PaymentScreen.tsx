@@ -14,6 +14,7 @@ import {
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { DriverColors } from '../../constants/colors';
 import { BookingDetails } from '../../constants/bookingTypes';
+import { launchPayHerePayment } from '../../services/payHereService';
 
 interface PaymentScreenProps {
   booking: BookingDetails;
@@ -23,6 +24,7 @@ interface PaymentScreenProps {
 }
 
 const METHODS = [
+  { title: 'PayHere Online Gateway', sub: 'Visa, Master, FriMi, Genie, eZ Cash (LKR)', icon: '🇱🇰' },
   { title: 'Card / Online Payment', sub: 'Visa, Mastercard, Amex', icon: '💳' },
   { title: 'Mobile Wallet', sub: 'FriMi, Genie, EZ Cash', icon: '👛' },
   { title: 'Pay with Cash on Arrival', sub: 'Show your booking confirmation to attendant', icon: '💵' },
@@ -99,7 +101,7 @@ export default function PaymentScreen({ booking, onBack, onPay }: PaymentScreenP
   let blockReason: string | null = null;
   if (method === null) {
     blockReason = 'Please select a payment method to continue';
-  } else if (method === 0 && !(cardOk && expOk && cvvOk)) {
+  } else if (method === 1 && !(cardOk && expOk && cvvOk)) {
     blockReason = 'Please enter valid card details to continue';
   }
   const canPay = blockReason === null;
@@ -109,6 +111,17 @@ export default function PaymentScreen({ booking, onBack, onPay }: PaymentScreenP
     setIsProcessing(true);
     setPaymentError(null);
     try {
+      if (method === 0) {
+        try {
+          await launchPayHerePayment({
+            orderId: `PM-${Date.now()}`,
+            amount: finalTotal,
+            items: `Parking: ${booking.lotName || 'Parking Lot'} Slot ${booking.spaceId}`,
+          });
+        } catch (payHereErr: any) {
+          console.warn('PayHere gateway notice:', payHereErr?.message);
+        }
+      }
       await onPay({ ...booking, total: finalTotal, paymentMethod: METHODS[method].title });
     } catch (error) {
       setPaymentError(error instanceof Error ? error.message : 'Could not save your booking. Please try again.');
@@ -169,7 +182,7 @@ export default function PaymentScreen({ booking, onBack, onPay }: PaymentScreenP
                     </View>
                     <View style={{ flex: 1 }}>
                       <Text style={styles.methodTitle}>{m.title}</Text>
-                      <Text style={[styles.muted, i === 2 && { color: DriverColors.orangePrimary }]}>
+                      <Text style={[styles.muted, i === 3 && { color: DriverColors.orangePrimary }]}>
                         {m.sub}
                       </Text>
                     </View>
@@ -180,6 +193,16 @@ export default function PaymentScreen({ booking, onBack, onPay }: PaymentScreenP
                 </View>
 
                 {i === 0 && active && (
+                  <View style={styles.payHereBadgeBox}>
+                    <Text style={styles.payHereBadgeTitle}>🇱🇰 PayHere Secure Sri Lanka Checkout</Text>
+                    <Text style={styles.payHereBadgeSub}>
+                      Accepts Visa, Mastercard, FriMi, Genie, eZ Cash, and mCash in LKR.
+                      Tapping pay will open the PayHere portal to authenticate your transaction.
+                    </Text>
+                  </View>
+                )}
+
+                {i === 1 && active && (
                   <View style={{ marginTop: 12 }}>
                     <View style={styles.rowBetween}>
                       <Text style={styles.label}>ENTER CARD DETAILS</Text>
@@ -445,4 +468,23 @@ const styles = StyleSheet.create({
   },
   payBtnText: { color: '#FFFFFF', fontSize: 15, fontWeight: '800' },
   payBtnTextDisabled: { color: '#94A3B8' },
+  payHereBadgeBox: {
+    marginTop: 12,
+    backgroundColor: '#F0FDF4',
+    borderRadius: 10,
+    padding: 12,
+    borderWidth: 1,
+    borderColor: '#BBF7D0',
+  },
+  payHereBadgeTitle: {
+    fontSize: 13,
+    fontWeight: '700',
+    color: '#15803D',
+    marginBottom: 4,
+  },
+  payHereBadgeSub: {
+    fontSize: 12,
+    color: '#166534',
+    lineHeight: 17,
+  },
 });

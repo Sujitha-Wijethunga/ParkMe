@@ -23,7 +23,9 @@
     "google-auth-library": "^11.1.0",
     "jsonwebtoken": "^9.0.3",
     "mongoose": "^9.10.2",
-    "multer": "^2.4.0"
+    "multer": "^2.4.0",
+    "sharp": "^0.35.5",
+    "tesseract.js": "^7.0.0"
   },
   "devDependencies": {
     "nodemon": "^3.1.14"

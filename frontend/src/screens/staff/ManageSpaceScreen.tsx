@@ -1,4 +1,5 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
+import { socketService } from '../../services/socketService';
 import {
   View,
   Text,
@@ -110,6 +111,18 @@ export default function ManageSpaceScreen({
   const [searchQuery, setSearchQuery] = useState('');
   const [activeFilter, setActiveFilter] = useState<'All' | 'Available' | 'Reserved' | 'Occupied'>('All');
   const [refreshing, setRefreshing] = useState(false);
+
+  // Live real-time updates via Socket.io
+  useEffect(() => {
+    const lotId = spaces.find((s) => s.parkingLotId)?.parkingLotId;
+    if (lotId) {
+      socketService.connect(lotId);
+      const unsub = socketService.onSpaceUpdate(() => {
+        if (onRefresh) void onRefresh();
+      });
+      return () => unsub();
+    }
+  }, [spaces, onRefresh]);
 
   // Modal Sheet State
   const [selectedSpace, setSelectedSpace] = useState<SpaceItem | null>(null);
